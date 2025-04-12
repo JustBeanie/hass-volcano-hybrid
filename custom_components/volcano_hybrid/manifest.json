@@ -13,5 +13,6 @@
     {
       "local_name": "VOLCANO*"
     }
-  ]
+  ],
+  "integration_type": "device"
 }

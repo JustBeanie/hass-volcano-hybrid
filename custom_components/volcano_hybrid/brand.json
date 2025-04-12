@@ -3,6 +3,6 @@
   "name": "Volcano Hybrid",
   "documentation": "https://github.com/JustBeanie/volcano_hybrid",
   "iot_class": "local_polling",
-  "logotype": "logo.png",
+  "logo": "logo.png",
   "codeowners": ["@JustBeanie"]
 }
