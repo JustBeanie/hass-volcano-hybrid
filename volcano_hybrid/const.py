@@ -38,3 +38,6 @@ ANIMATION_DESCENDING = "descending"
 MIN_TEMP = 40
 MAX_TEMP = 230
 TEMP_STEP = 5
+
+# Version
+VERSION = "1.0.0"

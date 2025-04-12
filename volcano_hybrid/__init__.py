@@ -11,7 +11,7 @@ from homeassistant.helpers import entity_registry
 from .const import (
     DOMAIN, SERVICE_FAN_TIMER, SERVICE_SCREEN_ANIMATION,
     ANIMATION_NONE, ANIMATION_BLINKING, ANIMATION_BREATHING,
-    ANIMATION_ASCENDING, ANIMATION_DESCENDING
+    ANIMATION_ASCENDING, ANIMATION_DESCENDING, VERSION
 )
 from .coordinator import VolcanoDataUpdateCoordinator
 
@@ -21,7 +21,7 @@ PLATFORMS = ["climate", "sensor", "switch", "number", "light"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Volcano Hybrid from a config entry."""
-    _LOGGER.info("Setting up Volcano Hybrid integration")
+    _LOGGER.info("Setting up Volcano Hybrid integration version %s", VERSION)
     hass.data.setdefault(DOMAIN, {})
     
     coordinator = VolcanoDataUpdateCoordinator(hass, entry)

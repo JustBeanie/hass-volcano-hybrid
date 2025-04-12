@@ -2,13 +2,13 @@
   "domain": "volcano_hybrid",
   "name": "Volcano Hybrid",
   "config_flow": true,
-  "documentation": "https://github.com/yourusername/volcano_hybrid",
-  "issue_tracker": "https://github.com/yourusername/volcano_hybrid/issues",
+  "documentation": "https://github.com/JustBeanie/volcano_hybrid",
+  "issue_tracker": "https://github.com/JustBeanie/volcano_hybrid/issues",
   "dependencies": ["bluetooth"],
-  "codeowners": ["@yourusername"],
+  "codeowners": ["@JustBeanie"],
   "requirements": ["bleak>=0.14.0"],
   "iot_class": "local_polling",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "bluetooth": [
     {
       "local_name": "VOLCANO*"

@@ -14,7 +14,7 @@ from bleak.exc import BleakError
 
 from .const import (
     CONF_FAN_ON_CONNECT, CONF_INITIAL_TEMP, CONF_MAC_ADDRESS, 
-    DEFAULT_NAME, DOMAIN, MIN_TEMP, MAX_TEMP, TEMP_STEP
+    DEFAULT_NAME, DOMAIN, MIN_TEMP, MAX_TEMP, TEMP_STEP, VERSION
 )
 from .volcano import VolcanoHybrid
 
@@ -35,6 +35,7 @@ class VolcanoHybridConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
         """Handle the initial step."""
+        _LOGGER.debug("Starting config flow for Volcano Hybrid version %s", VERSION)
         if user_input is not None:
             if user_input.get("discovery_method") == "scan":
                 return await self.async_step_discovery()
