@@ -1,0 +1,52 @@
+alias: Volcano Auto Sesh
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - switch.s_b_volcano_h_heater
+    from: "off"
+    to: "on"
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 5
+conditions: []
+actions:
+  - action: light.turn_on
+    metadata: {}
+    data:
+      brightness_pct: 95
+    target:
+      entity_id: light.s_b_volcano_h_screen
+  - delay:
+      hours: 0
+      minutes: 0
+      seconds: 0
+      milliseconds: 250
+  - action: light.turn_on
+    metadata: {}
+    data:
+      brightness_pct: 50
+    target:
+      entity_id: light.s_b_volcano_h_screen
+  - delay:
+      hours: 0
+      minutes: 0
+      seconds: 0
+      milliseconds: 250
+  - action: light.turn_on
+    metadata: {}
+    data:
+      brightness_pct: 95
+    target:
+      entity_id: light.s_b_volcano_h_screen
+  - action: script.volcano_shesh
+    metadata: {}
+    data: {}
+  - action: light.turn_on
+    metadata: {}
+    data:
+      brightness_pct: 50
+    target:
+      entity_id: light.s_b_volcano_h_screen
+mode: single

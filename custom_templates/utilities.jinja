@@ -1,0 +1,52 @@
+{# 
+  Macro to find the next largest value in a temperature list.
+  
+  Parameters:
+  - target_temp: The reference temperature
+  - temp_list: List of temperatures to search through
+  - default_value: Value to return if no larger temperature is found (optional)
+#}
+
+{%- macro find_next_temp(target_temp, temp_list, default_value=none) -%}
+  {%- set ns = namespace(next_temp=none, found=false) -%}
+  
+  {# Convert inputs to numbers to ensure proper comparison #}
+  {%- set target = target_temp | float -%}
+  
+  {# First pass: find the smallest value larger than target #}
+  {%- for temp in temp_list | map('float') | sort -%}
+    {%- if temp > target and (ns.next_temp is none or temp < ns.next_temp) -%}
+      {%- set ns.next_temp = temp -%}
+      {%- set ns.found = true -%}
+    {%- endif -%}
+  {%- endfor -%}
+  
+  {# Return the result or default #}
+  {%- if ns.found -%}
+    {{ ns.next_temp }}
+  {%- else -%}
+    {{ default_value }}
+  {%- endif -%}
+{%- endmacro -%}
+
+
+{# 
+  Macro to extract and return all options from a Home Assistant input_select entity.
+
+  Parameters:
+  - input_select_entity: The entity_id of the input_select (e.g., 'input_select.my_select')
+
+  Example usage with namespace:
+  {% from 'utilities.jinja' import get_options %}
+  {% set my_namespace = namespace(options=[]) %}
+  {% set my_namespace.options = get_options('input_select.my_select') %}
+  Options: {{ my_namespace.options }}
+#}
+
+{%- macro get_options(input_select_entity) -%}
+  {{ state_attr(input_select_entity, 'options') or [] }}
+{%- endmacro -%}
+
+
+{# Beanie Made This #}
+{# Made in Denver 🏔️ #}

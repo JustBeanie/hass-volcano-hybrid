@@ -1,0 +1,57 @@
+sequence:
+  - variables:
+      id: "{% from 'createExecutionId.jinja' import unique_id %}{{ unique_id() }}"
+      temps: >-
+        {% from 'utilities.jinja' import get_options %}{% set ns =
+        namespace(options=[]) %}{% set ns.options =
+        get_options('input_select.volcano_temps') %}{{ ns.options }}
+      currentTemp: "{{ state_attr('climate.s_b_volcano_h', 'current_temperature') }}"
+      targetTemp: "{{ state_attr('climate.s_b_volcano_h', 'temperature') }}"
+      nextTemp: >-
+        {% from 'utilities.jinja' import find_next_temp %} {% set target =
+        targetTemp | float %} {% set temp_list = temps %} {{
+        find_next_temp(targetTemp, temps, targetTemp) }}
+  - action: climate.turn_on
+    metadata: {}
+    data: {}
+    target:
+      entity_id: climate.s_b_volcano_h
+  - wait_for_trigger:
+      - trigger: state
+        entity_id:
+          - switch.s_b_volcano_h_fan
+        to: "on"
+        for:
+          hours: 0
+          minutes: 0
+          seconds: 5
+    continue_on_timeout: false
+    timeout:
+      hours: 0
+      minutes: 20
+      seconds: 0
+      milliseconds: 0
+  - wait_for_trigger:
+      - trigger: state
+        entity_id:
+          - switch.s_b_volcano_h_fan
+        to: "off"
+    continue_on_timeout: false
+    timeout:
+      hours: 0
+      minutes: 5
+      seconds: 0
+      milliseconds: 0
+  - action: climate.set_temperature
+    metadata: {}
+    data:
+      temperature: "{{ nextTemp | float }}"
+    target:
+      entity_id: climate.s_b_volcano_h
+  - action: climate.turn_off
+    metadata: {}
+    data: {}
+    target:
+      entity_id: climate.s_b_volcano_h
+alias: Volcano Sesh
+description: ""
