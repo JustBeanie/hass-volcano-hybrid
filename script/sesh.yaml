@@ -8,8 +8,7 @@ sequence:
       currentTemp: "{{ state_attr('climate.s_b_volcano_h', 'current_temperature') }}"
       targetTemp: "{{ state_attr('climate.s_b_volcano_h', 'temperature') }}"
       nextTemp: >-
-        {% from 'utilities.jinja' import find_next_temp %} {% set target =
-        targetTemp | float %} {% set temp_list = temps %} {{
+        {% from 'utilities.jinja' import find_next_temp %} {{
         find_next_temp(targetTemp, temps, targetTemp) }}
   - action: climate.turn_on
     metadata: {}
