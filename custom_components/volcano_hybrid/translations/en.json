@@ -1,0 +1,87 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Volcano Hybrid Setup",
+        "description": "Choose how you want to add your Volcano Hybrid device",
+        "data": {
+          "discovery_method": "Discovery Method"
+        }
+      },
+      "discovery": {
+        "title": "Select Your Volcano Hybrid",
+        "description": "Found {count} Volcano devices. Select the device you want to add or try scanning again.",
+        "data": {
+          "mac_address": "Device",
+          "rescan": "Scan Again",
+          "manual_entry": "Enter MAC Address Manually"
+        }
+      },
+      "manual": {
+        "title": "Manual Configuration",
+        "description": "Enter the Bluetooth MAC address of your Volcano Hybrid device",
+        "data": {
+          "mac_address": "MAC Address",
+          "name": "Name"
+        }
+      },
+      "info": {
+        "title": "Device Configuration",
+        "description": "Configure additional options for {name} ({mac})",
+        "data": {
+          "initial_temperature": "Initial Temperature (°C)",
+          "fan_on_connect": "Turn Fan On When Connected"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the device. Please check the MAC address and make sure the device is in range.",
+      "invalid_mac": "Invalid MAC address format. Please use the format XX:XX:XX:XX:XX:XX.",
+      "no_devices_found": "No Volcano devices found. Make sure your device is powered on and in range, or enter a MAC address manually.",
+      "no_devices_selected": "Please select a device to continue.",
+      "discovery_error": "Error during device discovery. Please try again or enter MAC address manually.",
+      "unknown_error": "An unexpected error occurred. Please check the logs for more information."
+    },
+    "abort": {
+      "already_configured": "Device is already configured",
+      "no_device_info": "Device information not available",
+      "not_volcano_device": "Discovered device is not a Volcano",
+      "discovery_error": "Error during Bluetooth discovery"
+    }
+  },
+  "services": {
+    "fan_timer": {
+      "name": "Fan Timer",
+      "description": "Turn on the fan and set a timer to turn it off after a specified duration.",
+      "fields": {
+        "duration": {
+          "name": "Duration",
+          "description": "Duration in seconds before turning off the fan."
+        },
+        "turn_off_heat": {
+          "name": "Turn Off Heat",
+          "description": "Whether to also turn off the heater when the timer expires."
+        },
+        "turn_off_screen": {
+          "name": "Turn Off Screen",
+          "description": "Whether to also turn off the screen when the timer expires."
+        }
+      }
+    },
+    "screen_animation": {
+      "name": "Screen Animation",
+      "description": "Start a screen animation on the Volcano Hybrid.",
+      "fields": {
+        "animation_type": {
+          "name": "Animation Type",
+          "description": "Type of animation to start."
+        }
+      }
+    },
+    "next_sesh": {
+      "name": "Next Session",
+      "description": "Increment to the next session temperature and turn on the heater.",
+      "fields": {}
+    }
+  }
+}

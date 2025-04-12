@@ -1,0 +1,11 @@
+{
+  "name": "Volcano Hybrid",
+  "render_readme": true,
+  "domain": "volcano_hybrid",
+  "documentation": "https://github.com/yourusername/volcano_hybrid",
+  "issue_tracker": "https://github.com/yourusername/volcano_hybrid/issues",
+  "dependencies": ["bluetooth"],
+  "codeowners": ["@yourusername"],
+  "iot_class": "local_polling",
+  "homeassistant": "2023.8.0"
+}
