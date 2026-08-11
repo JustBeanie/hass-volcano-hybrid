@@ -1,43 +1,55 @@
 """Constants for the Volcano Hybrid integration."""
 
+from __future__ import annotations
+
+from datetime import timedelta
+
 DOMAIN = "volcano_hybrid"
 
-# Default values
 DEFAULT_NAME = "Volcano Hybrid"
+MANUFACTURER = "Storz & Bickel"
+MODEL = "Volcano Hybrid"
 
-# Configuration
+# Configuration keys.
 CONF_MAC_ADDRESS = "mac_address"
 CONF_INITIAL_TEMP = "initial_temperature"
 CONF_FAN_ON_CONNECT = "fan_on_connect"
 
-# Attributes
-ATTR_TEMPERATURE = "temperature"
-ATTR_TARGET_TEMPERATURE = "target_temperature"
-ATTR_HEATER_STATE = "heater_state"
-ATTR_FAN_STATE = "fan_state"
-ATTR_BRIGHTNESS = "brightness"
-
-# Services
-SERVICE_SET_TEMPERATURE = "set_temperature"
-SERVICE_START_HEATER = "start_heater"
-SERVICE_STOP_HEATER = "stop_heater"
-SERVICE_START_FAN = "start_fan"
-SERVICE_STOP_FAN = "stop_fan"
-SERVICE_SET_BRIGHTNESS = "set_brightness"
+# Actions.
 SERVICE_FAN_TIMER = "fan_timer"
 SERVICE_SCREEN_ANIMATION = "screen_animation"
 
-# Animation types
+ATTR_DURATION = "duration"
+ATTR_TURN_OFF_HEAT = "turn_off_heat"
+ATTR_TURN_OFF_SCREEN = "turn_off_screen"
+ATTR_ANIMATION_TYPE = "animation_type"
+
+# Screen animations.
 ANIMATION_NONE = "none"
 ANIMATION_BLINKING = "blinking"
 ANIMATION_BREATHING = "breathing"
 ANIMATION_ASCENDING = "ascending"
 ANIMATION_DESCENDING = "descending"
 
-# Temperature limits
+ANIMATION_TYPES = [
+    ANIMATION_NONE,
+    ANIMATION_BLINKING,
+    ANIMATION_BREATHING,
+    ANIMATION_ASCENDING,
+    ANIMATION_DESCENDING,
+]
+
+# Device limits.
 MIN_TEMP = 40
 MAX_TEMP = 230
 TEMP_STEP = 5
+MIN_AUTO_OFF_MINUTES = 1
+MAX_AUTO_OFF_MINUTES = 180
+DEFAULT_BRIGHTNESS = 70
 
-# Version
-VERSION = "1.0.0"
+MIN_FAN_TIMER_SECONDS = 1
+MAX_FAN_TIMER_SECONDS = 3600
+
+# The heater ramps fast enough that a slower interval makes the climate card
+# feel broken; 10s is a reasonable compromise for a connected BLE device.
+UPDATE_INTERVAL = timedelta(seconds=10)

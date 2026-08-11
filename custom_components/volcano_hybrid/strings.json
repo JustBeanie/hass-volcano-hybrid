@@ -34,8 +34,8 @@
       "not_in_range": "The device is not currently visible to any Bluetooth adapter or proxy."
     },
     "abort": {
-      "already_configured": "Device is already configured",
-      "no_devices_found": "No unconfigured devices found on the network",
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "no_devices_found": "[%key:common::config_flow::abort::no_devices_found%]",
       "not_supported": "This Bluetooth device is not a Volcano Hybrid."
     }
   },

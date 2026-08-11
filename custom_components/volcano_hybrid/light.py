@@ -1,87 +1,64 @@
-"""Light platform for Volcano Hybrid integration."""
-import logging
+"""Light platform for the Volcano Hybrid screen."""
 
-from homeassistant.components.light import LightEntity, ColorMode
-from homeassistant.config_entries import ConfigEntry
+from __future__ import annotations
+
+from typing import Any
+
+from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util.color import brightness_to_value, value_to_brightness
 
-from .const import DOMAIN
-from .coordinator import VolcanoDataUpdateCoordinator
+from .const import DEFAULT_BRIGHTNESS
+from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
+from .entity import VolcanoEntity
 
-_LOGGER = logging.getLogger(__name__)
+# The device takes 0-100; Home Assistant lights are 0-255.
+BRIGHTNESS_SCALE = (1, 100)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    entry: VolcanoConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Volcano Hybrid light entity."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
-    
-    async_add_entities([VolcanoScreenLight(coordinator, entry)])
+    """Set up the Volcano Hybrid screen light."""
+    async_add_entities([VolcanoScreenLight(entry.runtime_data)])
 
 
-class VolcanoScreenLight(CoordinatorEntity, LightEntity):
-    """Representation of the Volcano Hybrid screen light."""
+class VolcanoScreenLight(VolcanoEntity, LightEntity):
+    """The Volcano Hybrid screen backlight."""
 
-    _attr_has_entity_name = True
-    _attr_name = "Screen"
+    _attr_translation_key = "screen"
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
-    _attr_icon = "mdi:tablet"
 
-    def __init__(
-        self, coordinator: VolcanoDataUpdateCoordinator, entry: ConfigEntry
-    ) -> None:
-        """Initialize the Volcano Hybrid screen light."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.entry_id}_screen"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.data["name"],
-            "manufacturer": "Storz & Bickel",
-            "model": "Volcano Hybrid",
-        }
+    def __init__(self, coordinator: VolcanoDataUpdateCoordinator) -> None:
+        """Initialise the light."""
+        super().__init__(coordinator, "screen")
 
     @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        if self.coordinator.data:
-            return self.coordinator.data.get("is_connected", False)
-        return False
+    def brightness(self) -> int | None:
+        """Return the brightness on Home Assistant's 0-255 scale."""
+        if (percent := self.data.brightness) is None:
+            return None
+        return value_to_brightness(BRIGHTNESS_SCALE, percent)
 
     @property
-    def brightness(self) -> int:
-        """Return the brightness of the light."""
-        if self.coordinator.data:
-            # Convert 0-100 scale to 0-255 scale
-            return int(self.coordinator.data.get("brightness", 0) * 255 / 100)
-        return 0
+    def is_on(self) -> bool | None:
+        """Return whether the screen is lit."""
+        if (percent := self.data.brightness) is None:
+            return None
+        return percent > 0
 
-    @property
-    def is_on(self) -> bool:
-        """Return true if the light is on."""
-        if self.coordinator.data:
-            return self.coordinator.data.get("brightness", 0) > 0
-        return False
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the screen on, optionally at a given brightness."""
+        if (brightness := kwargs.get(ATTR_BRIGHTNESS)) is not None:
+            percent = round(brightness_to_value(BRIGHTNESS_SCALE, brightness))
+        else:
+            percent = self.data.brightness or DEFAULT_BRIGHTNESS
+        await self.coordinator.async_set_brightness(percent)
 
-    async def async_turn_on(self, **kwargs) -> None:
-        """Turn the light on."""
-        try:
-            brightness = kwargs.get("brightness", 255)
-            # Convert 0-255 scale to 0-100 scale
-            brightness_percent = int(brightness * 100 / 255)
-            _LOGGER.debug("Light entity turning on with brightness %s (%s%%)", brightness, brightness_percent)
-            await self.coordinator.async_set_brightness(brightness_percent)
-        except Exception as e:
-            _LOGGER.error("Failed to turn screen on: %s", e)
-
-    async def async_turn_off(self, **kwargs) -> None:
-        """Turn the light off."""
-        try:
-            _LOGGER.debug("Light entity turning off")
-            await self.coordinator.async_set_brightness(0)
-        except Exception as e:
-            _LOGGER.error("Failed to turn screen off: %s", e)
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the screen off."""
+        await self.coordinator.async_set_brightness(0)

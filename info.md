@@ -1,25 +1,22 @@
-# Volcano Hybrid Integration
+# Volcano Hybrid
 
-Control your Storz & Bickel Volcano Hybrid vaporizer from Home Assistant.
+Control a Storz & Bickel Volcano Hybrid vaporizer from Home Assistant over
+Bluetooth LE. Local only — no cloud, no account, no vendor app.
 
 ## Features
 
-- Control heater and fan
-- Set target temperature
-- Monitor current temperature
-- Adjust screen brightness
-- Configure auto-off time
-- Control vibration and display settings
-- Fan timer service
-- Screen animation service
+- Climate entity for target temperature, heater and fan
+- Separate heater and fan switches
+- Screen backlight as a dimmable light, plus screen animations
+- Configurable auto-off delay
+- Diagnostics: serial number, firmware versions, hours of operation, connection state
+- Works through ESPHome Bluetooth proxies
 
-## Configuration
+## Setup
 
-The integration can be configured through the Home Assistant UI:
+Switch the vaporizer on and make sure the Storz & Bickel app is not connected to
+it. Home Assistant discovers it automatically and offers it under
+**Settings → Devices & services**.
 
-1. Go to Settings > Devices & Services
-2. Click "Add Integration"
-3. Search for "Volcano Hybrid"
-4. Follow the configuration steps
-
-For more information, see the [README](https://github.com/yourusername/volcano_hybrid/blob/main/README.md).
+Full documentation, actions and troubleshooting are in the
+[README](https://github.com/JustBeanie/hass-volcano-hybrid#readme).

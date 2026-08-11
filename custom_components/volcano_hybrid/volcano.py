@@ -1,1135 +1,460 @@
-"""Volcano Hybrid device control."""
+"""Low-level BLE control for the Storz & Bickel Volcano Hybrid.
+
+All GATT traffic is serialised through a single lock held at exactly one level:
+the public coroutines acquire it, the private ``_read``/``_write`` helpers assume
+it is already held. Nothing below the lock may re-enter a public coroutine --
+``asyncio.Lock`` is not reentrant, and doing so is what deadlocked the previous
+implementation.
+"""
+
+from __future__ import annotations
+
 import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass, field
 import logging
 import struct
 import time
-from typing import Dict, Any, Optional, Callable, List, Tuple
-from collections import deque
+from typing import Any
 
-from bleak import BleakClient, BleakScanner
+from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
+from bleak_retry_connector import (
+    BleakClientWithServiceCache,
+    BleakNotFoundError,
+    establish_connection,
+)
+
+from .const import (
+    MAX_AUTO_OFF_MINUTES,
+    MAX_TEMP,
+    MIN_AUTO_OFF_MINUTES,
+    MIN_TEMP,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
+# Characteristic UUIDs ------------------------------------------------------
+CHAR_CURRENT_TEMP = "10110001-5354-4f52-5a26-4249434b454c"
+CHAR_TARGET_TEMP = "10110003-5354-4f52-5a26-4249434b454c"
+CHAR_BRIGHTNESS = "10110005-5354-4f52-5a26-4249434b454c"
+CHAR_STATUS_REGISTER = "1010000c-5354-4f52-5a26-4249434b454c"
+CHAR_HEAT_ON = "1011000f-5354-4f52-5a26-4249434b454c"
+CHAR_HEAT_OFF = "10110010-5354-4f52-5a26-4249434b454c"
+CHAR_FAN_ON = "10110013-5354-4f52-5a26-4249434b454c"
+CHAR_FAN_OFF = "10110014-5354-4f52-5a26-4249434b454c"
+CHAR_AUTO_OFF_REMAINING = "1011000c-5354-4f52-5a26-4249434b454c"
+CHAR_AUTO_OFF_SETTING = "1011000d-5354-4f52-5a26-4249434b454c"
+CHAR_SERIAL_NUMBER = "10100008-5354-4f52-5a26-4249434b454c"
+CHAR_BLE_FIRMWARE = "10100004-5354-4f52-5a26-4249434b454c"
+CHAR_FIRMWARE = "10100003-5354-4f52-5a26-4249434b454c"
+CHAR_HOURS_OF_OPERATION = "10110015-5354-4f52-5a26-4249434b454c"
+CHAR_MINUTES_OF_OPERATION = "10110016-5354-4f52-5a26-4249434b454c"
+CHAR_REGISTER2 = "1010000d-5354-4f52-5a26-4249434b454c"
+CHAR_REGISTER3 = "1010000e-5354-4f52-5a26-4249434b454c"
+
+# Bit masks in the status register.
+MASK_HEATER = 0x0020
+MASK_FAN = 0x2000
+
+# The device reports -18.0 C on the temperature characteristic when the probe
+# has no valid reading (idle / powered down). Anything below freezing is not a
+# real reading from a vaporiser, so treat it as "unknown" rather than surfacing
+# a nonsense number.
+TEMP_INVALID_BELOW = 0.0
+
+# How long an explicit heater/fan command is trusted over the status register.
+# BLE notifications lag the write by a beat; without this the UI snaps back.
+OPTIMISTIC_WINDOW = 3.0
+
+# Device information changes rarely; re-read it on this cadence only.
+DEVICE_INFO_INTERVAL = 600.0
+
+
+class VolcanoConnectionError(Exception):
+    """Raised when the device cannot be reached."""
+
+
+@dataclass
+class VolcanoState:
+    """Snapshot of the device state."""
+
+    current_temperature: float | None = None
+    target_temperature: float | None = None
+    heater_on: bool = False
+    fan_on: bool = False
+    brightness: int | None = None
+    connected: bool = False
+    register2: bool | None = None
+    register3: bool | None = None
+    serial_number: str | None = None
+    ble_firmware_version: str | None = None
+    firmware_version: str | None = None
+    hours_of_operation: int | None = None
+    minutes_of_operation: int | None = None
+    auto_off_minutes: int | None = None
+    raw: dict[str, str | None] = field(default_factory=dict)
+
+
+def _decode_int(raw: bytes | None, *, signed: bool = False) -> int | None:
+    """Decode a little-endian integer of whatever width the device sent."""
+    if not raw:
+        return None
+    width = 4 if len(raw) >= 4 else 2 if len(raw) >= 2 else 1
+    return int.from_bytes(raw[:width], "little", signed=signed)
+
+
+def _decode_temperature(raw: bytes | None) -> float | None:
+    """Decode a temperature characteristic.
+
+    The value is a little-endian *signed* integer in tenths of a degree
+    Celsius. Reading it as unsigned turns the idle value (-18.0 C, wire bytes
+    ``4c ff ff ff``) into 6535.6 C, which is what the previous implementation
+    did before discarding every reading as out of range.
+    """
+    value = _decode_int(raw, signed=True)
+    if value is None:
+        return None
+    return value / 10
+
+
+def _decode_string(raw: bytes | None) -> str | None:
+    """Decode a text characteristic, tolerating padding and bad bytes."""
+    if not raw:
+        return None
+    text = raw.decode("utf-8", errors="replace").replace("\x00", "").strip()
+    return text or None
+
+
+def _decode_firmware(raw: bytes | None) -> str | None:
+    """Decode a firmware version, which may be text or packed bytes."""
+    if not raw:
+        return None
+    text = _decode_string(raw)
+    if text and (text.startswith("V") or "." in text):
+        return text
+    if len(raw) >= 3:
+        return f"V{raw[0]:02d}.{raw[1]:02d}.{raw[2]}"
+    return f"V{raw.hex()}"
+
+
 class VolcanoHybrid:
-    """Representation of a Volcano Hybrid device."""
+    """Bluetooth LE client for a single Volcano Hybrid."""
 
-    def __init__(self, mac_address: str) -> None:
-        """Initialize the Volcano Hybrid device."""
-        _LOGGER.info("Initializing Volcano Hybrid device with MAC: %s", mac_address)
-        self.mac_address = mac_address
-        self.client = None
-        self._current_temperature = 0
-        self._target_temperature = 0
-        self._heater_on = False
-        self._fan_on = False
-        self._brightness = 70  # Default brightness
-        self._is_connected = False
-        self._notification_callback = None
-        self._reconnect_task = None
-        self._last_command_time = 0
-        self._connection_lock = asyncio.Lock()
-        self._last_heater_change_time = 0
-        self._heater_change_source = "init"
-        
-        # Device information
-        self._serial_number = None
-        self._ble_firmware_version = None
-        self._hours_of_operation = {"hours": 0, "minutes": 0}
-        self._volcano_firmware_version = None
-        self._auto_off_time_seconds = 0
-        
-        # Device settings
-        self._is_vibration_enabled = True  # Default to True
-        self._is_display_on_cooling = True  # Default to True
-        
-        # Command queue for rate limiting
-        self._command_queue = deque()
-        self._command_processor_task = None
-        self._command_rate_limit = 0.2  # Minimum time between commands in seconds
-        self._processing_commands = False
-        
-        # Temperature cache
-        self._temp_cache_time = 0
-        self._temp_cache_duration = 1.0  # Shorter cache duration for more frequent updates
-        
-        # Raw data storage for debugging
-        self._current_temperature_raw = None
-        self._target_temperature_raw = None
-        self._register_one_raw = None
-        self._auto_off_time_raw = None
-        
-        # UUIDs from the original project
-        self.heat_on_uuid = "1011000f-5354-4f52-5a26-4249434b454c"
-        self.heat_off_uuid = "10110010-5354-4f52-5a26-4249434b454c"
-        self.fan_on_uuid = "10110013-5354-4f52-5a26-4249434b454c"
-        self.fan_off_uuid = "10110014-5354-4f52-5a26-4249434b454c"
-        self.screen_brightness_uuid = "10110005-5354-4f52-5a26-4249434b454c"
-        self.target_temp_uuid = "10110003-5354-4f52-5a26-4249434b454c"
-        self.register_one_uuid = "1010000c-5354-4f52-5a26-4249434b454c"
-        self.current_temp_uuid = "10110001-5354-4f52-5a26-4249434b454c"  # Added current temperature UUID
-        
-        # Device information UUIDs - Updated with correct UUIDs
-        self.serial_number_uuid = "10100008-5354-4f52-5a26-4249434b454c"  # Serial number
-        self.ble_firmware_uuid = "10100004-5354-4f52-5a26-4249434b454c"   # BLE firmware version
-        self.hours_operation_uuid = "10110015-5354-4f52-5a26-4249434b454c"  # Hours of operation
-        self.minutes_operation_uuid = "10110016-5354-4f52-5a26-4249434b454c"  # Minutes of operation
-        self.firmware_version_uuid = "10100003-5354-4f52-5a26-4249434b454c"  # Volcano firmware version
-        self.auto_shutoff_uuid = "1011000c-5354-4f52-5a26-4249434b454c"  # Auto-shutoff
-        self.auto_shutoff_setting_uuid = "1011000d-5354-4f52-5a26-4249434b454c"  # Auto-shutoff setting
-        
-        # Configuration UUIDs - Updated with correct UUIDs
-        self.register3_uuid = "1010000e-5354-4f52-5a26-4249434b454c"  # register3 (vibration in original code)
-        self.register2_uuid = "1010000d-5354-4f52-5a26-4249434b454c"  # register2 (display during cooling in original code)
-        
-        _LOGGER.debug("Volcano Hybrid device initialized")
+    def __init__(self, address: str) -> None:
+        """Initialise the client for ``address``."""
+        self.address = address
+        self._ble_device: BLEDevice | None = None
+        self._client: BleakClientWithServiceCache | None = None
+        self._lock = asyncio.Lock()
+        self._state = VolcanoState()
+        self._callbacks: list[Callable[[VolcanoState], None]] = []
+        self._optimistic: dict[str, bool] = {}
+        self._optimistic_until = 0.0
+        self._device_info_read_at: float | None = None
+        self._notifications_started = False
 
-    async def connect(self, notification_callback: Optional[Callable] = None) -> bool:
-        """Connect to the Volcano Hybrid device."""
-        _LOGGER.info("Attempting to connect to Volcano Hybrid at %s", self.mac_address)
-        
-        # Check if device is available before attempting connection
-        try:
-            _LOGGER.debug("Scanning for device before connection attempt")
-            device_found = False
-            
-            # Try to find the device with a short scan
-            for attempt in range(2):
-                try:
-                    device = await BleakScanner.find_device_by_address(
-                        self.mac_address, timeout=5.0
-                    )
-                    if device:
-                        device_found = True
-                        _LOGGER.debug("Device found in scan: %s", device)
-                        break
-                except Exception as e:
-                    _LOGGER.warning("Error during device scan (attempt %d): %s", attempt + 1, e)
-                    await asyncio.sleep(1)
-            
-            if not device_found:
-                _LOGGER.warning("Device not found in scan, but will try to connect anyway")
-        except Exception as e:
-            _LOGGER.warning("Failed to scan for device: %s", e)
-        
-        # Use a timeout to prevent blocking indefinitely
-        try:
-            async with asyncio.timeout(15):  # Reduced timeout to fail faster
-                async with self._connection_lock:
-                    if self._is_connected:
-                        _LOGGER.debug("Already connected to Volcano Hybrid")
-                        return True
-                        
-                    self._notification_callback = notification_callback
-                    
-                    try:
-                        _LOGGER.debug("Creating new BleakClient")
-                        
-                        # Disconnect any existing client
-                        if self.client:
-                            try:
-                                _LOGGER.debug("Disconnecting existing client")
-                                await self.client.disconnect()
-                            except Exception as e:
-                                _LOGGER.warning("Error disconnecting existing client: %s", e)
-                            self.client = None
-                        
-                        # Create a new client with reduced timeout
-                        self.client = BleakClient(
-                            self.mac_address,
-                            timeout=8.0,  # Reduced timeout to prevent blocking
-                            disconnected_callback=self._handle_disconnect
-                        )
-                        
-                        # Try to connect with retry
-                        for attempt in range(3):
-                            try:
-                                _LOGGER.debug("Connection attempt %d", attempt + 1)
-                                await asyncio.wait_for(self.client.connect(), timeout=8.0)
-                                break
-                            except asyncio.TimeoutError:
-                                _LOGGER.warning("Connection attempt %d timed out", attempt + 1)
-                                if attempt < 2:
-                                    await asyncio.sleep(1)
-                                else:
-                                    raise
-                            except BleakError as e:
-                                if attempt < 2:  # Don't log on last attempt
-                                    _LOGGER.warning(
-                                        "Connection attempt %d failed: %s. Retrying...", 
-                                        attempt + 1, str(e)
-                                    )
-                                    await asyncio.sleep(1)
-                                else:
-                                    raise
-                        
-                        if not self.client.is_connected:
-                            _LOGGER.error("Failed to connect after 3 attempts")
-                            self._is_connected = False
-                            return False
-                        
-                        # Read initial state with shorter timeout
-                        _LOGGER.debug("Reading initial state from register_one")
-                        try:
-                            value = await asyncio.wait_for(
-                                self.client.read_gatt_char(self.register_one_uuid),
-                                timeout=3.0
-                            )
-                            self._register_one_raw = value.hex() if value else None
-                            self._process_notification(value, "initial_read")
-                            _LOGGER.debug("Initial state read successfully: %s", self._register_one_raw)
-                        except Exception as e:
-                            _LOGGER.warning("Failed to read initial state: %s", e)
-                        
-                        # Set up notifications with shorter timeout
-                        try:
-                            _LOGGER.debug("Setting up notifications")
-                            await asyncio.wait_for(
-                                self.client.start_notify(self.register_one_uuid, self._notification_handler),
-                                timeout=3.0
-                            )
-                            _LOGGER.debug("Notifications set up successfully")
-                        except Exception as e:
-                            _LOGGER.warning("Failed to set up notifications: %s", e)
-                        
-                        # Mark as connected before reading temperatures
-                        self._is_connected = True
-                        self._last_command_time = time.time()
-                        
-                        # Read initial temperature - do this quickly
-                        try:
-                            _LOGGER.debug("Reading initial temperatures")
-                            # Use a task group to read both temperatures in parallel
-                            async def read_temps():
-                                await asyncio.gather(
-                                    self._fast_read_current_temperature(),
-                                    self._fast_read_target_temperature()
-                                )
-                            
-                            # Set a timeout for the temperature reading
-                            await asyncio.wait_for(read_temps(), timeout=3.0)
-                            _LOGGER.debug("Initial temperatures read successfully")
-                        except Exception as e:
-                            _LOGGER.warning("Failed to read initial temperatures: %s", e)
-                            # Continue anyway, we'll get temperatures on the next update
-                        
-                        # Read device information in the background
-                        asyncio.create_task(self._read_device_information())
-                        
-                        # Read device settings in the background
-                        asyncio.create_task(self._read_device_settings())
-                        
-                        _LOGGER.info("Connected to Volcano Hybrid at %s", self.mac_address)
-                        
-                        # Start keepalive task
-                        self._start_keepalive()
-                        
-                        # Start command processor
-                        self._start_command_processor()
-                        
-                        return True
-                        
-                    except Exception as e:
-                        self._is_connected = False
-                        _LOGGER.exception("Failed to connect to Volcano Hybrid: %s", e)
-                        return False
-        except asyncio.TimeoutError:
-            _LOGGER.error("Connection process timed out after 15 seconds")
-            self._is_connected = False
-            return False
+    # -- plumbing ----------------------------------------------------------
 
-    async def _read_device_information(self):
-        """Read device information from the device."""
-        _LOGGER.debug("Reading device information")
-        try:
-            # Read serial number
-            try:
-                serial_value = await asyncio.wait_for(
-                    self.client.read_gatt_char(self.serial_number_uuid),
-                    timeout=2.0
-                )
-                if serial_value:
-                    self._serial_number = serial_value.decode('utf-8').strip()
-                    _LOGGER.debug("Serial number: %s", self._serial_number)
-            except Exception as e:
-                _LOGGER.warning("Failed to read serial number: %s", e)
-            
-            # Read BLE firmware version
-            try:
-                ble_fw_value = await asyncio.wait_for(
-                    self.client.read_gatt_char(self.ble_firmware_uuid),
-                    timeout=2.0
-                )
-                if ble_fw_value:
-                    self._ble_firmware_version = ble_fw_value.decode('utf-8').strip()
-                    _LOGGER.debug("BLE firmware version: %s", self._ble_firmware_version)
-            except Exception as e:
-                _LOGGER.warning("Failed to read BLE firmware version: %s", e)
-            
-            # Read hours and minutes of operation separately
-            try:
-                # Read hours
-                hours_value = await asyncio.wait_for(
-                    self.client.read_gatt_char(self.hours_operation_uuid),
-                    timeout=2.0
-                )
-                # Read minutes
-                minutes_value = await asyncio.wait_for(
-                    self.client.read_gatt_char(self.minutes_operation_uuid),
-                    timeout=2.0
-                )
-                
-                # Debug the raw bytes
-                _LOGGER.debug("Hours of operation raw bytes: %s", hours_value.hex() if hours_value else "None")
-                _LOGGER.debug("Minutes of operation raw bytes: %s", minutes_value.hex() if minutes_value else "None")
-                
-                hours = 0
-                minutes = 0
-                
-                if hours_value and len(hours_value) >= 2:
-                    hours = int.from_bytes(hours_value[0:2], byteorder='little')
-                
-                if minutes_value and len(minutes_value) >= 2:
-                    minutes = int.from_bytes(minutes_value[0:2], byteorder='little')
-                
-                self._hours_of_operation = {"hours": hours, "minutes": minutes}
-                _LOGGER.debug("Hours of operation: %d hours, %d minutes", hours, minutes)
-            except Exception as e:
-                _LOGGER.warning("Failed to read hours/minutes of operation: %s", e)
-            
-            # Read Volcano firmware version
-            try:
-                fw_value = await asyncio.wait_for(
-                    self.client.read_gatt_char(self.firmware_version_uuid),
-                    timeout=2.0
-                )
-                if fw_value:
-                    # Debug the raw bytes
-                    _LOGGER.debug("Firmware version raw bytes: %s", fw_value.hex())
-                    
-                    # Try to parse as a string first
-                    try:
-                        fw_string = fw_value.decode('utf-8').strip()
-                        # Check if it looks like a version string
-                        if fw_string.startswith('V') or '.' in fw_string:
-                            self._volcano_firmware_version = fw_string
-                        else:
-                            # If it doesn't look like a version string, try to format it
-                            # It might be encoded as individual bytes for major.minor.patch
-                            if len(fw_value) >= 3:
-                                major = fw_value[0]
-                                minor = fw_value[1]
-                                patch = fw_value[2]
-                                self._volcano_firmware_version = f"V{major:02d}.{minor:02d}.{patch}"
-                            else:
-                                # Just use the raw hex as a fallback
-                                self._volcano_firmware_version = f"V{fw_value.hex()}"
-                    except UnicodeDecodeError:
-                        # If it can't be decoded as UTF-8, try to format it as a version
-                        if len(fw_value) >= 3:
-                            major = fw_value[0]
-                            minor = fw_value[1]
-                            patch = fw_value[2]
-                            self._volcano_firmware_version = f"V{major:02d}.{minor:02d}.{patch}"
-                        else:
-                            # Just use the raw hex as a fallback
-                            self._volcano_firmware_version = f"V{fw_value.hex()}"
-                    
-                    _LOGGER.debug("Volcano firmware version: %s", self._volcano_firmware_version)
-            except Exception as e:
-                _LOGGER.warning("Failed to read Volcano firmware version: %s", e)
-            
-            # Read auto-off time
-            try:
-                # Try both UUIDs to see which one works
-                auto_off_value = None
-                
-                # First try the auto_shutoff_setting_uuid
-                try:
-                    if await self._characteristic_exists(self.auto_shutoff_setting_uuid):
-                        auto_off_value = await asyncio.wait_for(
-                            self.client.read_gatt_char(self.auto_shutoff_setting_uuid),
-                            timeout=2.0
-                        )
-                        _LOGGER.debug("Read auto-off time from auto_shutoff_setting_uuid")
-                except Exception as e:
-                    _LOGGER.debug("Failed to read from auto_shutoff_setting_uuid: %s", e)
-                
-                # If that didn't work, try the auto_shutoff_uuid
-                if not auto_off_value and await self._characteristic_exists(self.auto_shutoff_uuid):
-                    try:
-                        auto_off_value = await asyncio.wait_for(
-                            self.client.read_gatt_char(self.auto_shutoff_uuid),
-                            timeout=2.0
-                        )
-                        _LOGGER.debug("Read auto-off time from auto_shutoff_uuid")
-                    except Exception as e:
-                        _LOGGER.debug("Failed to read from auto_shutoff_uuid: %s", e)
-                
-                # Store raw value for debugging
-                self._auto_off_time_raw = auto_off_value.hex() if auto_off_value else None
-                _LOGGER.debug("Auto-off time raw bytes: %s", self._auto_off_time_raw)
-                
-                if auto_off_value and len(auto_off_value) >= 2:
-                    # Try different parsing methods
-                    
-                    # Method 1: Direct byte value (if it's stored as a single byte)
-                    if len(auto_off_value) == 1:
-                        minutes = auto_off_value[0]
-                    # Method 2: Little endian 16-bit value
-                    elif len(auto_off_value) >= 2:
-                        minutes = int.from_bytes(auto_off_value[0:2], byteorder='little')
-                        
-                        # If the value seems too large, it might be in seconds instead of minutes
-                        if minutes > 180:  # Unlikely to have an auto-off time > 3 hours
-                            # Try dividing by 60 to convert seconds to minutes
-                            if minutes % 60 == 0:
-                                _LOGGER.debug("Auto-off time appears to be in seconds, converting to minutes")
-                                minutes = minutes // 60
-                    
-                    # Sanity check - auto-off time is typically between 1 and 180 minutes
-                    if minutes < 1 or minutes > 180:
-                        _LOGGER.warning("Auto-off time value %d seems out of range, using default", minutes)
-                        minutes = 30  # Default to 30 minutes
-                    
-                    self._auto_off_time_seconds = minutes * 60
-                    _LOGGER.debug("Auto-off time: %d minutes (%d seconds)", minutes, self._auto_off_time_seconds)
-                else:
-                    # Default to 30 minutes if we can't read the value
-                    self._auto_off_time_seconds = 30 * 60
-                    _LOGGER.debug("Using default auto-off time: 30 minutes")
-            except Exception as e:
-                _LOGGER.warning("Failed to read auto-off time: %s", e)
-                # Default to 30 minutes if we can't read the value
-                self._auto_off_time_seconds = 30 * 60
-                _LOGGER.debug("Using default auto-off time due to error: 30 minutes")
-            
-            # Notify that device information has been updated
-            if self._notification_callback:
-                self._notification_callback(self.get_state())
-                
-        except Exception as e:
-            _LOGGER.error("Error reading device information: %s", e)
+    @property
+    def state(self) -> VolcanoState:
+        """Return the last known state."""
+        return self._state
 
-    async def _read_device_settings(self):
-        """Read device settings from the device."""
-        _LOGGER.debug("Reading device settings")
-        try:
-            # Read register3 (vibration in original code)
-            try:
-                if await self._characteristic_exists(self.register3_uuid):
-                    register3_value = await asyncio.wait_for(
-                        self.client.read_gatt_char(self.register3_uuid),
-                        timeout=2.0
-                    )
-                    _LOGGER.debug("Register3 raw value: %s", register3_value.hex() if register3_value else "None")
-                    if register3_value and len(register3_value) >= 1:
-                        self._is_vibration_enabled = register3_value[0] > 0
-                        _LOGGER.debug("Register3 value: %s (raw value: %s)", 
-                                    self._is_vibration_enabled, 
-                                    register3_value.hex() if register3_value else "None")
-                else:
-                    _LOGGER.debug("Register3 characteristic not found, using default value")
-            except Exception as e:
-                _LOGGER.warning("Failed to read register3: %s", e)
-        
-            # Read register2 (display during cooling in original code)
-            try:
-                if await self._characteristic_exists(self.register2_uuid):
-                    register2_value = await asyncio.wait_for(
-                        self.client.read_gatt_char(self.register2_uuid),
-                        timeout=2.0
-                    )
-                    _LOGGER.debug("Register2 raw value: %s", register2_value.hex() if register2_value else "None")
-                    if register2_value and len(register2_value) >= 1:
-                        self._is_display_on_cooling = register2_value[0] > 0
-                        _LOGGER.debug("Register2 value: %s (raw value: %s)", 
-                                    self._is_display_on_cooling, 
-                                    register2_value.hex() if register2_value else "None")
-                else:
-                    _LOGGER.debug("Register2 characteristic not found, using default value")
-            except Exception as e:
-                _LOGGER.warning("Failed to read register2: %s", e)
-        
-            # Notify that device settings have been updated
-            if self._notification_callback:
-                self._notification_callback(self.get_state())
-            
-        except Exception as e:
-            _LOGGER.error("Error reading device settings: %s", e)
+    @property
+    def connected(self) -> bool:
+        """Return whether a live GATT connection exists."""
+        return self._client is not None and self._client.is_connected
 
-    async def set_auto_off_time(self, minutes: int) -> None:
-        """Set the auto-off time in minutes."""
-        try:
-            # Make sure minutes is within a reasonable range (1 to 180 minutes)
-            minutes = max(1, min(180, minutes))
-            
-            # Debug log the exact data being sent
-            # Convert minutes to seconds before packing
-            seconds = minutes * 60
-            packed_data = struct.pack('<H', seconds)
-            _LOGGER.debug("Converting %s minutes to %s seconds for device", minutes, seconds)
-            
-            _LOGGER.debug("Setting auto-off time to %s minutes (%s seconds), sending data: %s", minutes, seconds, packed_data.hex())
-            
-            # Try both UUIDs to see which one works
-            success = False
-            
-            # First try the auto_shutoff_setting_uuid
-            if await self._characteristic_exists(self.auto_shutoff_setting_uuid):
-                try:
-                    await self._send_command(self.auto_shutoff_setting_uuid, packed_data)
-                    success = True
-                    _LOGGER.debug("Set auto-off time using auto_shutoff_setting_uuid")
-                except Exception as e:
-                    _LOGGER.warning("Failed to set auto-off time using auto_shutoff_setting_uuid: %s", e)
-            
-            # If that didn't work, try the auto_shutoff_uuid
-            if not success and await self._characteristic_exists(self.auto_shutoff_uuid):
-                try:
-                    await self._send_command(self.auto_shutoff_uuid, packed_data)
-                    success = True
-                    _LOGGER.debug("Set auto-off time using auto_shutoff_uuid")
-                except Exception as e:
-                    _LOGGER.warning("Failed to set auto-off time using auto_shutoff_uuid: %s", e)
-            
-            if success:
-                self._auto_off_time_seconds = minutes * 60
-                _LOGGER.info("Set auto-off time to %s minutes", minutes)
-                
-                # Notify that device information has been updated
-                if self._notification_callback:
-                    self._notification_callback(self.get_state())
-            else:
-                _LOGGER.error("Failed to set auto-off time - no valid characteristic found")
-                raise Exception("Failed to set auto-off time - no valid characteristic found")
-                
-        except Exception as e:
-            _LOGGER.exception("Failed to set auto-off time: %s", e)
-            raise
+    def set_ble_device(self, ble_device: BLEDevice) -> None:
+        """Update the BLEDevice, so reconnects use the closest adapter/proxy."""
+        self._ble_device = ble_device
 
-    async def set_vibration_enabled(self, enabled: bool) -> None:
-        """Set whether vibration is enabled."""
-        try:
-            # Check if the characteristic exists
-            if not await self._characteristic_exists(self.register3_uuid):
-                _LOGGER.warning("Register3 characteristic not found on device, cannot set vibration")
-                return
-        
-            # Debug log the exact data being sent
-            value = 1 if enabled else 0
-            packed_data = bytes([value])
-            _LOGGER.debug("Setting register3 to %s, sending data: %s to UUID %s", 
-                         enabled, packed_data.hex(), self.register3_uuid)
-        
-            await self._send_command(self.register3_uuid, packed_data)
-            self._is_vibration_enabled = enabled
-            _LOGGER.info("Set register3 to %s", enabled)
-        
-            # Notify that device settings have been updated
-            if self._notification_callback:
-                self._notification_callback(self.get_state())
-        
-        except Exception as e:
-            _LOGGER.exception("Failed to set register3: %s", e)
-            # Don't raise the exception, just log it
-            self._is_vibration_enabled = enabled  # Pretend it worked
+    def register_callback(
+        self, callback: Callable[[VolcanoState], None]
+    ) -> Callable[[], None]:
+        """Register a listener for pushed state updates."""
+        self._callbacks.append(callback)
 
-    async def set_display_on_cooling(self, enabled: bool) -> None:
-        """Set whether the display stays on during cooling (or toggles F/C)."""
-        try:
-            # Check if the characteristic exists
-            if not await self._characteristic_exists(self.register2_uuid):
-                _LOGGER.warning("Register2 characteristic not found on device, cannot set register2")
-                return
-        
-            # Debug log the exact data being sent
-            value = 1 if enabled else 0
-            packed_data = bytes([value])
-            _LOGGER.debug("Setting register2 to %s, sending data: %s to UUID %s", 
-                         enabled, packed_data.hex(), self.register2_uuid)
-        
-            await self._send_command(self.register2_uuid, packed_data)
-            self._is_display_on_cooling = enabled
-            _LOGGER.info("Set register2 to %s", enabled)
-        
-            # Notify that device settings have been updated
-            if self._notification_callback:
-                self._notification_callback(self.get_state())
-        
-        except Exception as e:
-            _LOGGER.exception("Failed to set register2: %s", e)
-            # Don't raise the exception, just log it
-            self._is_display_on_cooling = enabled  # Pretend it worked
+        def _unregister() -> None:
+            if callback in self._callbacks:
+                self._callbacks.remove(callback)
 
-    def _handle_disconnect(self, client):
-        """Handle disconnection event."""
-        if self._is_connected:
-            _LOGGER.warning("Volcano Hybrid disconnected unexpectedly")
-            self._is_connected = False
-            
-            # Schedule reconnection
-            if self._reconnect_task is None or self._reconnect_task.done():
-                self._reconnect_task = asyncio.create_task(self._reconnect())
+        return _unregister
 
-    async def _reconnect(self):
-        """Attempt to reconnect to the device."""
-        # Wait a moment before reconnecting
-        await asyncio.sleep(2)
-        
-        for attempt in range(5):
-            _LOGGER.debug("Reconnection attempt %d", attempt + 1)
-            try:
-                if await self.connect(self._notification_callback):
-                    _LOGGER.info("Successfully reconnected to Volcano Hybrid")
-                    return
-            except Exception as e:
-                _LOGGER.error("Reconnection attempt %d failed: %s", attempt + 1, e)
-            
-            # Exponential backoff
-            await asyncio.sleep(min(30, 2 ** attempt))
-        
-        _LOGGER.error("Failed to reconnect after 5 attempts")
+    def _notify_listeners(self) -> None:
+        for callback in self._callbacks:
+            callback(self._state)
 
-    def _start_keepalive(self):
-        """Start the keepalive task."""
-        asyncio.create_task(self._keepalive_loop())
+    def _handle_disconnect(self, _client: BleakClientWithServiceCache) -> None:
+        """Handle the device dropping the link."""
+        _LOGGER.debug("%s: disconnected", self.address)
+        self._client = None
+        self._notifications_started = False
+        self._state.connected = False
+        self._notify_listeners()
 
-    async def _keepalive_loop(self):
-        """Periodically read from the device to keep the connection alive."""
-        while self._is_connected:
-            try:
-                # If it's been more than 20 seconds since the last command, send a keepalive
-                if time.time() - self._last_command_time > 20:
-                    _LOGGER.debug("Sending keepalive read")
-                    # Just read the register_one_uuid instead of temperature to avoid potential side effects
-                    try:
-                        value = await self.client.read_gatt_char(self.register_one_uuid)
-                        self._last_command_time = time.time()
-                        # Process the notification but don't update heater state from keepalive
-                        self._register_one_raw = value.hex() if value else None
-                        # Don't process notification from keepalive to avoid changing heater state
-                    except Exception as e:
-                        _LOGGER.warning("Keepalive read failed: %s", e)
-                    
-            except Exception as e:
-                _LOGGER.warning("Keepalive failed: %s", e)
-                # If keepalive fails, the disconnect callback should handle reconnection
-            
-            await asyncio.sleep(10)
+    # -- connection --------------------------------------------------------
 
-    def _start_command_processor(self):
-        """Start the command processor task."""
-        if self._command_processor_task is None or self._command_processor_task.done():
-            self._processing_commands = True
-            self._command_processor_task = asyncio.create_task(self._process_command_queue())
+    async def _ensure_client(self) -> BleakClientWithServiceCache:
+        """Return a live client, connecting if needed. Assumes the lock is held."""
+        if self._client is not None and self._client.is_connected:
+            return self._client
 
-    async def _process_command_queue(self):
-        """Process commands from the queue with rate limiting."""
-        _LOGGER.debug("Command processor started")
-        last_command_time = 0
-        
-        while self._processing_commands and self._is_connected:
-            try:
-                if self._command_queue:
-                    # Rate limit commands
-                    time_since_last = time.time() - last_command_time
-                    if time_since_last < self._command_rate_limit:
-                        await asyncio.sleep(self._command_rate_limit - time_since_last)
-                    
-                    # Get the next command
-                    uuid, data, future = self._command_queue.popleft()
-                    
-                    try:
-                        _LOGGER.debug("Processing queued command to %s", uuid)
-                        result = await self._execute_command(uuid, data)
-                        future.set_result(result)
-                    except Exception as e:
-                        _LOGGER.error("Error executing queued command: %s", e)
-                        future.set_exception(e)
-                    
-                    last_command_time = time.time()
-                else:
-                    # No commands in queue, sleep briefly
-                    await asyncio.sleep(0.1)
-            except Exception as e:
-                _LOGGER.error("Error in command processor: %s", e)
-                await asyncio.sleep(1)
-        
-        _LOGGER.debug("Command processor stopped")
-
-    async def _queue_command(self, uuid, data):
-        """Queue a command to be sent to the device."""
-        future = asyncio.Future()
-        self._command_queue.append((uuid, data, future))
-        
-        # Make sure processor is running
-        if not self._processing_commands:
-            self._start_command_processor()
-            
-        return await future
-
-    async def disconnect(self) -> None:
-        """Disconnect from the Volcano Hybrid device."""
-        _LOGGER.info("Disconnecting from Volcano Hybrid")
-        
-        # Stop command processor
-        self._processing_commands = False
-        if self._command_processor_task and not self._command_processor_task.done():
-            try:
-                await asyncio.wait_for(self._command_processor_task, timeout=2.0)
-            except asyncio.TimeoutError:
-                _LOGGER.warning("Command processor did not stop gracefully")
-        
-        async with self._connection_lock:
-            if self.client and self._is_connected:
-                try:
-                    await self.client.stop_notify(self.register_one_uuid)
-                    await self.client.disconnect()
-                    _LOGGER.info("Disconnected from Volcano Hybrid")
-                except Exception as e:
-                    _LOGGER.error("Error disconnecting from Volcano Hybrid: %s", e)
-                finally:
-                    self._is_connected = False
-                    self.client = None
-
-    def _notification_handler(self, sender, data):
-        """Handle notifications from the device."""
-        _LOGGER.debug("Received notification from device")
-        self._register_one_raw = data.hex() if data else None
-        
-        # Process notification but track if it changes heater state
-        old_heater_state = self._heater_on
-        self._process_notification(data, "notification")
-        
-        # Log if notification changed heater state
-        if old_heater_state != self._heater_on:
-            _LOGGER.warning(
-                "Heater state changed from %s to %s via notification (raw: %s)",
-                old_heater_state, self._heater_on, self._register_one_raw
+        if self._ble_device is None:
+            raise VolcanoConnectionError(
+                f"{self.address} is not currently visible to any Bluetooth adapter"
             )
-            self._last_heater_change_time = time.time()
-            self._heater_change_source = "notification"
-        
-        # Call external callback if provided
-        if self._notification_callback:
-            self._notification_callback(self.get_state())
 
-    def _process_notification(self, data, source="unknown"):
-        """Process notification data from the device."""
-        if not data or len(data) < 2:
-            _LOGGER.warning("Received invalid notification data: %s", data.hex() if data else None)
-            return
-            
-        decoded_value = data[0] + (data[1] * 256)
-        _LOGGER.debug("Decoded notification value: 0x%04x from %s", decoded_value, source)
-        
-        unmasked_fan_on_value = decoded_value & 0x2000
-        unmasked_heat_on_value = decoded_value & 0x0020
-        
-        # Only update heater state if it's been more than 5 seconds since we explicitly set it
-        # This prevents notifications from overriding user commands
-        if source == "user_command" or time.time() - self._last_heater_change_time > 5 or self._heater_change_source != "user_command":
-            old_heater_state = self._heater_on
-            new_heater_state = unmasked_heat_on_value != 0
-            
-            if old_heater_state != new_heater_state:
-                _LOGGER.info("Heater state changing from %s to %s via %s", 
-                           old_heater_state, new_heater_state, source)
-                
-            self._heater_on = new_heater_state
-        else:
-            _LOGGER.debug("Ignoring heater state from notification as it was recently set by user")
-        
-        self._fan_on = unmasked_fan_on_value != 0
-        
-        _LOGGER.debug("Processed notification - Heater: %s, Fan: %s", 
-                     "On" if self._heater_on else "Off", 
-                     "On" if self._fan_on else "Off")
-        
-        # Try to extract temperature from notification if possible
+        _LOGGER.debug("%s: connecting via %s", self.address, self._ble_device)
         try:
-            # This is a guess - adjust based on actual data patterns
-            temp_value = (decoded_value & 0xFF00) >> 8
-            if 40 <= temp_value <= 230:  # Sanity check for valid temperature range
-                self._current_temperature = temp_value
-                _LOGGER.debug("Extracted temperature from notification: %s°C", temp_value)
-                self._temp_cache_time = time.time()
-        except Exception as e:
-            _LOGGER.debug("Could not extract temperature from notification: %s", e)
+            client = await establish_connection(
+                BleakClientWithServiceCache,
+                self._ble_device,
+                self.address,
+                self._handle_disconnect,
+                use_services_cache=True,
+                ble_device_callback=lambda: self._ble_device,
+            )
+        except (BleakNotFoundError, BleakError, TimeoutError) as err:
+            raise VolcanoConnectionError(f"Could not connect: {err}") from err
 
-    def get_state(self) -> Dict[str, Any]:
-        """Get the current state of the device."""
-        state = {
-            "current_temperature": self._current_temperature,
-            "target_temperature": self._target_temperature,
-            "heater_on": self._heater_on,
-            "fan_on": self._fan_on,
-            "brightness": self._brightness,
-            "is_connected": self._is_connected,
-            "is_vibration_enabled": self._is_vibration_enabled,
-            "is_display_on_cooling": self._is_display_on_cooling,
-            "device_info": {
-                "serial_number": self._serial_number,
-                "ble_firmware_version": self._ble_firmware_version,
-                "hours_of_operation": self._hours_of_operation,
-                "volcano_firmware_version": self._volcano_firmware_version,
-                "auto_off_time_seconds": self._auto_off_time_seconds
-            }
-        }
-        return state
+        self._client = client
+        self._state.connected = True
 
-    async def _ensure_connected(self):
-        """Ensure the device is connected before sending commands."""
-        if not self._is_connected:
-            _LOGGER.debug("Device not connected, attempting to reconnect")
-            if not await self.connect(self._notification_callback):
-                _LOGGER.error("Failed to reconnect to device")
-                raise ConnectionError("Failed to connect to Volcano Hybrid")
+        try:
+            await client.start_notify(CHAR_STATUS_REGISTER, self._notification_handler)
+            self._notifications_started = True
+        except (BleakError, TimeoutError) as err:
+            # Notifications are an optimisation; polling still works without them.
+            _LOGGER.debug(
+                "%s: could not subscribe to status register: %s", self.address, err
+            )
 
-    async def _execute_command(self, characteristic_uuid, data):
-        """Execute a command directly (used by command processor)."""
-        async with self._connection_lock:
-            await self._ensure_connected()
-            
+        return client
+
+    async def async_connect(self) -> None:
+        """Connect to the device, raising VolcanoConnectionError on failure."""
+        async with self._lock:
+            await self._ensure_client()
+
+    async def async_disconnect(self) -> None:
+        """Disconnect from the device."""
+        async with self._lock:
+            client = self._client
+            self._client = None
+            if client is None:
+                return
+            if self._notifications_started:
+                try:
+                    await client.stop_notify(CHAR_STATUS_REGISTER)
+                except (BleakError, TimeoutError, EOFError) as err:
+                    _LOGGER.debug("%s: stop_notify failed: %s", self.address, err)
+                self._notifications_started = False
             try:
-                _LOGGER.debug("Executing command to %s with data %s", characteristic_uuid, data.hex())
-                await self.client.write_gatt_char(characteristic_uuid, data)
-                self._last_command_time = time.time()
-                return True
-            except Exception as e:
-                _LOGGER.error("Error executing command: %s", e)
-                self._is_connected = False
-                raise
+                await client.disconnect()
+            except (BleakError, TimeoutError, EOFError) as err:
+                _LOGGER.debug("%s: disconnect failed: %s", self.address, err)
+            self._state.connected = False
 
-    async def _send_command(self, characteristic_uuid, data, retry=True):
-        """Send a command to the device with retry logic."""
+    # -- GATT primitives (lock must already be held) -----------------------
+
+    async def _read(self, uuid: str) -> bytes | None:
+        """Read a characteristic, returning None if it is unavailable."""
+        client = await self._ensure_client()
         try:
-            async with asyncio.timeout(10):  # 10 second timeout for sending commands
-                # Queue the command instead of executing directly
-                return await self._queue_command(characteristic_uuid, data)
-        except asyncio.TimeoutError:
-            _LOGGER.error("Command timed out after 10 seconds")
-            self._is_connected = False
-            raise TimeoutError(f"Command to {characteristic_uuid} timed out")
+            return bytes(await client.read_gatt_char(uuid))
+        except (BleakError, TimeoutError) as err:
+            _LOGGER.debug("%s: read %s failed: %s", self.address, uuid, err)
+            return None
 
-    async def turn_heater_on(self) -> None:
-        """Turn on the heater."""
-        _LOGGER.info("Turning heater on")
-        await self._send_command(self.heat_on_uuid, bytes([0]))
-        self._heater_on = True
-        self._last_heater_change_time = time.time()
-        self._heater_change_source = "user_command"
-        _LOGGER.info("Turned heater on")
-
-    async def turn_heater_off(self) -> None:
-        """Turn off the heater."""
-        _LOGGER.info("Turning heater off")
-        await self._send_command(self.heat_off_uuid, bytes([0]))
-        self._heater_on = False
-        self._last_heater_change_time = time.time()
-        self._heater_change_source = "user_command"
-        _LOGGER.info("Turned heater off")
-
-    async def turn_fan_on(self) -> None:
-        """Turn on the fan."""
-        _LOGGER.info("Turning fan on")
-        await self._send_command(self.fan_on_uuid, bytes([0]))
-        self._fan_on = True
-        _LOGGER.info("Turned fan on")
-
-    async def turn_fan_off(self) -> None:
-        """Turn off the fan."""
-        _LOGGER.info("Turning fan off")
-        await self._send_command(self.fan_off_uuid, bytes([0]))
-        self._fan_on = False
-        _LOGGER.info("Turned fan off")
-
-    async def set_brightness(self, brightness: int) -> None:
-        """Set the screen brightness."""
+    async def _write(self, uuid: str, data: bytes) -> None:
+        """Write a characteristic."""
+        client = await self._ensure_client()
         try:
-            # Make sure brightness is within valid range
-            brightness = max(0, min(100, brightness))
-            
-            # Debug log the exact data being sent
-            packed_data = struct.pack('<H', brightness)
-            _LOGGER.debug("Setting brightness to %s, sending data: %s", brightness, packed_data.hex())
-            
-            await self._send_command(self.screen_brightness_uuid, packed_data)
-            self._brightness = brightness
-            _LOGGER.info("Set brightness to %s", brightness)
-        except Exception as e:
-            _LOGGER.exception("Failed to set brightness: %s", e)
-            raise
+            await client.write_gatt_char(uuid, data, response=True)
+        except (BleakError, TimeoutError) as err:
+            raise VolcanoConnectionError(f"Write to {uuid} failed: {err}") from err
 
-    async def _fast_read_current_temperature(self) -> int:
-        """Read the current temperature quickly with minimal overhead."""
-        # Check if we have a recent cached value
-        if time.time() - self._temp_cache_time < self._temp_cache_duration:
-            _LOGGER.debug("Using cached temperature: %s°C", self._current_temperature)
-            return self._current_temperature
-            
-        try:
-            async with self._connection_lock:
-                if not self._is_connected or not self.client:
-                    raise ConnectionError("Not connected to device")
-                    
-                try:
-                    # Direct read with minimal overhead
-                    value = await asyncio.wait_for(
-                        self.client.read_gatt_char(self.current_temp_uuid),
-                        timeout=2.0  # Shorter timeout for faster failure
-                    )
-                    self._last_command_time = time.time()
-                    
-                    # Store raw data for debugging
-                    self._current_temperature_raw = value.hex() if value else None
-                    
-                    # Decode the temperature value
-                    if len(value) >= 2:
-                        decoded_value = value[0] + (value[1] * 256)
-                        temperature = round(decoded_value / 10)  # Assuming temperature is in tenths of a degree
-                        
-                        # Validate temperature is within reasonable range (40-250°C)
-                        if temperature > 1000 or temperature < 0:
-                            _LOGGER.warning("Received unreasonable temperature reading: %s°C, ignoring", temperature)
-                            return self._current_temperature
-                            
-                        self._current_temperature = temperature
-                        self._temp_cache_time = time.time()
-                        return temperature
-                    return self._current_temperature
-                except Exception as e:
-                    _LOGGER.debug("Fast temperature read failed: %s", e)
-                    return self._current_temperature
-        except Exception:
-            return self._current_temperature
+    # -- notifications -----------------------------------------------------
 
-    async def read_current_temperature(self) -> int:
-        """Read the current temperature from the device."""
-        # Try the fast read first
-        try:
-            temp = await self._fast_read_current_temperature()
-            if temp > 0:
-                return temp
-        except Exception:
-            pass
-            
-        # Fall back to the full read process if fast read fails
-        try:
-            async with asyncio.timeout(3):  # Even shorter timeout for faster response
-                async with self._connection_lock:
-                    await self._ensure_connected()
-                    
-                    try:
-                        # Try to read from the current temperature characteristic
-                        try:
-                            _LOGGER.debug("Reading from current_temp_uuid")
-                            value = await self.client.read_gatt_char(self.current_temp_uuid)
-                            self._last_command_time = time.time()
-                            
-                            # Store raw data for debugging
-                            self._current_temperature_raw = value.hex() if value else None
-                            
-                            # Decode the temperature value
-                            if len(value) >= 2:
-                                decoded_value = value[0] + (value[1] * 256)
-                                temperature = round(decoded_value / 10)  # Assuming temperature is in tenths of a degree
-                                
-                                # Validate temperature is within reasonable range
-                                if temperature > 1000 or temperature < 0:
-                                    _LOGGER.warning("Received unreasonable temperature reading: %s°C, ignoring", temperature)
-                                    return self._current_temperature
-                                    
-                                self._current_temperature = temperature
-                                self._temp_cache_time = time.time()
-                                return temperature
-                        except Exception as e:
-                            _LOGGER.warning("Failed to read from current_temp_uuid: %s", e)
-                        
-                        # Fallback: try to read from register_one_uuid
-                        _LOGGER.debug("Falling back to register_one_uuid for temperature")
-                        value = await self.client.read_gatt_char(self.register_one_uuid)
-                        self._last_command_time = time.time()
-                        
-                        # Store raw data for debugging
-                        self._register_one_raw = value.hex() if value else None
-                        
-                        # Extract temperature from register one data
-                        decoded_value = value[0] + (value[1] * 256)
-                        # The temperature might be in a specific part of this value
-                        temperature = decoded_value & 0xFF
-                        
-                        # Validate temperature is within reasonable range
-                        if temperature > 1000 or temperature < 0:
-                            _LOGGER.warning("Received unreasonable temperature reading: %s°C, ignoring", temperature)
-                            return self._current_temperature
-                            
-                        self._current_temperature = temperature
-                        self._temp_cache_time = time.time()
-                        return temperature
-                        
-                    except Exception as e:
-                        _LOGGER.error("Error reading current temperature: %s", e)
-                        return self._current_temperature
-        except asyncio.TimeoutError:
-            _LOGGER.warning("Reading current temperature timed out")
-            return self._current_temperature
-        except Exception as e:
-            _LOGGER.error("Error in read_current_temperature: %s", e)
-            return self._current_temperature
+    def _notification_handler(self, _sender: Any, data: bytearray) -> None:
+        """Handle a status register notification."""
+        if self._apply_status_register(bytes(data)):
+            self._notify_listeners()
 
-    async def _fast_read_target_temperature(self) -> int:
-        """Read the target temperature quickly with minimal overhead."""
-        try:
-            async with self._connection_lock:
-                if not self._is_connected or not self.client:
-                    raise ConnectionError("Not connected to device")
-                    
-                try:
-                    # Direct read with minimal overhead
-                    value = await asyncio.wait_for(
-                        self.client.read_gatt_char(self.target_temp_uuid),
-                        timeout=2.0  # Shorter timeout for faster failure
-                    )
-                    self._last_command_time = time.time()
-                    
-                    # Store raw data for debugging
-                    self._target_temperature_raw = value.hex() if value else None
-                    
-                    # Decode the temperature value
-                    if len(value) >= 2:
-                        decoded_value = value[0] + (value[1] * 256)
-                        temperature = round(decoded_value / 10)
-                        self._target_temperature = temperature
-                        return temperature
-                    return self._target_temperature
-                except Exception as e:
-                    _LOGGER.debug("Fast target temperature read failed: %s", e)
-                    return self._target_temperature
-        except Exception:
-            return self._target_temperature
+    def _apply_status_register(self, raw: bytes | None) -> bool:
+        """Apply the heater/fan bits from the status register.
 
-    async def set_target_temperature(self, temperature: int) -> None:
-        """Set the target temperature."""
-        try:
-            # Make sure temperature is within valid range
-            temperature = max(40, min(230, temperature))
-            
-            # Debug log the exact data being sent
-            packed_data = struct.pack('<I', temperature * 10)
-            _LOGGER.debug("Setting target temperature to %s°C, sending data: %s", temperature, packed_data.hex())
-            
-            await self._send_command(self.target_temp_uuid, packed_data)
-            self._target_temperature = temperature
-            _LOGGER.info("Set target temperature to %s°C", temperature)
-        except Exception as e:
-            _LOGGER.exception("Failed to set target temperature: %s", e)
-            raise
-
-    async def read_target_temperature(self) -> int:
-        """Read the target temperature from the device."""
-        # Try the fast read first
-        try:
-            temp = await self._fast_read_target_temperature()
-            if temp > 0:
-                return temp
-        except Exception:
-            pass
-            
-        # Fall back to the full read process if fast read fails
-        try:
-            async with asyncio.timeout(3):  # Even shorter timeout for faster response
-                async with self._connection_lock:
-                    await self._ensure_connected()
-                    
-                    try:
-                        _LOGGER.debug("Reading target temperature")
-                        value = await self.client.read_gatt_char(self.target_temp_uuid)
-                        self._last_command_time = time.time()
-                        
-                        # Store raw data for debugging
-                        self._target_temperature_raw = value.hex() if value else None
-                        
-                        if len(value) >= 2:
-                            decoded_value = value[0] + (value[1] * 256)
-                            temperature = round(decoded_value / 10)
-                            self._target_temperature = temperature
-                            return temperature
-                        else:
-                            return self._target_temperature
-                            
-                    except Exception as e:
-                        _LOGGER.error("Error reading target temperature: %s", e)
-                        return self._target_temperature
-        except asyncio.TimeoutError:
-            _LOGGER.warning("Reading target temperature timed out")
-            return self._target_temperature
-        except Exception as e:
-            _LOGGER.error("Error in read_target_temperature: %s", e)
-            return self._target_temperature
-
-    async def fan_timer(self, duration: float, turn_off_heat: bool = False, turn_off_screen: bool = False) -> None:
-        """Set a timer to turn off the fan after a specified duration."""
-        await self._ensure_connected()
-        
-        await self.turn_fan_on()
-        
-        # Create a task to turn off the fan after the specified duration
-        asyncio.create_task(self._fan_timer_task(duration, turn_off_heat, turn_off_screen))
-
-    async def _fan_timer_task(self, duration: float, turn_off_heat: bool, turn_off_screen: bool) -> None:
-        """Task to turn off the fan after a specified duration."""
-        await asyncio.sleep(duration)
-        try:
-            await self.turn_fan_off()
-            
-            if turn_off_heat:
-                await self.turn_heater_off()
-                
-            if turn_off_screen:
-                await self.set_brightness(0)
-        except Exception as e:
-            _LOGGER.error("Error in fan timer task: %s", e)
-            
-    async def get_raw_register(self) -> str:
-        """Get the raw register value for debugging."""
-        try:
-            async with asyncio.timeout(3):  # Even shorter timeout
-                async with self._connection_lock:
-                    await self._ensure_connected()
-                    
-                    try:
-                        _LOGGER.debug("Reading raw register for debugging")
-                        value = await self.client.read_gatt_char(self.register_one_uuid)
-                        self._last_command_time = time.time()
-                        
-                        # Store and return the raw hex value
-                        self._register_one_raw = value.hex() if value else None
-                        return self._register_one_raw
-                    except Exception as e:
-                        _LOGGER.error("Error reading raw register: %s", e)
-                        return self._register_one_raw or ""
-        except asyncio.TimeoutError:
-            _LOGGER.warning("Reading raw register timed out")
-            return self._register_one_raw or ""
-        except Exception as e:
-            _LOGGER.error("Error in get_raw_register: %s", e)
-            return self._register_one_raw or ""
-
-    async def _characteristic_exists(self, uuid):
-        """Check if a characteristic exists on the device."""
-        if not self._is_connected or not self.client:
+        Returns True if anything changed. Deliberately does *not* try to derive
+        a temperature from these bits: the fan flag is 0x2000, so with the fan
+        running the high byte lands inside the plausible temperature range and
+        the old code reported the status word as a temperature.
+        """
+        if not raw or len(raw) < 2:
             return False
-        
-        try:
-            # Try to get the characteristic
-            services = self.client.services
-            for service in services:
-                for char in service.characteristics:
-                    if char.uuid.lower() == uuid.lower():
-                        return True
-            return False
-        except Exception as e:
-            _LOGGER.debug("Error checking if characteristic exists: %s", e)
-            return False
+
+        value = int.from_bytes(raw[:2], "little")
+        heater = bool(value & MASK_HEATER)
+        fan = bool(value & MASK_FAN)
+
+        if time.monotonic() < self._optimistic_until:
+            heater = self._optimistic.get("heater_on", heater)
+            fan = self._optimistic.get("fan_on", fan)
+
+        changed = (heater, fan) != (self._state.heater_on, self._state.fan_on)
+        self._state.heater_on = heater
+        self._state.fan_on = fan
+        self._state.raw["status_register"] = raw.hex()
+        return changed
+
+    def _set_optimistic(self, **values: bool) -> None:
+        """Trust an explicit command over the status register for a few seconds."""
+        self._optimistic = values
+        self._optimistic_until = time.monotonic() + OPTIMISTIC_WINDOW
+        for key, value in values.items():
+            setattr(self._state, key, value)
+
+    # -- polling -----------------------------------------------------------
+
+    async def async_update(self) -> VolcanoState:
+        """Refresh and return the device state."""
+        async with self._lock:
+            await self._ensure_client()
+
+            raw_current = await self._read(CHAR_CURRENT_TEMP)
+            self._state.raw["current_temperature"] = (
+                raw_current.hex() if raw_current else None
+            )
+            current = _decode_temperature(raw_current)
+            self._state.current_temperature = (
+                None if current is None or current < TEMP_INVALID_BELOW else current
+            )
+
+            raw_target = await self._read(CHAR_TARGET_TEMP)
+            self._state.raw["target_temperature"] = (
+                raw_target.hex() if raw_target else None
+            )
+            target = _decode_temperature(raw_target)
+            if target is not None and MIN_TEMP <= target <= MAX_TEMP:
+                self._state.target_temperature = target
+
+            self._apply_status_register(await self._read(CHAR_STATUS_REGISTER))
+
+            brightness = _decode_int(await self._read(CHAR_BRIGHTNESS))
+            if brightness is not None and 0 <= brightness <= 100:
+                self._state.brightness = brightness
+
+            # Read on the very first poll, then only occasionally.
+            if (
+                self._device_info_read_at is None
+                or time.monotonic() - self._device_info_read_at > DEVICE_INFO_INTERVAL
+            ):
+                await self._read_device_information()
+                self._device_info_read_at = time.monotonic()
+
+            self._state.connected = True
+            return self._state
+
+    async def _read_device_information(self) -> None:
+        """Read the slow-changing device information. Assumes the lock is held."""
+        self._state.serial_number = (
+            _decode_string(await self._read(CHAR_SERIAL_NUMBER))
+            or self._state.serial_number
+        )
+        self._state.ble_firmware_version = (
+            _decode_firmware(await self._read(CHAR_BLE_FIRMWARE))
+            or self._state.ble_firmware_version
+        )
+        self._state.firmware_version = (
+            _decode_firmware(await self._read(CHAR_FIRMWARE))
+            or self._state.firmware_version
+        )
+
+        hours = _decode_int(await self._read(CHAR_HOURS_OF_OPERATION))
+        if hours is not None:
+            self._state.hours_of_operation = hours
+        minutes = _decode_int(await self._read(CHAR_MINUTES_OF_OPERATION))
+        if minutes is not None:
+            self._state.minutes_of_operation = minutes
+
+        auto_off = await self._read(CHAR_AUTO_OFF_SETTING)
+        if auto_off is None:
+            auto_off = await self._read(CHAR_AUTO_OFF_REMAINING)
+        self._state.raw["auto_off"] = auto_off.hex() if auto_off else None
+        seconds = _decode_int(auto_off)
+        if seconds is not None:
+            # The device stores the auto-off delay in seconds.
+            minutes_value = seconds // 60
+            if MIN_AUTO_OFF_MINUTES <= minutes_value <= MAX_AUTO_OFF_MINUTES:
+                self._state.auto_off_minutes = minutes_value
+
+        register3 = _decode_int(await self._read(CHAR_REGISTER3))
+        if register3 is not None:
+            self._state.register3 = register3 > 0
+        register2 = _decode_int(await self._read(CHAR_REGISTER2))
+        if register2 is not None:
+            self._state.register2 = register2 > 0
+
+    # -- commands ----------------------------------------------------------
+
+    async def async_turn_heater_on(self) -> None:
+        """Turn the heater on."""
+        async with self._lock:
+            await self._write(CHAR_HEAT_ON, bytes([0]))
+        self._set_optimistic(heater_on=True)
+
+    async def async_turn_heater_off(self) -> None:
+        """Turn the heater off."""
+        async with self._lock:
+            await self._write(CHAR_HEAT_OFF, bytes([0]))
+        self._set_optimistic(heater_on=False)
+
+    async def async_turn_fan_on(self) -> None:
+        """Turn the fan on."""
+        async with self._lock:
+            await self._write(CHAR_FAN_ON, bytes([0]))
+        self._set_optimistic(fan_on=True)
+
+    async def async_turn_fan_off(self) -> None:
+        """Turn the fan off."""
+        async with self._lock:
+            await self._write(CHAR_FAN_OFF, bytes([0]))
+        self._set_optimistic(fan_on=False)
+
+    async def async_set_target_temperature(self, celsius: float) -> None:
+        """Set the target temperature in degrees Celsius."""
+        value = int(max(MIN_TEMP, min(MAX_TEMP, celsius)))
+        async with self._lock:
+            await self._write(CHAR_TARGET_TEMP, struct.pack("<I", value * 10))
+        self._state.target_temperature = float(value)
+
+    async def async_set_brightness(self, percent: int) -> None:
+        """Set the screen brightness as a percentage."""
+        value = max(0, min(100, int(percent)))
+        async with self._lock:
+            await self._write(CHAR_BRIGHTNESS, struct.pack("<H", value))
+        self._state.brightness = value
+
+    async def async_set_auto_off_minutes(self, minutes: int) -> None:
+        """Set the auto-off delay in minutes."""
+        value = max(MIN_AUTO_OFF_MINUTES, min(MAX_AUTO_OFF_MINUTES, int(minutes)))
+        payload = struct.pack("<H", value * 60)
+        async with self._lock:
+            try:
+                await self._write(CHAR_AUTO_OFF_SETTING, payload)
+            except VolcanoConnectionError:
+                await self._write(CHAR_AUTO_OFF_REMAINING, payload)
+        self._state.auto_off_minutes = value
+
+    async def async_set_register3(self, enabled: bool) -> None:
+        """Set register 3 (vibration on the stock firmware)."""
+        async with self._lock:
+            await self._write(CHAR_REGISTER3, bytes([1 if enabled else 0]))
+        self._state.register3 = enabled
+
+    async def async_set_register2(self, enabled: bool) -> None:
+        """Set register 2 (display during cooling on the stock firmware)."""
+        async with self._lock:
+            await self._write(CHAR_REGISTER2, bytes([1 if enabled else 0]))
+        self._state.register2 = enabled
