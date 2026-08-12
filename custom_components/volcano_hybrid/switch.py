@@ -1,212 +1,102 @@
-"""Switch platform for Volcano Hybrid integration."""
-import logging
+"""Switch platform for the Volcano Hybrid integration."""
 
-from homeassistant.components.switch import SwitchEntity
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any
+
+from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.const import EntityCategory
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import DOMAIN
-from .coordinator import VolcanoDataUpdateCoordinator
+from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
+from .entity import VolcanoEntity
+from .volcano import VolcanoState
 
-_LOGGER = logging.getLogger(__name__)
+
+@dataclass(frozen=True, kw_only=True)
+class VolcanoSwitchEntityDescription(SwitchEntityDescription):
+    """Describes a Volcano Hybrid switch."""
+
+    is_on_fn: Callable[[VolcanoState], bool | None]
+    set_fn: Callable[[VolcanoDataUpdateCoordinator, bool], Awaitable[None]]
+
+
+SWITCHES: tuple[VolcanoSwitchEntityDescription, ...] = (
+    VolcanoSwitchEntityDescription(
+        key="heater",
+        translation_key="heater",
+        is_on_fn=lambda state: state.heater_on,
+        set_fn=lambda coordinator, on: (
+            coordinator.async_turn_heater_on()
+            if on
+            else coordinator.async_turn_heater_off()
+        ),
+    ),
+    VolcanoSwitchEntityDescription(
+        key="fan",
+        translation_key="fan",
+        is_on_fn=lambda state: state.fan_on,
+        set_fn=lambda coordinator, on: (
+            coordinator.async_turn_fan_on() if on else coordinator.async_turn_fan_off()
+        ),
+    ),
+    VolcanoSwitchEntityDescription(
+        key="register3",
+        translation_key="register3",
+        entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
+        is_on_fn=lambda state: state.register3,
+        set_fn=lambda coordinator, on: coordinator.async_set_register3(on),
+    ),
+    VolcanoSwitchEntityDescription(
+        key="register2",
+        translation_key="register2",
+        entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
+        is_on_fn=lambda state: state.register2,
+        set_fn=lambda coordinator, on: coordinator.async_set_register2(on),
+    ),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    entry: VolcanoConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Volcano Hybrid switch entities."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
-    
-    async_add_entities([
-        VolcanoHeaterSwitch(coordinator, entry),
-        VolcanoFanSwitch(coordinator, entry),
-        VolcanoRegister3Switch(coordinator, entry),
-        VolcanoRegister2Switch(coordinator, entry),
-    ])
+    """Set up the Volcano Hybrid switches."""
+    coordinator = entry.runtime_data
+    async_add_entities(
+        VolcanoSwitch(coordinator, description) for description in SWITCHES
+    )
 
 
-class VolcanoBaseSwitch(CoordinatorEntity, SwitchEntity):
-    """Base class for Volcano Hybrid switches."""
-    
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        if self.coordinator.data:
-            return self.coordinator.data.get("is_connected", False)
-        return False
+class VolcanoSwitch(VolcanoEntity, SwitchEntity):
+    """A Volcano Hybrid switch."""
 
-
-class VolcanoHeaterSwitch(VolcanoBaseSwitch):
-    """Representation of a Volcano Hybrid heater switch."""
-
-    _attr_has_entity_name = True
-    _attr_name = "Heater"
-    _attr_icon = "mdi:radiator"
+    entity_description: VolcanoSwitchEntityDescription
 
     def __init__(
-        self, coordinator: VolcanoDataUpdateCoordinator, entry: ConfigEntry
+        self,
+        coordinator: VolcanoDataUpdateCoordinator,
+        description: VolcanoSwitchEntityDescription,
     ) -> None:
-        """Initialize the Volcano Hybrid heater switch."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.entry_id}_heater"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.data["name"],
-            "manufacturer": "Storz & Bickel",
-            "model": "Volcano Hybrid",
-        }
+        """Initialise the switch."""
+        super().__init__(coordinator, description.key)
+        self.entity_description = description
 
     @property
-    def is_on(self) -> bool:
-        """Return true if the heater is on."""
-        if self.coordinator.data:
-            return self.coordinator.data.get("heater_on", False)
-        return False
+    def is_on(self) -> bool | None:
+        """Return whether the switch is on."""
+        return self.entity_description.is_on_fn(self.data)
 
-    async def async_turn_on(self, **kwargs) -> None:
-        """Turn the heater on."""
-        try:
-            await self.coordinator.async_turn_heater_on()
-        except Exception as e:
-            _LOGGER.error("Failed to turn heater on: %s", e)
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the switch on."""
+        await self.entity_description.set_fn(self.coordinator, True)
 
-    async def async_turn_off(self, **kwargs) -> None:
-        """Turn the heater off."""
-        try:
-            await self.coordinator.async_turn_heater_off()
-        except Exception as e:
-            _LOGGER.error("Failed to turn heater off: %s", e)
-
-
-class VolcanoFanSwitch(VolcanoBaseSwitch):
-    """Representation of a Volcano Hybrid fan switch."""
-
-    _attr_has_entity_name = True
-    _attr_name = "Fan"
-    _attr_icon = "mdi:fan"
-
-    def __init__(
-        self, coordinator: VolcanoDataUpdateCoordinator, entry: ConfigEntry
-    ) -> None:
-        """Initialize the Volcano Hybrid fan switch."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.entry_id}_fan"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.data["name"],
-            "manufacturer": "Storz & Bickel",
-            "model": "Volcano Hybrid",
-        }
-
-    @property
-    def is_on(self) -> bool:
-        """Return true if the fan is on."""
-        if self.coordinator.data:
-            return self.coordinator.data.get("fan_on", False)
-        return False
-
-    async def async_turn_on(self, **kwargs) -> None:
-        """Turn the fan on."""
-        try:
-            await self.coordinator.async_turn_fan_on()
-        except Exception as e:
-            _LOGGER.error("Failed to turn fan on: %s", e)
-
-    async def async_turn_off(self, **kwargs) -> None:
-        """Turn the fan off."""
-        try:
-            await self.coordinator.async_turn_fan_off()
-        except Exception as e:
-            _LOGGER.error("Failed to turn fan off: %s", e)
-
-
-class VolcanoRegister3Switch(VolcanoBaseSwitch):
-    """Representation of a Volcano Hybrid Register 3 switch (labeled as vibration in original code)."""
-
-    _attr_has_entity_name = True
-    _attr_name = "Register 3"
-    _attr_icon = "mdi:vibrate"
-    _attr_entity_category = EntityCategory.CONFIG
-    _attr_entity_registry_enabled_default = False  # Disabled by default since it might not be supported
-
-    def __init__(
-        self, coordinator: VolcanoDataUpdateCoordinator, entry: ConfigEntry
-    ) -> None:
-        """Initialize the Volcano Hybrid Register 3 switch."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.entry_id}_register3"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.data["name"],
-            "manufacturer": "Storz & Bickel",
-            "model": "Volcano Hybrid",
-        }
-
-    @property
-    def is_on(self) -> bool:
-        """Return true if Register 3 is enabled."""
-        if self.coordinator.data:
-            return self.coordinator.data.get("is_vibration_enabled", True)
-        return True
-
-    async def async_turn_on(self, **kwargs) -> None:
-        """Enable Register 3."""
-        try:
-            await self.coordinator.async_set_vibration_enabled(True)
-        except Exception as e:
-            _LOGGER.error("Failed to enable Register 3: %s", e)
-
-    async def async_turn_off(self, **kwargs) -> None:
-        """Disable Register 3."""
-        try:
-            await self.coordinator.async_set_vibration_enabled(False)
-        except Exception as e:
-            _LOGGER.error("Failed to disable Register 3: %s", e)
-
-
-class VolcanoRegister2Switch(VolcanoBaseSwitch):
-    """Representation of a Volcano Hybrid Register 2 switch (toggles F/C or display during cooling)."""
-
-    _attr_has_entity_name = True
-    _attr_name = "Register 2"
-    _attr_icon = "mdi:thermometer-minus"
-    _attr_entity_category = EntityCategory.CONFIG
-    _attr_entity_registry_enabled_default = False  # Disabled by default since it might not be supported
-
-    def __init__(
-        self, coordinator: VolcanoDataUpdateCoordinator, entry: ConfigEntry
-    ) -> None:
-        """Initialize the Volcano Hybrid Register 2 switch."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.entry_id}_register2"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.data["name"],
-            "manufacturer": "Storz & Bickel",
-            "model": "Volcano Hybrid",
-        }
-
-    @property
-    def is_on(self) -> bool:
-        """Return true if Register 2 is enabled."""
-        if self.coordinator.data:
-            return self.coordinator.data.get("is_display_on_cooling", True)
-        return True
-
-    async def async_turn_on(self, **kwargs) -> None:
-        """Enable Register 2."""
-        try:
-            await self.coordinator.async_set_display_on_cooling(True)
-        except Exception as e:
-            _LOGGER.error("Failed to enable Register 2: %s", e)
-
-    async def async_turn_off(self, **kwargs) -> None:
-        """Disable Register 2."""
-        try:
-            await self.coordinator.async_set_display_on_cooling(False)
-        except Exception as e:
-            _LOGGER.error("Failed to disable Register 2: %s", e)
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the switch off."""
+        await self.entity_description.set_fn(self.coordinator, False)

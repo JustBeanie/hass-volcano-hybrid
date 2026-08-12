@@ -1,0 +1,128 @@
+rules:
+  # Bronze
+  action-setup:
+    status: done
+    comment: |
+      Both actions are registered in async_setup via services.py, so they exist
+      even when no config entry is loaded. Targets are resolved at call time and
+      an unloaded entry raises ServiceValidationError.
+  appropriate-polling:
+    status: done
+    comment: |
+      10 seconds. The heat block moves fast enough that a longer interval makes
+      the climate card feel broken, and the device is already connected, so a
+      poll is a handful of GATT reads rather than a new connection. Device
+      information is re-read only every 10 minutes.
+  brands:
+    status: todo
+    comment: Logos are staged in brands/ pending a PR to home-assistant/brands.
+  common-modules:
+    status: done
+    comment: |
+      The coordinator lives in coordinator.py and the shared entity base, which
+      owns device_info and availability, lives in entity.py.
+  config-flow-test-coverage:
+    status: done
+    comment: config_flow.py is at 100% line coverage, enforced in CI.
+  config-flow:
+    status: done
+    comment: |
+      Bluetooth discovery plus a manual picker. strings.json carries
+      data_description for every field.
+  dependency-transparency:
+    status: done
+    comment: |
+      One requirement, bleak-retry-connector, published on PyPI and pinned by
+      minimum version. bleak itself comes from Home Assistant.
+  docs-actions:
+    status: done
+  docs-high-level-description:
+    status: done
+  docs-installation-instructions:
+    status: done
+  docs-removal-instructions:
+    status: done
+  docs-conditions:
+    status: exempt
+    comment: The integration provides no conditions.
+  docs-triggers:
+    status: exempt
+    comment: The integration provides no triggers.
+  entity-event-setup:
+    status: done
+    comment: |
+      The device push callback is registered against the config entry's unload
+      hooks in the coordinator constructor and torn down on unload.
+  entity-unique-id:
+    status: done
+    comment: |
+      Every entity is keyed on the formatted MAC. async_migrate_entry rewrites
+      the old config-entry-id-based unique ids in place, preserving entity ids.
+  has-entity-name:
+    status: done
+  runtime-data:
+    status: done
+    comment: The coordinator is stored on ConfigEntry.runtime_data via a typed alias.
+  test-before-configure:
+    status: done
+    comment: The config flow connects to the device before creating the entry.
+  test-before-setup:
+    status: done
+    comment: |
+      async_setup_entry raises ConfigEntryNotReady when the device is not
+      advertising or will not connect.
+  unique-config-entry:
+    status: done
+    comment: Keyed on format_mac(address), with _abort_if_unique_id_configured.
+
+  # Silver
+  action-exceptions: done
+  config-entry-unloading: done
+  docs-configuration-parameters:
+    status: exempt
+    comment: The integration has no options flow.
+  docs-installation-parameters: done
+  entity-unavailable: done
+  integration-owner: done
+  log-when-unavailable: done
+  parallel-updates: todo
+  reauthentication-flow:
+    status: exempt
+    comment: The device has no authentication.
+  test-coverage:
+    status: done
+    comment: 96% overall.
+
+  # Gold
+  devices: done
+  diagnostics: todo
+  discovery-update-info: todo
+  discovery: done
+  docs-data-update: todo
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: todo
+  dynamic-devices:
+    status: exempt
+    comment: One config entry is one physical vaporizer.
+  entity-category: done
+  entity-device-class: done
+  entity-disabled-by-default: done
+  entity-translations: done
+  exception-translations: done
+  icon-translations: done
+  reconfiguration-flow: todo
+  repair-issues: todo
+  stale-devices:
+    status: exempt
+    comment: One config entry is one physical vaporizer.
+
+  # Platinum
+  async-dependency: done
+  inject-websession:
+    status: exempt
+    comment: The integration is Bluetooth, not HTTP.
+  strict-typing: todo

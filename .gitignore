@@ -51,3 +51,10 @@ pids
 *.pid
 *.seed
 *.pid.lock
+
+# Project
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/

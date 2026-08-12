@@ -1,62 +1,78 @@
-# Contributing to Volcano Hybrid Integration
+# Contributing
 
-Thank you for considering contributing to the Volcano Hybrid Integration! Here are some guidelines to help you get started.
+Thanks for considering a contribution.
 
-## Code of Conduct
+## Reporting bugs
 
-Please be respectful and considerate of others when contributing to this project.
+- Check whether the bug is already reported in the issue tracker.
+- Use the bug report template.
+- Include debug logs. Add this to `configuration.yaml`, restart, reproduce, and
+  attach the relevant lines:
 
-## How Can I Contribute?
+  ```yaml
+  logger:
+    logs:
+      custom_components.volcano_hybrid: debug
+  ```
 
-### Reporting Bugs
+- For anything the device reports incorrectly, enable the **Raw register**
+  diagnostic sensor on the device page and include its attributes. Those are the
+  raw bytes off the wire and they are usually enough to identify a decoding
+  problem without owning the hardware.
 
-- Check if the bug has already been reported in the Issues section
-- Use the bug report template when creating a new issue
-- Include detailed steps to reproduce the bug
-- Include logs if possible
+## Development setup
 
-### Suggesting Enhancements
+Home Assistant needs Python 3.13 or newer, and the test harness needs a C
+compiler for one of its dependencies. On Windows, use WSL.
 
-- Check if the enhancement has already been suggested in the Issues section
-- Use the feature request template when creating a new issue
-- Explain why this enhancement would be useful
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements_test.txt
+```
 
-### Pull Requests
+## Checks
 
-1. Fork the repository
-2. Create a new branch for your feature or bugfix
-3. Make your changes
-4. Run tests to ensure your changes don't break existing functionality
-5. Submit a pull request
+All three run in CI on every push and pull request:
 
-## Development Setup
+```bash
+python -m pytest tests/
+```
 
-1. Clone the repository
-2. Set up a virtual environment:
-   \`\`\`bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   \`\`\`
-3. Install development dependencies:
-   \`\`\`bash
-   pip install -r requirements_dev.txt
-   \`\`\`
+```bash
+python -m ruff check .
+```
 
-## Coding Guidelines
+```bash
+python -m ruff format --check .
+```
 
-- Follow PEP 8 style guidelines
-- Use meaningful variable and function names
-- Add comments for complex logic
-- Write tests for new features
+`config_flow.py` must stay at 100% coverage — that is a Bronze quality-scale
+requirement and CI enforces it.
 
-## Testing
+## Coding guidelines
 
-- Run tests before submitting a pull request
-- Add new tests for new features
+- Match the surrounding style; `ruff format` decides layout, so do not argue
+  with it.
+- Keep the BLE layer in `volcano.py` free of Home Assistant imports. It takes a
+  `BLEDevice` and returns a `VolcanoState`, which is what makes it testable
+  without a running Home Assistant.
+- **All GATT traffic goes through the single lock in `volcano.py`, acquired at
+  exactly one level.** The public coroutines take it; the private `_read` and
+  `_write` helpers assume it is already held. `asyncio.Lock` is not reentrant,
+  and re-entering it is what deadlocked the pre-2.0 implementation.
+- Background work goes through `ConfigEntry.async_create_background_task` so it
+  is cancelled on unload. A bare `asyncio.create_task` can be garbage collected
+  mid-flight and will happily keep driving the device after the integration is
+  gone.
+- Entity names, action descriptions and error messages live in `strings.json`;
+  regenerate `translations/en.json` from it rather than editing both.
+- Changing an entity's `unique_id` breaks people's automations. If it is
+  genuinely necessary, bump the config entry version and migrate the registry in
+  place in `async_migrate_entry`, the way the 1 → 2 migration does.
 
-## Documentation
+## Quality scale
 
-- Update the README.md if necessary
-- Document new features or changes in behavior
-
-Thank you for your contribution!
+The integration targets [Bronze](https://developers.home-assistant.io/docs/core/integration-quality-scale/).
+`custom_components/volcano_hybrid/quality_scale.yaml` records the status of every
+rule; keep it honest if you change something it covers.

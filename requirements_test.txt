@@ -1,0 +1,15 @@
+# Test dependencies. pytest-homeassistant-custom-component pins the Home
+# Assistant version the suite runs against; bump it to test newer cores.
+pytest-homeassistant-custom-component==0.13.316
+pytest-cov
+bleak-retry-connector>=3.6.0
+
+# Pulled in by the bluetooth integration, which volcano_hybrid depends on.
+aiousbwatcher
+bluetooth-adapters
+bluetooth-auto-recovery
+bluetooth-data-tools
+dbus-fast
+habluetooth
+pyserial
+pyudev

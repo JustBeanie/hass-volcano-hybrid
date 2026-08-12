@@ -1,0 +1,77 @@
+{
+  "entity": {
+    "light": {
+      "screen": {
+        "default": "mdi:tablet"
+      }
+    },
+    "number": {
+      "target_temperature": {
+        "default": "mdi:thermometer"
+      },
+      "auto_off_time": {
+        "default": "mdi:timer-outline"
+      }
+    },
+    "sensor": {
+      "connection_status": {
+        "default": "mdi:bluetooth"
+      },
+      "raw_register": {
+        "default": "mdi:code-json"
+      },
+      "heater_status": {
+        "default": "mdi:radiator"
+      },
+      "fan_status": {
+        "default": "mdi:fan"
+      },
+      "brightness_value": {
+        "default": "mdi:brightness-percent"
+      },
+      "serial_number": {
+        "default": "mdi:identifier"
+      },
+      "ble_firmware": {
+        "default": "mdi:bluetooth-settings"
+      },
+      "firmware_version": {
+        "default": "mdi:chip"
+      },
+      "hours_operation": {
+        "default": "mdi:clock-time-eight"
+      },
+      "auto_off_time": {
+        "default": "mdi:timer-off"
+      }
+    },
+    "switch": {
+      "heater": {
+        "default": "mdi:radiator",
+        "state": {
+          "off": "mdi:radiator-off"
+        }
+      },
+      "fan": {
+        "default": "mdi:fan",
+        "state": {
+          "off": "mdi:fan-off"
+        }
+      },
+      "register3": {
+        "default": "mdi:vibrate"
+      },
+      "register2": {
+        "default": "mdi:thermometer-minus"
+      }
+    }
+  },
+  "services": {
+    "fan_timer": {
+      "service": "mdi:fan-clock"
+    },
+    "screen_animation": {
+      "service": "mdi:animation"
+    }
+  }
+}

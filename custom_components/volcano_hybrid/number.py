@@ -1,102 +1,99 @@
-"""Number platform for Volcano Hybrid integration."""
-import logging
+"""Number platform for the Volcano Hybrid integration."""
 
-from homeassistant.components.number import NumberEntity
-from homeassistant.config_entries import ConfigEntry
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+
+from homeassistant.components.number import (
+    NumberDeviceClass,
+    NumberEntity,
+    NumberEntityDescription,
+)
+from homeassistant.const import EntityCategory, UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.const import EntityCategory
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import DOMAIN, MIN_TEMP, MAX_TEMP, TEMP_STEP
-from .coordinator import VolcanoDataUpdateCoordinator
+from .const import (
+    MAX_AUTO_OFF_MINUTES,
+    MAX_TEMP,
+    MIN_AUTO_OFF_MINUTES,
+    MIN_TEMP,
+    TEMP_STEP,
+)
+from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
+from .entity import VolcanoEntity
+from .volcano import VolcanoState
 
-_LOGGER = logging.getLogger(__name__)
+
+@dataclass(frozen=True, kw_only=True)
+class VolcanoNumberEntityDescription(NumberEntityDescription):
+    """Describes a Volcano Hybrid number."""
+
+    value_fn: Callable[[VolcanoState], float | None]
+    set_fn: Callable[[VolcanoDataUpdateCoordinator, float], Awaitable[None]]
+
+
+NUMBERS: tuple[VolcanoNumberEntityDescription, ...] = (
+    VolcanoNumberEntityDescription(
+        key="target_temperature",
+        translation_key="target_temperature",
+        device_class=NumberDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=MIN_TEMP,
+        native_max_value=MAX_TEMP,
+        native_step=TEMP_STEP,
+        value_fn=lambda state: state.target_temperature,
+        set_fn=lambda coordinator, value: coordinator.async_set_temperature(value),
+    ),
+    VolcanoNumberEntityDescription(
+        key="auto_off_time",
+        translation_key="auto_off_time",
+        entity_category=EntityCategory.CONFIG,
+        device_class=NumberDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        native_min_value=MIN_AUTO_OFF_MINUTES,
+        native_max_value=MAX_AUTO_OFF_MINUTES,
+        native_step=1,
+        value_fn=lambda state: state.auto_off_minutes,
+        set_fn=lambda coordinator, value: coordinator.async_set_auto_off_minutes(
+            int(value)
+        ),
+    ),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    entry: VolcanoConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Volcano Hybrid number entities."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
-    
-    async_add_entities([
-        VolcanoTemperatureNumber(coordinator, entry),
-        VolcanoAutoOffTimeNumber(coordinator, entry),
-    ])
+    """Set up the Volcano Hybrid numbers."""
+    coordinator = entry.runtime_data
+    async_add_entities(
+        VolcanoNumber(coordinator, description) for description in NUMBERS
+    )
 
 
-class VolcanoTemperatureNumber(CoordinatorEntity, NumberEntity):
-    """Representation of a Volcano Hybrid temperature setting."""
+class VolcanoNumber(VolcanoEntity, NumberEntity):
+    """A Volcano Hybrid number."""
 
-    _attr_has_entity_name = True
-    _attr_name = "Target Temperature"
-    _attr_native_min_value = MIN_TEMP
-    _attr_native_max_value = MAX_TEMP
-    _attr_native_step = TEMP_STEP
-    _attr_native_unit_of_measurement = "°C"
-    _attr_icon = "mdi:thermometer"
+    entity_description: VolcanoNumberEntityDescription
 
     def __init__(
-        self, coordinator: VolcanoDataUpdateCoordinator, entry: ConfigEntry
+        self,
+        coordinator: VolcanoDataUpdateCoordinator,
+        description: VolcanoNumberEntityDescription,
     ) -> None:
-        """Initialize the Volcano Hybrid temperature number."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.entry_id}_target_temperature"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.data["name"],
-            "manufacturer": "Storz & Bickel",
-            "model": "Volcano Hybrid",
-        }
+        """Initialise the number."""
+        super().__init__(coordinator, description.key)
+        self.entity_description = description
 
     @property
-    def native_value(self) -> float:
-        """Return the current temperature setting."""
-        if self.coordinator.data:
-            return self.coordinator.data.get("target_temperature", MIN_TEMP)
-        return MIN_TEMP
+    def native_value(self) -> float | None:
+        """Return the current value."""
+        return self.entity_description.value_fn(self.data)
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set the temperature value."""
-        await self.coordinator.async_set_temperature(int(value))
-
-
-class VolcanoAutoOffTimeNumber(CoordinatorEntity, NumberEntity):
-    """Representation of a Volcano Hybrid auto-off time setting."""
-
-    _attr_has_entity_name = True
-    _attr_name = "Auto-Off Time"
-    _attr_native_min_value = 1
-    _attr_native_max_value = 180
-    _attr_native_step = 1
-    _attr_native_unit_of_measurement = "min"
-    _attr_icon = "mdi:timer-outline"
-    _attr_entity_category = EntityCategory.CONFIG
-
-    def __init__(
-        self, coordinator: VolcanoDataUpdateCoordinator, entry: ConfigEntry
-    ) -> None:
-        """Initialize the Volcano Hybrid auto-off time number."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.entry_id}_auto_off_time"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.data["name"],
-            "manufacturer": "Storz & Bickel",
-            "model": "Volcano Hybrid",
-        }
-
-    @property
-    def native_value(self) -> float:
-        """Return the current auto-off time setting in minutes."""
-        if self.coordinator.data and self.coordinator.data.get("device_info"):
-            seconds = self.coordinator.data["device_info"].get("auto_off_time_seconds", 0)
-            if seconds:
-                return seconds // 60  # Convert seconds to minutes
-        return 30  # Default to 30 minutes
-
-    async def async_set_native_value(self, value: float) -> None:
-        """Set the auto-off time value in minutes."""
-        await self.coordinator.async_set_auto_off_time(int(value))
+        """Write a new value to the device."""
+        await self.entity_description.set_fn(self.coordinator, value)

@@ -1,310 +1,185 @@
-"""Config flow for Volcano Hybrid integration."""
-import logging
-from typing import Any, Dict, List, Optional
+"""Config flow for the Volcano Hybrid integration."""
 
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from homeassistant.components.bluetooth import (
+    BluetoothServiceInfoBleak,
+    async_ble_device_from_address,
+    async_discovered_service_info,
+)
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.const import CONF_ADDRESS
+from homeassistant.helpers.device_registry import format_mac
 import voluptuous as vol
 
-from homeassistant import config_entries
-from homeassistant.components.bluetooth import async_discovered_service_info
-from homeassistant.const import CONF_NAME
-from homeassistant.data_entry_flow import FlowResult
-
-from bleak import BleakScanner
-from bleak.exc import BleakError
-
 from .const import (
-    CONF_FAN_ON_CONNECT, CONF_INITIAL_TEMP, CONF_MAC_ADDRESS, 
-    DEFAULT_NAME, DOMAIN, MIN_TEMP, MAX_TEMP, TEMP_STEP, VERSION
+    CONF_FAN_ON_CONNECT,
+    CONF_INITIAL_TEMP,
+    DOMAIN,
+    MAX_TEMP,
+    MIN_TEMP,
+    TEMP_STEP,
 )
-from .volcano import VolcanoHybrid
+from .volcano import VolcanoConnectionError, VolcanoHybrid
 
 _LOGGER = logging.getLogger(__name__)
 
-class VolcanoHybridConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+# The Volcano Hybrid advertises as "S&B VOLCANO H".
+NAME_PREFIX = "S&B VOLCANO"
+
+OPTIONS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_INITIAL_TEMP): vol.All(
+            vol.Coerce(int), vol.Range(min=MIN_TEMP, max=MAX_TEMP)
+        ),
+        vol.Optional(CONF_FAN_ON_CONNECT, default=False): bool,
+    }
+)
+
+
+def _is_volcano(service_info: BluetoothServiceInfoBleak) -> bool:
+    """Return whether an advertisement looks like a Volcano Hybrid."""
+    return bool(service_info.name) and "VOLCANO" in service_info.name.upper()
+
+
+class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Volcano Hybrid."""
 
-    VERSION = 1
-    
+    VERSION = 2
+
     def __init__(self) -> None:
-        """Initialize the config flow."""
-        self._discovered_devices = []
-        self._selected_device = None
-        self._device_info = {}
+        """Initialise the flow."""
+        self._discovery_info: BluetoothServiceInfoBleak | None = None
+        self._discovered: dict[str, BluetoothServiceInfoBleak] = {}
+
+    # -- automatic discovery ----------------------------------------------
+
+    async def async_step_bluetooth(
+        self, discovery_info: BluetoothServiceInfoBleak
+    ) -> ConfigFlowResult:
+        """Handle a device discovered by the Bluetooth integration."""
+        await self.async_set_unique_id(format_mac(discovery_info.address))
+        self._abort_if_unique_id_configured()
+
+        if not _is_volcano(discovery_info):
+            return self.async_abort(reason="not_supported")
+
+        self._discovery_info = discovery_info
+        self.context["title_placeholders"] = {"name": discovery_info.name}
+        return await self.async_step_bluetooth_confirm()
+
+    async def async_step_bluetooth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask the user to confirm a discovered device."""
+        assert self._discovery_info is not None
+        discovery_info = self._discovery_info
+
+        if user_input is not None:
+            if error := await self._async_test_connection(discovery_info.address):
+                return self.async_show_form(
+                    step_id="bluetooth_confirm",
+                    errors={"base": error},
+                    description_placeholders={"name": discovery_info.name},
+                )
+            return await self.async_step_options()
+
+        self._set_confirm_only()
+        return self.async_show_form(
+            step_id="bluetooth_confirm",
+            description_placeholders={"name": discovery_info.name},
+        )
+
+    # -- manual setup ------------------------------------------------------
 
     async def async_step_user(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Handle the initial step."""
-        _LOGGER.debug("Starting config flow for Volcano Hybrid version %s", VERSION)
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Let the user pick from the devices Home Assistant can already see."""
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            if user_input.get("discovery_method") == "scan":
-                return await self.async_step_discovery()
+            address = user_input[CONF_ADDRESS]
+            await self.async_set_unique_id(format_mac(address), raise_on_progress=False)
+            self._abort_if_unique_id_configured()
+            self._discovery_info = self._discovered[address]
+            if error := await self._async_test_connection(address):
+                errors["base"] = error
             else:
-                return await self.async_step_manual()
-                
+                return await self.async_step_options()
+
+        current_addresses = self._async_current_ids()
+        self._discovered = {
+            service_info.address: service_info
+            for service_info in async_discovered_service_info(
+                self.hass, connectable=True
+            )
+            if _is_volcano(service_info)
+            and format_mac(service_info.address) not in current_addresses
+        }
+
+        if not self._discovered:
+            return self.async_abort(reason="no_devices_found")
+
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required("discovery_method", default="scan"): vol.In(
+                    vol.Required(CONF_ADDRESS): vol.In(
                         {
-                            "scan": "Scan for devices",
-                            "manual": "Enter MAC address manually"
+                            address: f"{info.name} ({address})"
+                            for address, info in self._discovered.items()
                         }
-                    ),
-                }
-            ),
-        )
-        
-    async def async_step_discovery(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Handle discovery step."""
-        errors = {}
-        
-        if user_input is not None:
-            if user_input.get("manual_entry"):
-                # User wants to enter a MAC address manually
-                return await self.async_step_manual()
-            elif user_input.get("rescan"):
-                # User wants to rescan for devices
-                self._discovered_devices = []  # Clear previous results
-                # Don't return here, continue to scan below
-            elif user_input.get(CONF_MAC_ADDRESS):
-                # User selected a device from the dropdown
-                self._selected_device = next(
-                    (device for device in self._discovered_devices 
-                     if device["address"] == user_input[CONF_MAC_ADDRESS]),
-                    None
-                )
-                
-                if self._selected_device:
-                    # Try to connect to the selected device
-                    volcano = VolcanoHybrid(self._selected_device["address"])
-                    try:
-                        connected = await volcano.connect()
-                        if connected:
-                            # Disconnect after validation
-                            await volcano.disconnect()
-                            
-                            # Check if device already configured
-                            await self.async_set_unique_id(self._selected_device["address"])
-                            self._abort_if_unique_id_configured()
-                            
-                            # Store device info for the next step
-                            self._device_info = {
-                                CONF_MAC_ADDRESS: self._selected_device["address"],
-                                CONF_NAME: self._selected_device["name"],
-                            }
-                            
-                            # Go to info step
-                            return await self.async_step_info()
-                        else:
-                            errors["base"] = "cannot_connect"
-                    except Exception as e:
-                        _LOGGER.error(f"Error connecting to device: {e}")
-                        errors["base"] = "cannot_connect"
-                else:
-                    errors["base"] = "no_devices_selected"
-            else:
-                errors["base"] = "no_devices_selected"
-                
-        # Discover Volcano devices
-        try:
-            self._discovered_devices = await self._discover_volcano_devices()
-        except Exception as e:
-            _LOGGER.error(f"Error discovering devices: {e}")
-            errors["base"] = "discovery_error"
-            self._discovered_devices = []
-        
-        if not self._discovered_devices:
-            return self.async_show_form(
-                step_id="discovery",
-                data_schema=vol.Schema(
-                    {
-                        vol.Optional("rescan", default=False): bool,
-                        vol.Optional("manual_entry", default=False): bool,
-                    }
-                ),
-                errors={"base": "no_devices_found"},
-                description_placeholders={"count": "0"},
-            )
-        
-        device_options = {
-            device["address"]: f"{device['name']} ({device['address']})" 
-            for device in self._discovered_devices
-        }
-        
-        return self.async_show_form(
-            step_id="discovery",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(CONF_MAC_ADDRESS): vol.In(device_options),
-                    vol.Optional("rescan", default=False): bool,
-                    vol.Optional("manual_entry", default=False): bool,
-                }
-            ),
-            errors=errors,
-            description_placeholders={"count": str(len(self._discovered_devices))},
-        )
-
-    async def async_step_manual(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Handle manual address entry."""
-        errors = {}
-        
-        if user_input is not None:
-            # Validate the MAC address format
-            if self._validate_mac(user_input[CONF_MAC_ADDRESS]):
-                # Try to connect to the device
-                volcano = VolcanoHybrid(user_input[CONF_MAC_ADDRESS])
-                try:
-                    connected = await volcano.connect()
-                    if connected:
-                        # Disconnect after validation
-                        await volcano.disconnect()
-                        
-                        # Check if device already configured
-                        await self.async_set_unique_id(user_input[CONF_MAC_ADDRESS])
-                        self._abort_if_unique_id_configured()
-                        
-                        # Store device info for the next step
-                        self._device_info = {
-                            CONF_MAC_ADDRESS: user_input[CONF_MAC_ADDRESS],
-                            CONF_NAME: user_input.get(CONF_NAME, DEFAULT_NAME),
-                        }
-                        
-                        # Go to info step
-                        return await self.async_step_info()
-                    else:
-                        errors["base"] = "cannot_connect"
-                except Exception as e:
-                    _LOGGER.error(f"Error connecting to device: {e}")
-                    errors["base"] = "cannot_connect"
-            else:
-                errors[CONF_MAC_ADDRESS] = "invalid_mac"
-
-        # Show form for manual MAC address entry
-        return self.async_show_form(
-            step_id="manual",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_MAC_ADDRESS): str,
-                    vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
+                    )
                 }
             ),
             errors=errors,
         )
-        
-    async def async_step_info(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Handle additional device info step."""
-        errors = {}
-        
-        # If we don't have device info stored, abort
-        if not self._device_info or CONF_MAC_ADDRESS not in self._device_info:
-            _LOGGER.error("No device info available for info step")
-            return self.async_abort(reason="no_device_info")
-            
-        mac_address = self._device_info[CONF_MAC_ADDRESS]
-        name = self._device_info.get(CONF_NAME, DEFAULT_NAME)
-        
-        if user_input is not None:
-            try:
-                _LOGGER.debug(f"Creating entry with: MAC={mac_address}, Name={name}, Input={user_input}")
-                # Create entry with all the collected information
-                return self.async_create_entry(
-                    title=name,
-                    data={
-                        CONF_MAC_ADDRESS: mac_address,
-                        CONF_NAME: name,
-                        CONF_INITIAL_TEMP: user_input.get(CONF_INITIAL_TEMP),
-                        CONF_FAN_ON_CONNECT: user_input.get(CONF_FAN_ON_CONNECT, False),
-                    },
-                )
-            except Exception as e:
-                _LOGGER.error(f"Error creating entry: {e}")
-                errors["base"] = "unknown_error"
 
-        # Show form for additional configuration
+    # -- shared final step -------------------------------------------------
+
+    async def async_step_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Collect the optional startup behaviour and create the entry."""
+        assert self._discovery_info is not None
+        discovery_info = self._discovery_info
+
+        if user_input is not None:
+            data: dict[str, Any] = {CONF_ADDRESS: discovery_info.address}
+            if (initial_temp := user_input.get(CONF_INITIAL_TEMP)) is not None:
+                data[CONF_INITIAL_TEMP] = initial_temp
+            data[CONF_FAN_ON_CONNECT] = user_input.get(CONF_FAN_ON_CONNECT, False)
+            return self.async_create_entry(title=discovery_info.name, data=data)
+
         return self.async_show_form(
-            step_id="info",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(CONF_INITIAL_TEMP): vol.All(
-                        vol.Coerce(int),
-                        vol.Range(min=MIN_TEMP, max=MAX_TEMP)
-                    ),
-                    vol.Optional(CONF_FAN_ON_CONNECT, default=False): bool,
-                }
-            ),
-            errors=errors,
-            description_placeholders={"name": name, "mac": mac_address},
+            step_id="options",
+            data_schema=OPTIONS_SCHEMA,
+            description_placeholders={
+                "name": discovery_info.name,
+                "address": discovery_info.address,
+                "min_temp": str(MIN_TEMP),
+                "max_temp": str(MAX_TEMP),
+                "step": str(TEMP_STEP),
+            },
         )
 
-    async def async_step_bluetooth(self, discovery_info) -> FlowResult:
-        """Handle bluetooth discovery."""
-        try:
-            # Check if the discovered device is a Volcano
-            if discovery_info.name and "VOLCANO" in discovery_info.name.upper():
-                await self.async_set_unique_id(discovery_info.address)
-                self._abort_if_unique_id_configured()
-                
-                # Store device info for the next step
-                self._device_info = {
-                    CONF_MAC_ADDRESS: discovery_info.address,
-                    CONF_NAME: discovery_info.name,
-                }
-                
-                # Jump to the info step
-                return await self.async_step_info()
-        except Exception as e:
-            _LOGGER.error(f"Error in bluetooth discovery step: {e}")
-            return self.async_abort(reason="discovery_error")
-            
-        # Not a Volcano device or couldn't determine
-        return self.async_abort(reason="not_volcano_device")
+    async def _async_test_connection(self, address: str) -> str | None:
+        """Prove we can talk to the device; return an error key on failure."""
+        ble_device = async_ble_device_from_address(self.hass, address, connectable=True)
+        if ble_device is None:
+            return "not_in_range"
 
-    def _validate_mac(self, mac: str) -> bool:
-        """Validate MAC address format."""
-        # Simple validation - could be improved
-        parts = mac.split(":")
-        if len(parts) != 6:
-            return False
-        
-        for part in parts:
-            if len(part) != 2:
-                return False
-            try:
-                int(part, 16)
-            except ValueError:
-                return False
-        
-        return True
-        
-    async def _discover_volcano_devices(self) -> List[Dict[str, Any]]:
-        """Discover Volcano devices using BleakScanner."""
-        discovered_devices = []
-        
+        device = VolcanoHybrid(address)
+        device.set_ble_device(ble_device)
         try:
-            _LOGGER.debug("Starting Volcano device discovery")
-            devices = await BleakScanner.discover(timeout=10.0)  # Set a reasonable timeout
-            
-            for device in devices:
-                if device.name and "VOLCANO" in device.name.upper():
-                    _LOGGER.debug(f"Found Volcano device: {device.name}, MAC: {device.address}")
-                    discovered_devices.append({
-                        "name": device.name,
-                        "address": device.address,
-                    })
-                    
-            _LOGGER.debug(f"Discovery complete. Found {len(discovered_devices)} Volcano devices")
-            return discovered_devices
-        except BleakError as e:
-            _LOGGER.error(f"BleakError during device discovery: {e}")
-            raise
-        except Exception as e:
-            _LOGGER.error(f"Error during device discovery: {e}")
-            raise
+            await device.async_connect()
+        except VolcanoConnectionError as err:
+            _LOGGER.debug("Could not connect to %s: %s", address, err)
+            return "cannot_connect"
+        finally:
+            await device.async_disconnect()
+        return None

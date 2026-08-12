@@ -1,11 +1,5 @@
 {
   "name": "Volcano Hybrid",
   "render_readme": true,
-  "domain": "volcano_hybrid",
-  "documentation": "https://github.com/JustBeanie/volcano_hybrid",
-  "issue_tracker": "https://github.com/JustBeanie/volcano_hybrid/issues",
-  "dependencies": ["bluetooth"],
-  "codeowners": ["@JustBeanie"],
-  "iot_class": "local_polling",
-  "homeassistant": "2025.1.0"
+  "homeassistant": "2025.2.0"
 }
