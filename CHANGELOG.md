@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-08-11
+
+### Fixed
+
+- **Diagnostics could leak the Bluetooth address.** When an advertisement carries
+  no local name, habluetooth reports the address as the name, so the MAC appeared
+  verbatim in the `advertised_name` field of a dump that is otherwise redacted for
+  sharing. Found on real hardware; the test fixture always had a name, so the
+  original tests could not have caught it. A genuine advertised name is still
+  reported, since that is useful and is not an identifier.
+- Migrating a version 1 entry that never had an initial temperature no longer
+  carries an explicit `None` into the options, where it showed as a
+  populated-but-empty setting.
+
 ## [2.1.0] - 2026-08-11
 
 Reaches **Platinum** on the [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/),

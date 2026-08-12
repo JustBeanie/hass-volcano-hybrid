@@ -186,7 +186,9 @@ def _migrate_v2_to_v3(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     options = dict(entry.options)
     for key in behaviour_keys:
-        if key in entry.data and key not in options:
+        # Version 1 stored an unset initial temperature as an explicit None.
+        # Carrying that across would show as a populated-but-empty option.
+        if key in entry.data and key not in options and entry.data[key] is not None:
             options[key] = entry.data[key]
     options.setdefault(CONF_FAN_ON_CONNECT, False)
 

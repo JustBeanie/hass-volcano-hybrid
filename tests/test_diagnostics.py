@@ -12,7 +12,7 @@ from custom_components.volcano_hybrid.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 
-from .conftest import ADDRESS, SERVICE_INFO
+from .conftest import ADDRESS, SERVICE_INFO, make_service_info
 
 
 @pytest.fixture
@@ -63,3 +63,37 @@ async def test_diagnostics_redact_hardware_identifiers(
 
     assert ADDRESS not in str(result)
     assert "VH38NHG700" not in str(result)
+
+
+async def test_diagnostics_never_leak_a_nameless_advertisement(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """A device advertising without a local name must not leak its MAC.
+
+    habluetooth reports the address as the name in that case, which slipped
+    past redaction on real hardware because the test fixture always had a name.
+    """
+    nameless = make_service_info(name=ADDRESS)
+
+    with patch(
+        "custom_components.volcano_hybrid.diagnostics.async_last_service_info",
+        return_value=nameless,
+    ):
+        result = await async_get_config_entry_diagnostics(hass, loaded_entry)
+
+    assert result["connection"]["advertised_name"] is None
+    assert ADDRESS not in str(result)
+    assert ADDRESS.lower() not in str(result).lower()
+
+
+async def test_diagnostics_keep_a_real_advertised_name(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """A genuine name is kept, since it is useful and is not an identifier."""
+    with patch(
+        "custom_components.volcano_hybrid.diagnostics.async_last_service_info",
+        return_value=SERVICE_INFO,
+    ):
+        result = await async_get_config_entry_diagnostics(hass, loaded_entry)
+
+    assert result["connection"]["advertised_name"] == "S&B VOLCANO H"

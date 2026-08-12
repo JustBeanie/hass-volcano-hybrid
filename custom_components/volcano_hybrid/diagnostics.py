@@ -28,6 +28,14 @@ async def async_get_config_entry_diagnostics(
 
     service_info = async_last_service_info(hass, address, connectable=True)
 
+    # habluetooth falls back to the address when an advertisement carries no
+    # local name, so reporting the name verbatim can leak the MAC past
+    # redaction. Drop it in that case rather than redacting a real name, which
+    # is useful for spotting a device advertising under an unexpected name.
+    advertised_name: str | None = service_info.name if service_info else None
+    if advertised_name and advertised_name.upper() == address.upper():
+        advertised_name = None
+
     return async_redact_data(
         {
             "entry": {
@@ -50,7 +58,7 @@ async def async_get_config_entry_diagnostics(
                 ),
                 "rssi": service_info.rssi if service_info else None,
                 "source": service_info.source if service_info else None,
-                "advertised_name": service_info.name if service_info else None,
+                "advertised_name": advertised_name,
                 "manufacturer_data_ids": sorted(service_info.manufacturer_data)
                 if service_info
                 else [],

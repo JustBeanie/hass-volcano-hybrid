@@ -150,3 +150,26 @@ async def test_rediscovery_reloads_a_retrying_entry(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
     assert config_entry.state is ConfigEntryState.LOADED
+
+
+async def test_migration_drops_an_unset_initial_temperature(
+    hass: HomeAssistant, mock_bluetooth: AsyncMock
+) -> None:
+    """A v1-era explicit None does not become a populated-but-empty option."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="S&B VOLCANO H",
+        version=2,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            CONF_ADDRESS: ADDRESS,
+            CONF_INITIAL_TEMP: None,
+            CONF_FAN_ON_CONNECT: False,
+        },
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.version == 3
+    assert entry.options == {CONF_FAN_ON_CONNECT: False}
