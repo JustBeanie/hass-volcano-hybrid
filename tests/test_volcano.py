@@ -47,6 +47,26 @@ def test_current_temperature_is_signed() -> None:
 
 
 @pytest.mark.parametrize(
+    ("raw", "celsius", "fahrenheit"),
+    [
+        ("4cffffff", -18.0, -0.4),  # idle, probe has no reading
+        ("70030000", 88.0, 190.4),  # cooling down after a session
+        ("3a070000", 185.0, 365.0),  # target temperature
+    ],
+)
+def test_captured_wire_values(raw: str, celsius: float, fahrenheit: float) -> None:
+    """Decode bytes captured off a real device against what it displayed.
+
+    The 88.0 C and 185.0 C samples were read from a Volcano Hybrid at the same
+    moment its Home Assistant card showed 190.4 F and 365 F, so these pin the
+    decoder to observed hardware behaviour rather than to our own assumptions.
+    """
+    decoded = _decode_temperature(bytes.fromhex(raw))
+    assert decoded == celsius
+    assert round(decoded * 9 / 5 + 32, 1) == fahrenheit
+
+
+@pytest.mark.parametrize(
     ("raw", "expected"),
     [
         (b"", None),
