@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bleak.backends.device import BLEDevice
@@ -185,12 +185,27 @@ def mock_establish_connection(
 
 
 @pytest.fixture
+def bluetooth_callbacks() -> list[Callable[..., None]]:
+    """Collect the callbacks the integration registers with the manager."""
+    return []
+
+
+@pytest.fixture
 def mock_bluetooth(
     enable_bluetooth: None,
     mock_establish_connection: AsyncMock,
+    bluetooth_callbacks: list[Callable[..., None]],
 ) -> Generator[MagicMock]:
     """Make the device visible to every module that looks it up."""
     ble_device = make_ble_device()
+
+    def _register_callback(
+        _hass: object, callback: Callable[..., None], _matcher: object, _mode: object
+    ) -> Callable[[], None]:
+        """Record the callback so tests can invoke it the way the manager does."""
+        bluetooth_callbacks.append(callback)
+        return lambda: None
+
     with (
         patch(
             "custom_components.volcano_hybrid.async_ble_device_from_address",
@@ -207,7 +222,7 @@ def mock_bluetooth(
         ),
         patch(
             "custom_components.volcano_hybrid.async_register_callback",
-            return_value=lambda: None,
+            _register_callback,
         ),
         patch(
             "custom_components.volcano_hybrid.config_flow.async_discovered_service_info",

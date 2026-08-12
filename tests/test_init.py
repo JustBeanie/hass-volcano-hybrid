@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from unittest.mock import AsyncMock, patch
 
+from homeassistant.components.bluetooth import BluetoothChange
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
@@ -21,7 +23,13 @@ from custom_components.volcano_hybrid.volcano import (
     VolcanoConnectionError,
 )
 
-from .conftest import ADDRESS, DEVICE_NAME, FORMATTED_MAC, FakeBleakClient
+from .conftest import (
+    ADDRESS,
+    DEVICE_NAME,
+    FORMATTED_MAC,
+    FakeBleakClient,
+    make_service_info,
+)
 
 
 async def test_setup_and_unload(
@@ -40,6 +48,32 @@ async def test_setup_and_unload(
     assert await hass.config_entries.async_unload(config_entry.entry_id)
     await hass.async_block_till_done()
     assert config_entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_bluetooth_callback_matches_the_manager_signature(
+    hass: HomeAssistant,
+    mock_bluetooth: AsyncMock,
+    config_entry: MockConfigEntry,
+    bluetooth_callbacks: list[Callable[..., None]],
+) -> None:
+    """The registered callback must accept (service_info, change).
+
+    The Bluetooth manager always passes two positional arguments, including
+    when it replays advertisement history at registration time. A one-argument
+    callback raises TypeError inside the manager and the integration silently
+    stops following the device between adapters and proxies.
+    """
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert len(bluetooth_callbacks) == 1
+    service_info = make_service_info()
+
+    # Exactly how homeassistant/components/bluetooth/manager.py invokes it.
+    bluetooth_callbacks[0](service_info, BluetoothChange.ADVERTISEMENT)
+
+    assert config_entry.runtime_data.device._ble_device is service_info.device
 
 
 async def test_setup_retries_when_out_of_range(

@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.bluetooth import (
+    BluetoothChange,
     BluetoothServiceInfoBleak,
     async_ble_device_from_address,
 )
@@ -69,8 +70,15 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         self.async_set_updated_data(state)
 
     @callback
-    def async_set_ble_device(self, service_info: BluetoothServiceInfoBleak) -> None:
-        """Adopt a fresh BLEDevice so reconnects use the nearest adapter/proxy."""
+    def async_set_ble_device(
+        self, service_info: BluetoothServiceInfoBleak, change: BluetoothChange
+    ) -> None:
+        """Adopt a fresh BLEDevice so reconnects use the nearest adapter/proxy.
+
+        The Bluetooth manager always calls its callbacks with two positional
+        arguments, including when it replays advertisement history at
+        registration time. Omitting ``change`` silently breaks the callback.
+        """
         self.device.set_ble_device(service_info.device)
 
     async def _async_update_data(self) -> VolcanoState:
