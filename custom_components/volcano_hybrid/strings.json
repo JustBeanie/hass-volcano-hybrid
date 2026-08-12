@@ -18,7 +18,7 @@
       },
       "options": {
         "title": "Startup behaviour",
-        "description": "Optional settings applied to {name} ({address}) whenever Home Assistant starts up or reloads this integration.",
+        "description": "Optional settings applied to {name} ({address}) whenever Home Assistant starts up or reloads this integration. You can change these later without re-adding the device.",
         "data": {
           "initial_temperature": "Initial temperature",
           "fan_on_connect": "Start the fan on startup"
@@ -27,6 +27,10 @@
           "initial_temperature": "Target temperature in °C written on startup, between {min_temp} and {max_temp}. Leave empty to keep whatever the device already has.",
           "fan_on_connect": "Run the fan when Home Assistant starts. This applies once per startup or reload, not on every Bluetooth reconnect."
         }
+      },
+      "reconfigure": {
+        "title": "Check the connection",
+        "description": "This will try to connect to {name} at {address} right now. The Bluetooth address of a vaporizer never changes, so there is nothing to re-point — use this to confirm Home Assistant can still reach it."
       }
     },
     "error": {
@@ -36,7 +40,37 @@
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
       "no_devices_found": "[%key:common::config_flow::abort::no_devices_found%]",
-      "not_supported": "This Bluetooth device is not a Volcano Hybrid."
+      "not_supported": "This Bluetooth device is not a Volcano Hybrid.",
+      "reconfigure_successful": "Connected successfully."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Startup behaviour",
+        "description": "These are applied whenever Home Assistant starts up or reloads this integration.",
+        "data": {
+          "initial_temperature": "Initial temperature",
+          "fan_on_connect": "Start the fan on startup"
+        },
+        "data_description": {
+          "initial_temperature": "Target temperature in °C written on startup, between {min_temp} and {max_temp}. Leave empty to keep whatever the device already has.",
+          "fan_on_connect": "Run the fan when Home Assistant starts. This applies once per startup or reload, not on every Bluetooth reconnect."
+        }
+      }
+    }
+  },
+  "issues": {
+    "connection_refused": {
+      "title": "{name} is refusing connections",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{name} is refusing connections",
+            "description": "The vaporizer is advertising, so it is in range, but it will not accept a connection.\n\nA Volcano Hybrid allows only one Bluetooth connection at a time. The usual cause is the Storz & Bickel app on a phone or tablet holding the link.\n\nClose that app — or turn off Bluetooth on the device running it — and then select Submit to retry."
+          }
+        }
+      }
     }
   },
   "entity": {

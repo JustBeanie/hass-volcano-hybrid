@@ -1,7 +1,7 @@
 # Volcano Hybrid for Home Assistant
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Quality scale](https://img.shields.io/badge/quality%20scale-bronze-CD7F32.svg)](https://developers.home-assistant.io/docs/core/integration-quality-scale/)
+[![Quality scale](https://img.shields.io/badge/quality%20scale-platinum-E5E4E2.svg)](https://developers.home-assistant.io/docs/core/integration-quality-scale/)
 
 Control a **Storz & Bickel Volcano Hybrid** vaporizer from Home Assistant over
 Bluetooth LE.
@@ -23,6 +23,19 @@ they can be used in automations, scripts and dashboards like anything else.
   live connection state
 - **Works through ESPHome Bluetooth proxies**, so the vaporizer does not need to
   be in range of the machine running Home Assistant
+
+## Supported devices
+
+| Device | Supported | Notes |
+| --- | --- | --- |
+| Volcano Hybrid | Yes | The Bluetooth model this integration is built for |
+| Volcano Classic | No | No Bluetooth radio — nothing to talk to |
+| Venty, Crafty, Mighty | No | Different Bluetooth protocols; untested here |
+
+Developed against firmware `V01.03.00.00` with BLE firmware `V01.00.00.00`. Other
+firmware revisions are expected to work — the protocol has been stable — but the two
+`Register` switches are disabled by default because their meaning is not confirmed
+across revisions.
 
 ## Requirements
 
@@ -72,12 +85,140 @@ If it does not appear, you can add it manually:
 2. Select **Add integration** and search for **Volcano Hybrid**.
 3. Pick your vaporizer from the list of devices Home Assistant can currently see.
 
-Either route ends on an optional startup step:
+Either route ends on an optional startup step. Both settings can be changed later —
+see below.
 
-| Option | Meaning |
-| --- | --- |
-| Initial temperature | A target temperature written whenever Home Assistant starts or the integration is reloaded. Leave blank to keep whatever the device already has. |
-| Start the fan on startup | Runs the fan once, on startup or reload. It is **not** re-applied when Bluetooth reconnects. |
+## Configuration options
+
+**Settings → Devices & services → Volcano Hybrid → Configure.** Changing either one
+reloads the integration so it takes effect immediately.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| Initial temperature | unset | A target temperature in °C, between 40 and 230, written whenever Home Assistant starts or the integration is reloaded. Leave blank to keep whatever the device already has. |
+| Start the fan on startup | off | Runs the fan once on startup or reload. It is **not** re-applied when Bluetooth reconnects — that behaviour caused the fan to start on its own after any signal blip. |
+
+There is also a **Reconfigure** option on the same menu. A vaporizer's Bluetooth
+address never changes, so there is nothing to re-point; what it does is attempt a
+connection right now and tell you whether it succeeded, which is otherwise only
+visible in the log.
+
+## How data is updated
+
+The integration holds a **persistent Bluetooth connection** rather than connecting
+for each read. Over that connection:
+
+- **Every 10 seconds** it polls the current temperature, target temperature, status
+  register and screen brightness. The heat block moves fast enough that a longer
+  interval makes the climate card feel broken.
+- **On change**, the device pushes its status register — heater and fan state — as a
+  BLE notification, so those update without waiting for the next poll.
+- **Every 10 minutes** it re-reads the things that barely change: serial number,
+  both firmware versions, hours of operation, auto-off delay and the two registers.
+- **After a command**, the new state is published optimistically and a refresh is
+  requested, so the UI does not snap back while waiting for the next poll.
+
+Connections are established through Home Assistant's Bluetooth manager, so they
+follow whichever adapter or ESPHome proxy most recently heard the device. If the
+device stops responding the entities go unavailable and the integration keeps
+retrying; it does not need a restart to recover.
+
+## Use cases
+
+**Step through session temperatures.** Vaporizing the same load repeatedly works
+better at a rising temperature. Watch the fan switch, and each time a bag finishes,
+bump the target to the next value in a list:
+
+```yaml
+triggers:
+  - trigger: state
+    entity_id: switch.volcano_hybrid_fan
+    from: "on"
+    to: "off"
+actions:
+  - action: climate.set_temperature
+    target:
+      entity_id: climate.volcano_hybrid
+    data:
+      temperature: >-
+        {{ [180, 190, 200, 210, 220]
+           | select('>', state_attr('climate.volcano_hybrid', 'temperature') | float)
+           | list | first
+           | default(220) }}
+```
+
+**Tell me when it is ready.** The vaporizer takes a couple of minutes to reach
+temperature and it is easy to wander off. Use the screen itself as the alert:
+
+```yaml
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.volcano_hybrid_temperature
+    above: 179
+actions:
+  - action: volcano_hybrid.screen_animation
+    target:
+      entity_id: climate.volcano_hybrid
+    data:
+      animation_type: breathing
+```
+
+**Fill a bag without standing over it.** Run the fan for a measured time and shut
+everything down afterwards:
+
+```yaml
+actions:
+  - action: volcano_hybrid.fan_timer
+    target:
+      entity_id: climate.volcano_hybrid
+    data:
+      duration: 36
+      turn_off_heat: true
+      turn_off_screen: true
+```
+
+**Never leave it heating.** The device has its own auto-off, but it is capped at
+180 minutes and does not know whether you are home:
+
+```yaml
+triggers:
+  - trigger: state
+    entity_id: person.you
+    to: not_home
+conditions:
+  - condition: state
+    entity_id: switch.volcano_hybrid_heater
+    state: "on"
+actions:
+  - action: switch.turn_off
+    target:
+      entity_id: switch.volcano_hybrid_heater
+```
+
+More, including the full session script this was originally built around, are in
+[`examples/`](examples/).
+
+## Known limitations
+
+These are design constraints, not bugs:
+
+- **One Bluetooth connection at a time.** The vaporizer accepts a single BLE link, so
+  Home Assistant and the Storz & Bickel phone app are mutually exclusive. If the app
+  is connected, Home Assistant cannot be, and the integration will raise a repair
+  issue telling you so.
+- **No temperature while idle.** With the heater off the device reports a −18 °C
+  placeholder rather than an ambient reading, so the temperature sensor is `unknown`
+  until it starts heating. Reporting the placeholder as a real temperature would
+  poison your history.
+- **`Register 2` and `Register 3` are not labelled.** On the stock firmware these
+  appear to control the display during cooling and the vibration alert, but that is
+  not confirmed across firmware revisions, so they are named after the registers they
+  write and ship disabled by default.
+- **Hours of operation only counts hours.** The device exposes minutes separately and
+  the sensor reports whole hours, so it steps rather than climbs smoothly.
+- **No control the device itself does not expose.** There is no bag-volume sensor, no
+  remaining-auto-off countdown and no way to read the physical dial position — the
+  vaporizer does not publish them.
 
 ## Entities
 
@@ -148,12 +289,6 @@ Use `none` to stop an animation and restore the default brightness.
 This integration provides no custom triggers or conditions; use the standard
 state triggers and conditions against its entities.
 
-## Examples
-
-[`examples/`](examples/) contains the "session" automation and script this was
-originally built around — stepping the target temperature through a list after
-each fan cycle.
-
 ## Removal
 
 1. Go to **Settings → Devices & services → Volcano Hybrid**.
@@ -181,6 +316,12 @@ up until it can actually reach the device, by design. Check the log for
 Assistant host, range is whatever that host can hear. Adding an ESPHome
 Bluetooth proxy in the same room fixes this; the integration automatically
 reconnects through whichever adapter or proxy last heard the device.
+
+**Download diagnostics.** Settings → Devices & services → Volcano Hybrid → the
+three-dot menu → *Download diagnostics*. This includes the raw bytes read from each
+characteristic, which is what actually identifies a decoding problem — every bug
+fixed in v2.0.0 was diagnosed from those rather than from entity states. The MAC,
+serial number and scanner source are redacted, so it is safe to attach to an issue.
 
 **Enable debug logging:**
 

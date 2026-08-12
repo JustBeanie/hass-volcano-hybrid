@@ -47,12 +47,14 @@ async def test_bluetooth_discovery_creates_entry(
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == DEVICE_NAME
-    assert result["data"] == {
-        CONF_ADDRESS: ADDRESS,
+    # Behaviour settings live in options so they stay editable afterwards.
+    assert result["data"] == {CONF_ADDRESS: ADDRESS}
+    assert result["options"] == {
         CONF_INITIAL_TEMP: 185,
         CONF_FAN_ON_CONNECT: True,
     }
     assert result["result"].unique_id == FORMATTED_MAC
+    assert result["result"].version == 3
 
 
 async def test_bluetooth_discovery_without_options(
@@ -66,7 +68,8 @@ async def test_bluetooth_discovery_without_options(
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"] == {CONF_ADDRESS: ADDRESS, CONF_FAN_ON_CONNECT: False}
+    assert result["data"] == {CONF_ADDRESS: ADDRESS}
+    assert result["options"] == {CONF_FAN_ON_CONNECT: False}
 
 
 async def test_bluetooth_discovery_of_another_device_is_rejected(

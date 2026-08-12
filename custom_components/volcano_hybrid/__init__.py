@@ -12,7 +12,7 @@ from homeassistant.components.bluetooth import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import (
     config_validation as cv,
@@ -87,15 +87,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> b
         )
     )
 
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+
     # Applied once per entry setup rather than per BLE reconnect: a dropped
     # link used to silently restart the fan and reset the target temperature.
-    if entry.data.get(CONF_FAN_ON_CONNECT):
+    if entry.options.get(CONF_FAN_ON_CONNECT):
         await coordinator.async_turn_fan_on()
-    if (initial_temp := entry.data.get(CONF_INITIAL_TEMP)) is not None:
+    if (initial_temp := entry.options.get(CONF_INITIAL_TEMP)) is not None:
         await coordinator.async_set_temperature(initial_temp)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def _async_options_updated(
+    hass: HomeAssistant, entry: VolcanoConfigEntry
+) -> None:
+    """Reload so changed startup behaviour takes effect immediately."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> bool:
@@ -112,15 +121,18 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     Version 1 stored the address under a bespoke ``mac_address`` key and keyed
     both the device identifier and every entity unique_id on the config entry
     id. Version 2 uses ``CONF_ADDRESS`` and the MAC, so the device survives
-    being removed and re-added.
+    being removed and re-added. Version 3 moves the startup behaviour out of
+    ``data`` and into ``options``, so it can be changed without re-adding.
 
     The registries are updated in place, which keeps existing entity_ids -- and
     therefore existing automations, scripts and dashboards -- working.
     """
-    if entry.version > 2:
+    if entry.version > 3:
         return False
-    if entry.version == 2:
+    if entry.version == 3:
         return True
+    if entry.version == 2:
+        return _migrate_v2_to_v3(hass, entry)
 
     address = entry.data.get(CONF_ADDRESS) or entry.data.get(CONF_MAC_ADDRESS)
     if not address:
@@ -164,4 +176,24 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry, data=new_data, unique_id=formatted, version=2
     )
     _LOGGER.info("Migrated Volcano Hybrid config entry to version 2")
+    return _migrate_v2_to_v3(hass, entry)
+
+
+@callback
+def _migrate_v2_to_v3(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Move the startup behaviour from entry.data to entry.options."""
+    behaviour_keys = (CONF_INITIAL_TEMP, CONF_FAN_ON_CONNECT)
+
+    options = dict(entry.options)
+    for key in behaviour_keys:
+        if key in entry.data and key not in options:
+            options[key] = entry.data[key]
+    options.setdefault(CONF_FAN_ON_CONNECT, False)
+
+    data = {
+        key: value for key, value in entry.data.items() if key not in behaviour_keys
+    }
+
+    hass.config_entries.async_update_entry(entry, data=data, options=options, version=3)
+    _LOGGER.info("Migrated Volcano Hybrid config entry to version 3")
     return True

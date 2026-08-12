@@ -15,7 +15,12 @@ rules:
       information is re-read only every 10 minutes.
   brands:
     status: todo
-    comment: Logos are staged in brands/ pending a PR to home-assistant/brands.
+    comment: |
+      Blocked on artwork, not on process. The images previously staged in
+      brands/ were JPEGs renamed to .png (no alpha, and the @2x file was
+      byte-identical to the base), which the brands repository rejects. A
+      spec-compliant square icon does not exist yet. See the README section on
+      contributing artwork.
   common-modules:
     status: done
     comment: |
@@ -76,53 +81,133 @@ rules:
     comment: Keyed on format_mac(address), with _abort_if_unique_id_configured.
 
   # Silver
-  action-exceptions: done
-  config-entry-unloading: done
+  action-exceptions:
+    status: done
+    comment: |
+      Bad input raises ServiceValidationError from services.py; a device that
+      cannot be reached raises a translated HomeAssistantError from the
+      coordinator's command wrapper.
+  config-entry-unloading:
+    status: done
   docs-configuration-parameters:
-    status: exempt
-    comment: The integration has no options flow.
-  docs-installation-parameters: done
-  entity-unavailable: done
-  integration-owner: done
-  log-when-unavailable: done
-  parallel-updates: todo
+    status: done
+    comment: |
+      Both options are documented in the README's Configuration options
+      section. They were exempt until the options flow existed.
+  docs-installation-parameters:
+    status: done
+  entity-unavailable:
+    status: done
+    comment: |
+      VolcanoEntity.available combines coordinator success with the live
+      connection state. The connectivity binary sensor deliberately stays
+      available so the disconnected state is reportable.
+  integration-owner:
+    status: done
+  log-when-unavailable:
+    status: done
+    comment: |
+      One WARNING when the link is lost and one INFO when it returns, tracked
+      by a flag on the coordinator rather than logged per poll. Covered by a
+      test that asserts the counts across several failed cycles.
+  parallel-updates:
+    status: done
+    comment: |
+      Zero on every platform. The coordinator owns all reads and writes are
+      already serialised by the single GATT lock in volcano.py.
   reauthentication-flow:
     status: exempt
     comment: The device has no authentication.
   test-coverage:
     status: done
-    comment: 96% overall.
+    comment: |
+      99% overall and above 95% for every module individually, which is the
+      actual bar. Enforced in CI with --cov-fail-under=95.
 
   # Gold
-  devices: done
-  diagnostics: todo
-  discovery-update-info: todo
-  discovery: done
-  docs-data-update: todo
-  docs-examples: done
-  docs-known-limitations: done
-  docs-supported-devices: done
-  docs-supported-functions: done
-  docs-troubleshooting: done
-  docs-use-cases: todo
+  devices:
+    status: done
+  diagnostics:
+    status: done
+    comment: |
+      Includes the raw wire values, which is what actually diagnoses decoding
+      problems. The MAC, serial number and scanner source are redacted.
+  discovery-update-info:
+    status: done
+    comment: |
+      A Bluetooth address is immutable and is the unique id, so there is no
+      network information to update. The useful equivalent is implemented
+      instead: rediscovery of an entry sitting in setup_retry reloads it
+      immediately rather than waiting out the backoff.
+  discovery:
+    status: done
+    comment: |
+      Matched on the Storz & Bickel manufacturer id (1736) and the advertised
+      name "S&B VOLCANO*".
+  docs-data-update:
+    status: done
+  docs-examples:
+    status: done
+  docs-known-limitations:
+    status: done
+  docs-supported-devices:
+    status: done
+  docs-supported-functions:
+    status: done
+  docs-troubleshooting:
+    status: done
+  docs-use-cases:
+    status: done
   dynamic-devices:
     status: exempt
     comment: One config entry is one physical vaporizer.
-  entity-category: done
-  entity-device-class: done
-  entity-disabled-by-default: done
-  entity-translations: done
-  exception-translations: done
-  icon-translations: done
-  reconfiguration-flow: todo
-  repair-issues: todo
+  entity-category:
+    status: done
+  entity-device-class:
+    status: done
+    comment: |
+      Applied wherever one exists. The heater/fan/connection status text
+      sensors have no applicable class; the connectivity binary sensor and the
+      temperature and duration sensors carry theirs.
+  entity-disabled-by-default:
+    status: done
+    comment: |
+      The debug entities (raw register, connection status, heater and fan
+      status text) ship disabled. Existing installations keep them enabled.
+  entity-translations:
+    status: done
+  exception-translations:
+    status: done
+  icon-translations:
+    status: done
+  reconfiguration-flow:
+    status: done
+    comment: |
+      An options flow for the startup behaviour, plus a reconfigure step that
+      re-tests the stored address. The address itself is a fixed MAC and is
+      not user-editable by design.
+  repair-issues:
+    status: done
+    comment: |
+      One issue, raised when the vaporizer is advertising but refusing to
+      connect, which means something else holds its single BLE link. Gated on
+      async_address_present so an out-of-range device -- which the user cannot
+      fix by closing an app -- never triggers it.
   stale-devices:
     status: exempt
     comment: One config entry is one physical vaporizer.
 
   # Platinum
-  async-dependency: done
+  async-dependency:
+    status: done
+    comment: bleak-retry-connector is fully async.
   inject-websession:
     status: exempt
-    comment: The integration is Bluetooth, not HTTP.
-  strict-typing: todo
+    comment: The integration speaks Bluetooth, not HTTP.
+  strict-typing:
+    status: done
+    comment: |
+      py.typed marker, full annotations, and mypy at Home Assistant's strict
+      settings in CI. The .strict-typing file the rule refers to lives in the
+      core repository and has no equivalent for a custom integration, so the
+      pyproject mypy config plus the CI job stand in for it.

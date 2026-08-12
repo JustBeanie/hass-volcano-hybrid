@@ -21,6 +21,21 @@ jobs:
       - name: Format
         run: ruff format --check .
 
+  mypy:
+    name: Mypy (strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_test.txt mypy
+      - name: Type check
+        run: mypy
+
   test:
     name: Pytest
     runs-on: ubuntu-latest
@@ -33,11 +48,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements_test.txt
+      # The quality scale asks for >95% on every module, not just overall, so
+      # the report is printed per module and the gate is set package-wide.
       - name: Run tests
         run: |
           python -m pytest tests/ \
             --cov=custom_components.volcano_hybrid \
-            --cov-report=term-missing
+            --cov-report=term-missing \
+            --cov-fail-under=95
       - name: Require full config flow coverage
         run: |
           python -m pytest tests/ -q \

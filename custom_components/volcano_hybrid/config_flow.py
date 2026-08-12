@@ -10,8 +10,15 @@ from homeassistant.components.bluetooth import (
     async_ble_device_from_address,
     async_discovered_service_info,
 )
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigEntryState,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_ADDRESS
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import format_mac
 import voluptuous as vol
 
@@ -45,10 +52,43 @@ def _is_volcano(service_info: BluetoothServiceInfoBleak) -> bool:
     return bool(service_info.name) and "VOLCANO" in service_info.name.upper()
 
 
+def _clean_options(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Normalise the options form, dropping a blank initial temperature."""
+    options: dict[str, Any] = {
+        CONF_FAN_ON_CONNECT: user_input.get(CONF_FAN_ON_CONNECT, False)
+    }
+    if (initial_temp := user_input.get(CONF_INITIAL_TEMP)) is not None:
+        options[CONF_INITIAL_TEMP] = initial_temp
+    return options
+
+
+class VolcanoOptionsFlow(OptionsFlow):
+    """Let the startup behaviour be changed without re-adding the device."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show and save the options."""
+        if user_input is not None:
+            return self.async_create_entry(data=_clean_options(user_input))
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                OPTIONS_SCHEMA, self.config_entry.options
+            ),
+            description_placeholders={
+                "min_temp": str(MIN_TEMP),
+                "max_temp": str(MAX_TEMP),
+                "step": str(TEMP_STEP),
+            },
+        )
+
+
 class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Volcano Hybrid."""
 
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self) -> None:
         """Initialise the flow."""
@@ -62,7 +102,17 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Handle a device discovered by the Bluetooth integration."""
         await self.async_set_unique_id(format_mac(discovery_info.address))
-        self._abort_if_unique_id_configured()
+
+        # A Bluetooth address never changes, so there is no network info to
+        # update. What is worth acting on is a configured entry sitting in
+        # setup_retry: the device is clearly back, so retry now instead of
+        # waiting out the coordinator's backoff.
+        if entry := self.hass.config_entries.async_entry_for_domain_unique_id(
+            DOMAIN, self.unique_id or ""
+        ):
+            if entry.state is ConfigEntryState.SETUP_RETRY:
+                self.hass.config_entries.async_schedule_reload(entry.entry_id)
+            return self.async_abort(reason="already_configured")
 
         if not _is_volcano(discovery_info):
             return self.async_abort(reason="not_supported")
@@ -149,11 +199,11 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
         discovery_info = self._discovery_info
 
         if user_input is not None:
-            data: dict[str, Any] = {CONF_ADDRESS: discovery_info.address}
-            if (initial_temp := user_input.get(CONF_INITIAL_TEMP)) is not None:
-                data[CONF_INITIAL_TEMP] = initial_temp
-            data[CONF_FAN_ON_CONNECT] = user_input.get(CONF_FAN_ON_CONNECT, False)
-            return self.async_create_entry(title=discovery_info.name, data=data)
+            return self.async_create_entry(
+                title=discovery_info.name,
+                data={CONF_ADDRESS: discovery_info.address},
+                options=_clean_options(user_input),
+            )
 
         return self.async_show_form(
             step_id="options",
@@ -166,6 +216,42 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
                 "step": str(TEMP_STEP),
             },
         )
+
+    # -- reconfigure -------------------------------------------------------
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Re-test the stored address.
+
+        A Volcano's identity is a fixed MAC, so there is nothing here to point
+        somewhere else. What is useful is confirming the vaporizer is reachable
+        right now, which is otherwise only observable by watching the log.
+        """
+        entry = self._get_reconfigure_entry()
+        address: str = entry.data[CONF_ADDRESS]
+
+        if user_input is not None:
+            if error := await self._async_test_connection(address):
+                return self.async_show_form(
+                    step_id="reconfigure",
+                    errors={"base": error},
+                    description_placeholders={"name": entry.title, "address": address},
+                )
+            return self.async_update_reload_and_abort(entry, data_updates={})
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            description_placeholders={"name": entry.title, "address": address},
+        )
+
+    # -- options -----------------------------------------------------------
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(entry: ConfigEntry) -> VolcanoOptionsFlow:
+        """Return the options flow."""
+        return VolcanoOptionsFlow()
 
     async def _async_test_connection(self, address: str) -> str | None:
         """Prove we can talk to the device; return an error key on failure."""

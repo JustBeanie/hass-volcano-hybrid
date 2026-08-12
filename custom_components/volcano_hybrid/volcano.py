@@ -201,20 +201,23 @@ class VolcanoHybrid:
         if self._client is not None and self._client.is_connected:
             return self._client
 
-        if self._ble_device is None:
+        if (ble_device := self._ble_device) is None:
             raise VolcanoConnectionError(
                 f"{self.address} is not currently visible to any Bluetooth adapter"
             )
 
-        _LOGGER.debug("%s: connecting via %s", self.address, self._ble_device)
+        _LOGGER.debug("%s: connecting via %s", self.address, ble_device)
         try:
             client = await establish_connection(
                 BleakClientWithServiceCache,
-                self._ble_device,
+                ble_device,
                 self.address,
                 self._handle_disconnect,
                 use_services_cache=True,
-                ble_device_callback=lambda: self._ble_device,
+                # Prefer whatever advertisement arrived most recently, falling
+                # back to the one we started with so retries always have a
+                # device to work from.
+                ble_device_callback=lambda: self._ble_device or ble_device,
             )
         except (BleakNotFoundError, BleakError, TimeoutError) as err:
             raise VolcanoConnectionError(f"Could not connect: {err}") from err

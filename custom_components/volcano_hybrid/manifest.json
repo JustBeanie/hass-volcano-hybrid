@@ -12,15 +12,24 @@
       "connectable": true
     }
   ],
-  "codeowners": ["@JustBeanie"],
+  "codeowners": [
+    "@JustBeanie"
+  ],
   "config_flow": true,
-  "dependencies": ["bluetooth_adapters"],
+  "dependencies": [
+    "bluetooth_adapters"
+  ],
   "documentation": "https://github.com/JustBeanie/hass-volcano-hybrid",
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/JustBeanie/hass-volcano-hybrid/issues",
-  "loggers": ["bleak", "bleak_retry_connector"],
-  "quality_scale": "bronze",
-  "requirements": ["bleak-retry-connector>=3.6.0"],
-  "version": "2.0.0"
+  "loggers": [
+    "bleak",
+    "bleak_retry_connector"
+  ],
+  "quality_scale": "platinum",
+  "requirements": [
+    "bleak-retry-connector>=3.6.0"
+  ],
+  "version": "2.1.0"
 }

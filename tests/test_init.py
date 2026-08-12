@@ -115,13 +115,10 @@ async def test_startup_options_are_applied_once(
     entry = MockConfigEntry(
         domain=DOMAIN,
         title=DEVICE_NAME,
-        version=2,
+        version=3,
         unique_id=FORMATTED_MAC,
-        data={
-            CONF_ADDRESS: ADDRESS,
-            CONF_FAN_ON_CONNECT: True,
-            CONF_INITIAL_TEMP: 180,
-        },
+        data={CONF_ADDRESS: ADDRESS},
+        options={CONF_FAN_ON_CONNECT: True, CONF_INITIAL_TEMP: 180},
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -181,7 +178,7 @@ async def test_migration_preserves_entity_ids(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert entry.version == 2
+    assert entry.version == 3
     assert entry.unique_id == FORMATTED_MAC
     assert entry.data[CONF_ADDRESS] == ADDRESS
 
@@ -207,7 +204,7 @@ async def test_migration_from_a_future_version_is_refused(
 ) -> None:
     """A newer entry than this code understands does not get downgraded."""
     entry = MockConfigEntry(
-        domain=DOMAIN, version=3, unique_id=FORMATTED_MAC, data={CONF_ADDRESS: ADDRESS}
+        domain=DOMAIN, version=4, unique_id=FORMATTED_MAC, data={CONF_ADDRESS: ADDRESS}
     )
     entry.add_to_hass(hass)
 
