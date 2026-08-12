@@ -6,6 +6,9 @@ lock in the decoding bugs that were fixed in the rewrite.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
+from bleak.exc import BleakError
 import pytest
 
 from custom_components.volcano_hybrid.volcano import (
@@ -233,3 +236,104 @@ async def test_missing_characteristics_are_tolerated(
     assert state.connected is True
     assert state.serial_number is None
     assert state.register2 is None
+
+
+async def test_connect_failure_is_wrapped(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """A bleak failure surfaces as VolcanoConnectionError, not a bleak type."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+
+    mock_establish_connection.side_effect = BleakError("no route")
+    with pytest.raises(VolcanoConnectionError, match="Could not connect"):
+        await device.async_connect()
+
+
+async def test_notifications_are_optional(
+    mock_establish_connection: object, fake_client: FakeBleakClient
+) -> None:
+    """A device that refuses notify still connects; polling covers it."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+
+    with patch.object(fake_client, "start_notify", side_effect=BleakError("nope")):
+        await device.async_connect()
+
+    assert device.connected is True
+    assert device._notifications_started is False
+
+
+async def test_disconnect_tolerates_a_failing_client(
+    mock_establish_connection: object, fake_client: FakeBleakClient
+) -> None:
+    """Teardown never raises, even if the link is already gone."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_connect()
+
+    with (
+        patch.object(fake_client, "stop_notify", side_effect=BleakError("gone")),
+        patch.object(fake_client, "disconnect", side_effect=BleakError("gone")),
+    ):
+        await device.async_disconnect()
+
+    assert device.state.connected is False
+
+
+async def test_write_failure_is_wrapped(
+    mock_establish_connection: object, fake_client: FakeBleakClient
+) -> None:
+    """A failed GATT write surfaces as VolcanoConnectionError."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+
+    with (
+        patch.object(fake_client, "write_gatt_char", side_effect=BleakError("nope")),
+        pytest.raises(VolcanoConnectionError, match="Write to"),
+    ):
+        await device.async_turn_heater_on()
+
+
+async def test_notification_handler_notifies_listeners(
+    mock_establish_connection: object, fake_client: FakeBleakClient
+) -> None:
+    """A status notification that changes state reaches the listener."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+
+    seen: list[bool] = []
+    unregister = device.register_callback(lambda state: seen.append(state.heater_on))
+
+    device._notification_handler(None, bytearray(RAW_STATUS_HEATING))
+    assert seen == [True]
+
+    # An identical repeat changes nothing, so it does not re-notify.
+    device._notification_handler(None, bytearray(RAW_STATUS_HEATING))
+    assert seen == [True]
+
+    unregister()
+    device._notification_handler(None, bytearray(b"\x00\x00"))
+    assert seen == [True]
+
+
+async def test_auto_off_falls_back_to_the_second_characteristic(
+    mock_establish_connection: object, fake_client: FakeBleakClient
+) -> None:
+    """Firmware without the setting characteristic uses the other one."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+
+    original = fake_client.write_gatt_char
+
+    async def _fail_setting(uuid: str, data: bytes, response: bool = True) -> None:
+        if uuid == CHAR_AUTO_OFF_SETTING:
+            raise BleakError("not here")
+        await original(uuid, data, response)
+
+    with patch.object(fake_client, "write_gatt_char", _fail_setting):
+        await device.async_set_auto_off_minutes(45)
+
+    assert device.state.auto_off_minutes == 45

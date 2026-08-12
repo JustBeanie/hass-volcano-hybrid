@@ -294,3 +294,17 @@ async def test_diagnostic_sensors(
     raw = hass.states.get("sensor.s_b_volcano_h_raw_register")
     assert raw.state not in (None, "unknown")
     assert raw.attributes["current_temperature"] == "4cffffff"
+
+
+async def test_light_before_the_first_brightness_read(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """Brightness and on/off are unknown, not guessed, until the device answers."""
+    coordinator = loaded_entry.runtime_data
+    coordinator.data.brightness = None
+    coordinator.async_set_updated_data(coordinator.data)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(SCREEN)
+    assert state.state == "unknown"
+    assert state.attributes.get(ATTR_BRIGHTNESS) is None

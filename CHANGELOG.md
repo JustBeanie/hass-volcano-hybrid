@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-08-11
+
+Reaches **Platinum** on the [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/),
+up from Bronze. Existing installations migrate automatically and keep every entity ID.
+
+### Added
+
+- **Options flow.** The initial temperature and "start the fan on startup" settings
+  moved out of the config entry data and into options, so they can be changed from
+  the Configure button instead of requiring the integration to be deleted and
+  re-added. Config entry version 3; the move happens in place.
+- **Reconfigure flow** that re-tests the stored address, so "can Home Assistant
+  still reach my vaporizer?" is answerable without reading the log.
+- **Diagnostics**, including the raw bytes read from each characteristic. Every
+  decoding bug fixed in 2.0.0 was diagnosed from those rather than from entity
+  states. The MAC, serial number and scanner source are redacted.
+- **A repair issue for connection contention.** A Volcano accepts one Bluetooth
+  connection at a time, so a device that is advertising but refusing to connect
+  almost always means the Storz & Bickel phone app is holding the link. The repair
+  says so and offers a retry. It is gated on the device actually being in range, so
+  a vaporizer that is simply switched off never raises it.
+- **Faster recovery.** A device rediscovered while its entry is retrying reloads
+  immediately instead of waiting out the backoff.
+- Documented supported devices, configuration options, how data is refreshed, use
+  cases and known limitations.
+
+### Changed
+
+- Connectivity is now logged once when it drops and once when it returns, rather
+  than relying on the coordinator's incidental behaviour.
+- `PARALLEL_UPDATES = 0` on every platform.
+- Fully strict-typed: `py.typed`, complete annotations, and mypy at Home Assistant's
+  strict settings in CI.
+- Test coverage is now above 95% for **every module** individually, not just
+  overall, and CI enforces it. 94 tests, 99% overall.
+
+### Fixed
+
+- A repair-issue check read a mis-renamed attribute, raising `AttributeError` inside
+  the update-failure handler where the coordinator swallowed it. Caught before
+  release by the test added for the feature.
+
 ## [2.0.0] - 2026-08-10
 
 Rebuilt on Home Assistant's Bluetooth stack and brought up to the

@@ -13,7 +13,12 @@ from homeassistant.const import CONF_ADDRESS
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.volcano_hybrid.const import CONF_MAC_ADDRESS, DOMAIN
+from custom_components.volcano_hybrid.const import (
+    CONF_FAN_ON_CONNECT,
+    CONF_INITIAL_TEMP,
+    CONF_MAC_ADDRESS,
+    DOMAIN,
+)
 from custom_components.volcano_hybrid.volcano import (
     CHAR_AUTO_OFF_SETTING,
     CHAR_BLE_FIRMWARE,
@@ -238,9 +243,26 @@ def config_entry() -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         title=DEVICE_NAME,
-        version=2,
+        version=3,
         unique_id=FORMATTED_MAC,
         data={CONF_ADDRESS: ADDRESS},
+        options={CONF_FAN_ON_CONNECT: False},
+    )
+
+
+@pytest.fixture
+def v2_config_entry() -> MockConfigEntry:
+    """Return a version 2 entry, with the behaviour settings still in data."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title=DEVICE_NAME,
+        version=2,
+        unique_id=FORMATTED_MAC,
+        data={
+            CONF_ADDRESS: ADDRESS,
+            CONF_FAN_ON_CONNECT: True,
+            CONF_INITIAL_TEMP: 180,
+        },
     )
 
 

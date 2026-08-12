@@ -25,6 +25,10 @@ from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
 from .entity import VolcanoEntity
 from .volcano import VolcanoState
 
+# The coordinator owns every read, and writes are already serialised by the
+# single GATT lock in volcano.py, so Home Assistant does not need to throttle.
+PARALLEL_UPDATES = 0
+
 
 @dataclass(frozen=True, kw_only=True)
 class VolcanoNumberEntityDescription(NumberEntityDescription):

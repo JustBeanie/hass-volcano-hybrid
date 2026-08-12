@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.climate import (
+from homeassistant.components.climate import ClimateEntity
+
+# Imported from .const rather than the package root: Home Assistant re-exports
+# these implicitly, which mypy rejects under no_implicit_reexport.
+from homeassistant.components.climate.const import (
     FAN_OFF,
     FAN_ON,
-    ClimateEntity,
     ClimateEntityFeature,
     HVACAction,
     HVACMode,
@@ -19,6 +22,10 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import MAX_TEMP, MIN_TEMP, TEMP_STEP
 from .coordinator import VolcanoConfigEntry
 from .entity import VolcanoEntity
+
+# The coordinator owns every read, and writes are already serialised by the
+# single GATT lock in volcano.py, so Home Assistant does not need to throttle.
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(

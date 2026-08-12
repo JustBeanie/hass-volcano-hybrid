@@ -15,6 +15,9 @@ CONF_MAC_ADDRESS = "mac_address"
 CONF_INITIAL_TEMP = "initial_temperature"
 CONF_FAN_ON_CONNECT = "fan_on_connect"
 
+# Repair issues.
+ISSUE_CONNECTION_REFUSED = "connection_refused"
+
 # Actions.
 SERVICE_FAN_TIMER = "fan_timer"
 SERVICE_SCREEN_ANIMATION = "screen_animation"

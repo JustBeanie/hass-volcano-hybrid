@@ -11,11 +11,13 @@ from typing import Any
 from homeassistant.components.bluetooth import (
     BluetoothChange,
     BluetoothServiceInfoBleak,
+    async_address_present,
     async_ble_device_from_address,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -26,6 +28,7 @@ from .const import (
     ANIMATION_NONE,
     DEFAULT_BRIGHTNESS,
     DOMAIN,
+    ISSUE_CONNECTION_REFUSED,
     UPDATE_INTERVAL,
 )
 from .volcano import VolcanoConnectionError, VolcanoHybrid, VolcanoState
@@ -37,6 +40,10 @@ type VolcanoConfigEntry = ConfigEntry[VolcanoDataUpdateCoordinator]
 ANIMATION_STEP = 8
 ANIMATION_FRAME_DELAY = 0.1
 BLINK_FRAME_DELAY = 0.5
+
+# The vaporizer accepts one BLE connection at a time. This many consecutive
+# refusals while it is still advertising means something else holds the link.
+CONTENTION_THRESHOLD = 3
 
 
 class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
@@ -62,6 +69,8 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         self.address = device.address
         self._fan_timer_task: asyncio.Task[None] | None = None
         self._animation_task: asyncio.Task[None] | None = None
+        self._was_available = True
+        self.consecutive_failures = 0
         entry.async_on_unload(device.register_callback(self._handle_push_update))
 
     @callback
@@ -91,9 +100,54 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
             self.device.set_ble_device(ble_device)
 
         try:
-            return await self.device.async_update()
+            state = await self.device.async_update()
         except VolcanoConnectionError as err:
+            self._handle_update_failure(err)
             raise UpdateFailed(str(err)) from err
+
+        self._handle_update_success()
+        return state
+
+    @callback
+    def _handle_update_failure(self, err: VolcanoConnectionError) -> None:
+        """Log the outage once and raise a repair issue if this is contention."""
+        self.consecutive_failures += 1
+
+        if self._was_available:
+            self._was_available = False
+            _LOGGER.warning(
+                "Lost connection to the Volcano Hybrid at %s: %s", self.address, err
+            )
+
+        # Only a device that is advertising but refusing to connect points at
+        # something else holding the link. One that is simply switched off or
+        # out of range is not something the user can fix by closing an app.
+        if self.consecutive_failures == CONTENTION_THRESHOLD and async_address_present(
+            self.hass, self.address, connectable=True
+        ):
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                f"{ISSUE_CONNECTION_REFUSED}_{self.config_entry.entry_id}",
+                is_fixable=True,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=ISSUE_CONNECTION_REFUSED,
+                translation_placeholders={"name": self.config_entry.title},
+                data={"entry_id": self.config_entry.entry_id},
+            )
+
+    @callback
+    def _handle_update_success(self) -> None:
+        """Log recovery once and clear any contention issue."""
+        self._consecutive_failures = 0
+        if not self._was_available:
+            self._was_available = True
+            _LOGGER.info("Reconnected to the Volcano Hybrid at %s", self.address)
+        ir.async_delete_issue(
+            self.hass,
+            DOMAIN,
+            f"{ISSUE_CONNECTION_REFUSED}_{self.config_entry.entry_id}",
+        )
 
     async def async_shutdown_device(self) -> None:
         """Stop background work and drop the BLE link."""

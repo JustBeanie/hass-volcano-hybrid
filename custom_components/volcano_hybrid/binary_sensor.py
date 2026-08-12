@@ -13,6 +13,10 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
 from .entity import VolcanoEntity
 
+# The coordinator owns every read, and writes are already serialised by the
+# single GATT lock in volcano.py, so Home Assistant does not need to throttle.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

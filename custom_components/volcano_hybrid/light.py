@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
+from homeassistant.components.light import ATTR_BRIGHTNESS, LightEntity
+
+# ColorMode comes from .const because the package root re-exports it
+# implicitly, which mypy rejects under no_implicit_reexport.
+from homeassistant.components.light.const import ColorMode
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util.color import brightness_to_value, value_to_brightness
@@ -15,6 +19,11 @@ from .entity import VolcanoEntity
 
 # The device takes 0-100; Home Assistant lights are 0-255.
 BRIGHTNESS_SCALE = (1, 100)
+
+
+# The coordinator owns every read, and writes are already serialised by the
+# single GATT lock in volcano.py, so Home Assistant does not need to throttle.
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
