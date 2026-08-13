@@ -1,37 +1,54 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Something is not working
 title: ''
 labels: bug
 assignees: ''
 
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+**What happened**
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+A clear description of the problem, and what you expected instead.
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+**Diagnostics**
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+Please attach a diagnostics dump — this is by far the most useful thing you can
+include. Settings → Devices & services → Volcano Hybrid → the three-dot menu →
+**Download diagnostics**.
 
-**Environment (please complete the following information):**
- - Home Assistant version: [e.g. 2023.8.0]
- - Integration version: [e.g. 0.1.0]
- - Volcano Hybrid firmware version: [if known]
+It contains the raw bytes read from each Bluetooth characteristic, which is what
+actually identifies a decoding problem. Your MAC address and serial number are
+redacted, so it is safe to attach here.
 
-**Home Assistant logs**
-\`\`\`
-Paste any relevant logs here
-\`\`\`
+**Logs**
 
-**Additional context**
-Add any other context about the problem here.
+Add this to `configuration.yaml`, restart, reproduce the problem, then paste the
+relevant lines:
+
+```yaml
+logger:
+  logs:
+    custom_components.volcano_hybrid: debug
+```
+
+```
+paste logs here
+```
+
+**Setup**
+
+- Home Assistant version:
+- Integration version:
+- Volcano Hybrid firmware version: <!-- the "Firmware version" sensor on the device page -->
+- How the vaporizer is reached: <!-- Bluetooth adapter on the HA host, or an ESPHome Bluetooth proxy -->
+- Signal strength if known: <!-- the "rssi" field in the diagnostics dump -->
+
+**Before you file**
+
+- [ ] The Storz & Bickel phone app is not connected to the vaporizer — it only
+      accepts one Bluetooth connection at a time
+- [ ] The vaporizer appears under Settings → Devices & services → Bluetooth →
+      three-dot menu → Advertisement monitor
+
+**Anything else**
