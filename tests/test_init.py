@@ -67,11 +67,14 @@ async def test_bluetooth_callback_matches_the_manager_signature(
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
-    assert len(bluetooth_callbacks) == 1
+    # Two registrations: the component-scope setup-retry watcher, then the
+    # per-entry one that follows the device between adapters and proxies.
+    assert len(bluetooth_callbacks) == 2
     service_info = make_service_info()
 
-    # Exactly how homeassistant/components/bluetooth/manager.py invokes it.
-    bluetooth_callbacks[0](service_info, BluetoothChange.ADVERTISEMENT)
+    for registered in bluetooth_callbacks:
+        # Exactly how homeassistant/components/bluetooth/manager.py invokes it.
+        registered(service_info, BluetoothChange.ADVERTISEMENT)
 
     assert config_entry.runtime_data.device._ble_device is service_info.device
 
@@ -95,14 +98,75 @@ async def test_setup_retries_when_out_of_range(
 async def test_setup_retries_when_connection_fails(
     hass: HomeAssistant, mock_bluetooth: AsyncMock, config_entry: MockConfigEntry
 ) -> None:
-    """A failed connection raises ConfigEntryNotReady rather than half loading."""
+    """A failed first poll raises ConfigEntryNotReady rather than half loading.
+
+    Setup no longer connects on its own -- the coordinator's first refresh does
+    it -- so this exercises the path through async_config_entry_first_refresh.
+    """
     config_entry.add_to_hass(hass)
 
     with patch(
-        "custom_components.volcano_hybrid.VolcanoHybrid.async_connect",
+        "custom_components.volcano_hybrid.VolcanoHybrid.async_update",
         side_effect=VolcanoConnectionError("nope"),
     ):
         assert not await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert config_entry.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_an_advertisement_rescues_an_entry_stuck_in_setup_retry(
+    hass: HomeAssistant,
+    mock_bluetooth: AsyncMock,
+    config_entry: MockConfigEntry,
+    bluetooth_callbacks: list[Callable[..., None]],
+) -> None:
+    """Hearing the device again reloads the entry instead of waiting out backoff.
+
+    Setup needs the vaporiser reachable, so unplugging it around a restart parks
+    the entry in SETUP_RETRY behind an exponential backoff -- 29 minutes on a
+    real instance. The component-scope watcher has to do this because the
+    per-entry callback is torn down along with the failed setup.
+    """
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.volcano_hybrid.async_ble_device_from_address",
+        return_value=None,
+    ):
+        assert not await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert config_entry.state is ConfigEntryState.SETUP_RETRY
+
+    # The watcher registered during async_setup, before the entry gave up.
+    assert bluetooth_callbacks
+    bluetooth_callbacks[0](make_service_info(), BluetoothChange.ADVERTISEMENT)
+    await hass.async_block_till_done()
+
+    assert config_entry.state is ConfigEntryState.LOADED
+
+
+async def test_an_advertisement_for_another_device_is_ignored(
+    hass: HomeAssistant,
+    mock_bluetooth: AsyncMock,
+    config_entry: MockConfigEntry,
+    bluetooth_callbacks: list[Callable[..., None]],
+) -> None:
+    """A different address must not reload an unrelated retrying entry."""
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.volcano_hybrid.async_ble_device_from_address",
+        return_value=None,
+    ):
+        assert not await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        bluetooth_callbacks[0](
+            make_service_info(address="11:22:33:44:55:66"),
+            BluetoothChange.ADVERTISEMENT,
+        )
         await hass.async_block_till_done()
 
     assert config_entry.state is ConfigEntryState.SETUP_RETRY

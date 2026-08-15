@@ -5,14 +5,25 @@ from __future__ import annotations
 import logging
 from unittest.mock import AsyncMock, patch
 
+from homeassistant.components.bluetooth import BluetoothChange
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.volcano_hybrid.const import DOMAIN, ISSUE_CONNECTION_REFUSED
-from custom_components.volcano_hybrid.volcano import VolcanoConnectionError
+from custom_components.volcano_hybrid.const import (
+    ACTIVE_INTERVAL,
+    DOMAIN,
+    IDLE_INTERVAL,
+    ISSUE_CONNECTION_REFUSED,
+)
+from custom_components.volcano_hybrid.volcano import (
+    CHAR_STATUS_REGISTER,
+    VolcanoConnectionError,
+)
+
+from .conftest import RAW_STATUS_HEATING, FakeBleakClient, make_service_info
 
 CLIMATE = "climate.s_b_volcano_h"
 
@@ -179,3 +190,142 @@ async def test_contention_can_be_raised_more_than_once(
 
     await _episode()
     assert registry.async_get_issue(DOMAIN, issue_id) is not None
+
+
+async def test_an_absent_device_is_not_reconnected_to(
+    hass: HomeAssistant,
+    loaded_entry: MockConfigEntry,
+    fake_client: FakeBleakClient,
+    mock_establish_connection: AsyncMock,
+) -> None:
+    """Losing sight of the vaporiser clears the cached BLEDevice.
+
+    Keeping the last known one meant every poll of an unplugged Volcano worked
+    through a full connection ladder against six proxies while holding the GATT
+    lock, so commands queued behind it. There is nothing to reconnect to; the
+    poll has to fail immediately instead.
+    """
+    coordinator = loaded_entry.runtime_data
+    coordinator.device._handle_disconnect(fake_client)
+    before = mock_establish_connection.call_count
+
+    with patch(
+        "custom_components.volcano_hybrid.coordinator.async_ble_device_from_address",
+        return_value=None,
+    ):
+        await coordinator.async_refresh()
+
+    assert coordinator.device._ble_device is None
+    assert coordinator.last_update_success is False
+    assert mock_establish_connection.call_count == before
+
+
+async def test_a_live_link_is_kept_even_with_no_advertisement(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """A connected device often stops advertising; that must not drop the link."""
+    coordinator = loaded_entry.runtime_data
+
+    with patch(
+        "custom_components.volcano_hybrid.coordinator.async_ble_device_from_address",
+        return_value=None,
+    ):
+        await coordinator.async_refresh()
+
+    assert coordinator.last_update_success is True
+    assert coordinator.data.connected is True
+
+
+async def test_an_advertisement_refreshes_a_dropped_link(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry, fake_client: FakeBleakClient
+) -> None:
+    """Hearing the device again reconnects now, not at the next scheduled poll."""
+    coordinator = loaded_entry.runtime_data
+    coordinator.device._handle_disconnect(fake_client)
+
+    with patch.object(coordinator, "async_request_refresh") as refresh:
+        coordinator.async_set_ble_device(
+            make_service_info(), BluetoothChange.ADVERTISEMENT
+        )
+        await hass.async_block_till_done()
+
+    assert refresh.call_count == 1
+
+
+async def test_an_advertisement_while_connected_does_not_refresh(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """A healthy link just adopts the new device; advertisements are frequent."""
+    coordinator = loaded_entry.runtime_data
+
+    with patch.object(coordinator, "async_request_refresh") as refresh:
+        service_info = make_service_info()
+        coordinator.async_set_ble_device(service_info, BluetoothChange.ADVERTISEMENT)
+        await hass.async_block_till_done()
+
+    assert refresh.call_count == 0
+    assert coordinator.device._ble_device is service_info.device
+
+
+async def test_a_disconnect_is_not_recorded_as_a_successful_update(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry, fake_client: FakeBleakClient
+) -> None:
+    """A dropped link notifies listeners without claiming the poll succeeded.
+
+    async_set_updated_data sets last_update_success and resets the refresh
+    timer, so routing a disconnect through it left the failure counter at zero
+    and the diagnostic sensors reporting available right through an outage.
+    """
+    coordinator = loaded_entry.runtime_data
+
+    with (
+        patch.object(coordinator, "async_set_updated_data") as set_data,
+        patch.object(coordinator, "async_update_listeners") as notify,
+    ):
+        coordinator.device._handle_disconnect(fake_client)
+
+    assert set_data.call_count == 0
+    assert notify.call_count == 1
+
+
+async def test_a_connected_push_still_publishes_data(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """A live notification is a real update and still resets the poll timer."""
+    coordinator = loaded_entry.runtime_data
+
+    with patch.object(coordinator, "async_set_updated_data") as set_data:
+        coordinator.device._notification_handler(None, bytearray(RAW_STATUS_HEATING))
+
+    assert set_data.call_count == 1
+
+
+async def test_the_interval_follows_whether_the_device_is_working(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry, fake_client: FakeBleakClient
+) -> None:
+    """Poll fast while it is heating, slowly once it is sitting idle."""
+    coordinator = loaded_entry.runtime_data
+
+    # The fixture device is idle, so the first refresh should already have
+    # backed off -- there is no ramp to watch.
+    assert coordinator.update_interval == IDLE_INTERVAL
+
+    fake_client.reads[CHAR_STATUS_REGISTER] = RAW_STATUS_HEATING
+    await coordinator.async_refresh()
+    assert coordinator.update_interval == ACTIVE_INTERVAL
+
+    fake_client.reads[CHAR_STATUS_REGISTER] = bytes.fromhex("00000000")
+    await coordinator.async_refresh()
+    assert coordinator.update_interval == IDLE_INTERVAL
+
+
+async def test_a_command_restores_the_fast_interval(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """Pressing heat must not leave the card a minute behind the ramp."""
+    coordinator = loaded_entry.runtime_data
+    assert coordinator.update_interval == IDLE_INTERVAL
+
+    await coordinator.async_turn_heater_on()
+
+    assert coordinator.update_interval == ACTIVE_INTERVAL

@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-08-15
+
+Unplugging the vaporizer and plugging it back in is how the thing is actually used,
+but the integration treated the device returning as an error to recover from rather
+than the expected case. Recovery worked by luck: on one instance the same day it
+took under a second four times, eleven seconds once, twenty-nine minutes once and
+just under eight hours once.
+
+### Fixed
+
+- **A device Home Assistant could no longer hear was still connected to.** The
+  coordinator only ever *overwrote* the cached `BLEDevice`, never cleared it, so
+  after the first setup it was never `None` and the cheap "not currently visible"
+  guard was dead code. Every poll of an unplugged Volcano instead worked through a
+  full connection ladder — nine attempts, six proxies — while holding the GATT lock.
+  Since every command needs that same lock, pressing the heater switch during an
+  outage blocked for the length of the ladder and then failed, which is what the
+  dashboard shows as the device not responding. The lookup result is now recorded
+  whether or not it found anything, and connection attempts are capped.
+- **Nothing reacted to the device coming back.** A fresh advertisement was adopted
+  for future reconnects but never triggered one, so recovery waited for a scheduled
+  poll to happen to land after the device returned and outside an in-flight retry.
+  Hearing the vaporizer now refreshes immediately when the link is down.
+- **An entry that failed setup waited out its backoff.** Setup needs the device
+  reachable, so having it switched off at startup parked the entry in `SETUP_RETRY`
+  behind an exponential backoff — the twenty-nine minute case. The advertisement
+  callback that would have noticed the device return was registered *after* the
+  point that raises, and was entry-scoped, so it was torn down along with the failed
+  setup. The watcher now lives at component scope, above any individual entry.
+- **A dropped link was recorded as a successful update.** The disconnect handler
+  published through `async_set_updated_data`, which sets `last_update_success` and
+  resets the refresh timer. So an outage counted as a success: the consecutive
+  failure counter never moved, which skewed the connection-contention repair, and
+  the diagnostic sensors kept reporting available right through it.
+- **A link that answered nothing reported as connected.** Failed reads are tolerated
+  individually, which is right for firmware missing an optional characteristic, but
+  a proxy can drop the device without bleak firing the disconnect callback. Every
+  read failing now fails the poll instead of stranding the entities on stale values.
+
+### Changed
+
+- **Polling now follows what the device is doing.** 10 seconds while the heater or
+  fan is running, 60 once both are off, and straight back to 10 on any command. The
+  10 second figure was chosen so the climate card keeps up with the heat block, and
+  there is no ramp to keep up with on a vaporizer that is sitting cold — it was
+  costing roughly 8,600 polls and ~2,100 recorder rows a day to watch nothing
+  happen. Safe because the status register is a notification subscription, so
+  pressing heat on the device itself still shows up straight away.
+- **Serial number and firmware are read once per connection** rather than every ten
+  minutes. They cannot change while a connection is open. A reconnect reads them
+  again, since it may be a different device.
+- **Setup no longer connects on its own.** The coordinator's first refresh already
+  connects, so doing it beforehand was a second round trip and a second, differently
+  worded failure message for the same problem. The now-unused `cannot_connect`
+  exception string has gone with it.
+
 ## [3.0.0] - 2026-08-11
 
 **Breaking.** The two custom actions are gone. Any automation, script or dashboard

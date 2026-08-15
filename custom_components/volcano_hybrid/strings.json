@@ -143,9 +143,6 @@
     }
   },
   "exceptions": {
-    "cannot_connect": {
-      "message": "Could not connect to the Volcano Hybrid at {address}: {error}"
-    },
     "not_in_range": {
       "message": "The Volcano Hybrid at {address} is not visible to any Bluetooth adapter or proxy."
     },

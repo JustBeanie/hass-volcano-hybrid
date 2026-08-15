@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Coroutine
+from datetime import timedelta
 import logging
 from typing import Any
 
@@ -18,7 +19,12 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, ISSUE_CONNECTION_REFUSED, UPDATE_INTERVAL
+from .const import (
+    ACTIVE_INTERVAL,
+    DOMAIN,
+    IDLE_INTERVAL,
+    ISSUE_CONNECTION_REFUSED,
+)
 from .volcano import VolcanoConnectionError, VolcanoHybrid, VolcanoState
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,7 +53,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
             _LOGGER,
             config_entry=entry,
             name=entry.title,
-            update_interval=UPDATE_INTERVAL,
+            update_interval=ACTIVE_INTERVAL,
         )
         self.device = device
         self.address = device.address
@@ -58,6 +64,15 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
     @callback
     def _handle_push_update(self, state: VolcanoState) -> None:
         """Handle a state update pushed from the device."""
+        if not state.connected:
+            # A dropped link is not a successful poll. async_set_updated_data
+            # would record it as one -- it sets last_update_success and resets
+            # the refresh timer -- which left the failure counter at zero and
+            # the diagnostic sensors reporting available through an outage.
+            # The coordinator's data is the same VolcanoState object the device
+            # mutates, so listeners still see the new availability.
+            self.async_update_listeners()
+            return
         self.async_set_updated_data(state)
 
     @callback
@@ -72,14 +87,23 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         """
         self.device.set_ble_device(service_info.device)
 
+        # Hearing the vaporiser again is the earliest possible signal that it is
+        # back. Waiting for the next scheduled poll instead made recovery from a
+        # power cycle take anywhere from a second to several minutes. The
+        # coordinator debounces, so an advertisement burst cannot storm it.
+        if not self.device.connected:
+            self.config_entry.async_create_task(
+                self.hass, self.async_request_refresh(), eager_start=True
+            )
+
     async def _async_update_data(self) -> VolcanoState:
         """Fetch the current device state."""
-        if (
-            ble_device := async_ble_device_from_address(
-                self.hass, self.address, connectable=True
-            )
-        ) is not None:
-            self.device.set_ble_device(ble_device)
+        # Assigned unconditionally: None means nothing can hear the device, and
+        # recording that lets the connect attempt fail immediately instead of
+        # working through a retry ladder against a BLEDevice that has gone.
+        self.device.set_ble_device(
+            async_ble_device_from_address(self.hass, self.address, connectable=True)
+        )
 
         try:
             state = await self.device.async_update()
@@ -88,7 +112,16 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
             raise UpdateFailed(str(err)) from err
 
         self._handle_update_success()
+        self._async_set_interval(
+            ACTIVE_INTERVAL if state.heater_on or state.fan_on else IDLE_INTERVAL
+        )
         return state
+
+    @callback
+    def _async_set_interval(self, interval: timedelta) -> None:
+        """Switch polling cadence, leaving the schedule alone if unchanged."""
+        if self.update_interval != interval:
+            self.update_interval = interval
 
     @callback
     def _handle_update_failure(self, err: VolcanoConnectionError) -> None:
@@ -147,6 +180,10 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
                 translation_key="command_failed",
                 translation_placeholders={"error": str(err)},
             ) from err
+        # Any command means someone is using the device, so drop back to the
+        # fast cadence before publishing -- otherwise turning the heater on from
+        # an idle state would leave the climate card a minute behind the ramp.
+        self._async_set_interval(ACTIVE_INTERVAL)
         # Publish the optimistic result straight away. The refresh below is
         # debounced, so without this the UI snaps back to the previous state
         # for up to a full poll interval after every button press.

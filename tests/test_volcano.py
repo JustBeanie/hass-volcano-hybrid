@@ -15,6 +15,7 @@ from custom_components.volcano_hybrid.volcano import (
     CHAR_AUTO_OFF_SETTING,
     CHAR_BRIGHTNESS,
     CHAR_CURRENT_TEMP,
+    CHAR_SERIAL_NUMBER,
     CHAR_STATUS_REGISTER,
     CHAR_TARGET_TEMP,
     MASK_FAN,
@@ -211,6 +212,81 @@ async def test_connect_without_a_ble_device_raises() -> None:
     device = VolcanoHybrid(ADDRESS)
     with pytest.raises(VolcanoConnectionError):
         await device.async_connect()
+
+
+async def test_losing_sight_of_the_device_stops_connection_attempts(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """A cleared BLEDevice fails immediately rather than working a retry ladder.
+
+    Nothing can be reached through a BLEDevice no adapter or proxy can still
+    hear, so attempting it just holds the GATT lock -- which every command also
+    needs -- for the length of the connection ladder.
+    """
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+
+    device._handle_disconnect(fake_client)
+    device.set_ble_device(None)
+    before = mock_establish_connection.call_count
+
+    with pytest.raises(VolcanoConnectionError, match="not currently visible"):
+        await device.async_update()
+
+    assert mock_establish_connection.call_count == before
+
+
+async def test_a_link_that_answers_nothing_is_treated_as_disconnected(
+    mock_establish_connection: object, fake_client: FakeBleakClient
+) -> None:
+    """Every read failing means the link is dead, whatever bleak still thinks.
+
+    A proxy can drop the device without firing the disconnect callback. Saying
+    "connected" then stranded every entity on stale values, because only the
+    coordinator's failure path recovers a link.
+    """
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+
+    with (
+        patch.object(fake_client, "read_gatt_char", side_effect=BleakError("gone")),
+        pytest.raises(VolcanoConnectionError, match="answered no reads"),
+    ):
+        await device.async_update()
+
+    assert device.state.connected is False
+
+
+async def test_static_device_information_is_read_once_per_connection(
+    mock_establish_connection: object, fake_client: FakeBleakClient
+) -> None:
+    """Serial and firmware cannot change on a live link, so re-reading is waste."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+
+    reads: list[str] = []
+    original = fake_client.read_gatt_char
+
+    async def _record(uuid: str) -> bytes:
+        reads.append(uuid)
+        return await original(uuid)
+
+    with patch.object(fake_client, "read_gatt_char", _record):
+        await device.async_update()
+        assert reads.count(CHAR_SERIAL_NUMBER) == 1
+
+        # Force the slow cycle to come round again on the same connection.
+        device._device_info_read_at = None
+        await device.async_update()
+        assert reads.count(CHAR_SERIAL_NUMBER) == 1
+
+        # A fresh link may be a different device, so it reads them again.
+        device._handle_disconnect(fake_client)
+        device._device_info_read_at = None
+        await device.async_update()
+        assert reads.count(CHAR_SERIAL_NUMBER) == 2
 
 
 async def test_disconnect_is_safe_when_never_connected() -> None:

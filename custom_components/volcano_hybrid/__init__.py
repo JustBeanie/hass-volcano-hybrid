@@ -6,11 +6,13 @@ import logging
 
 from homeassistant.components.bluetooth import (
     BluetoothCallbackMatcher,
+    BluetoothChange,
     BluetoothScanningMode,
+    BluetoothServiceInfoBleak,
     async_ble_device_from_address,
     async_register_callback,
 )
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -19,10 +21,17 @@ from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
 )
+from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_FAN_ON_CONNECT, CONF_INITIAL_TEMP, CONF_MAC_ADDRESS, DOMAIN
+from .const import (
+    CONF_FAN_ON_CONNECT,
+    CONF_INITIAL_TEMP,
+    CONF_MAC_ADDRESS,
+    DOMAIN,
+    MANUFACTURER_ID,
+)
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
-from .volcano import VolcanoConnectionError, VolcanoHybrid
+from .volcano import VolcanoHybrid
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +49,39 @@ PLATFORMS: list[Platform] = [
 ]
 
 
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Watch for a Volcano coming back while an entry is stuck retrying setup.
+
+    Setup needs the vaporiser to be reachable, so unplugging it and plugging it
+    back in around a restart leaves the entry in ``SETUP_RETRY`` waiting out an
+    exponential backoff -- observed at 29 minutes on a real instance. Nothing
+    else notices the device return: the per-entry advertisement callback below
+    is torn down along with the failed setup, so the watcher has to live at
+    component scope, above any individual entry.
+    """
+
+    @callback
+    def _async_device_seen(
+        service_info: BluetoothServiceInfoBleak, change: BluetoothChange
+    ) -> None:
+        """Retry any entry for this address the moment it advertises again."""
+        seen = dr.format_mac(service_info.address)
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            if entry.state is not ConfigEntryState.SETUP_RETRY:
+                continue
+            address = entry.data.get(CONF_ADDRESS) or entry.data.get(CONF_MAC_ADDRESS)
+            if address and dr.format_mac(address) == seen:
+                hass.config_entries.async_schedule_reload(entry.entry_id)
+
+    async_register_callback(
+        hass,
+        _async_device_seen,
+        BluetoothCallbackMatcher(manufacturer_id=MANUFACTURER_ID, connectable=True),
+        BluetoothScanningMode.PASSIVE,
+    )
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> bool:
     """Set up Volcano Hybrid from a config entry."""
     address: str = entry.data[CONF_ADDRESS]
@@ -55,15 +97,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> b
     device = VolcanoHybrid(address)
     device.set_ble_device(ble_device)
 
-    try:
-        await device.async_connect()
-    except VolcanoConnectionError as err:
-        raise ConfigEntryNotReady(
-            translation_domain=DOMAIN,
-            translation_key="cannot_connect",
-            translation_placeholders={"address": address, "error": str(err)},
-        ) from err
-
+    # The first refresh below connects through _ensure_client, so connecting
+    # here as well was a second round trip and a second, differently worded
+    # failure path for the same problem.
     coordinator = VolcanoDataUpdateCoordinator(hass, entry, device)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator

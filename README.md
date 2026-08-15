@@ -108,13 +108,19 @@ visible in the log.
 The integration holds a **persistent Bluetooth connection** rather than connecting
 for each read. Over that connection:
 
-- **Every 10 seconds** it polls the current temperature, target temperature, status
-  register and screen brightness. The heat block moves fast enough that a longer
-  interval makes the climate card feel broken.
+- **Every 10 seconds while the heater or fan is running** it polls the current
+  temperature, target temperature, status register and screen brightness. The heat
+  block moves fast enough that a longer interval makes the climate card feel broken.
+- **Every 60 seconds once both are off.** There is no ramp left to watch, and a
+  cooling vaporizer does not need six polls a minute. Pressing a button in Home
+  Assistant restores the fast interval immediately.
 - **On change**, the device pushes its status register — heater and fan state — as a
-  BLE notification, so those update without waiting for the next poll.
-- **Every 10 minutes** it re-reads the things that barely change: serial number,
-  both firmware versions, hours of operation, auto-off delay and the two registers.
+  BLE notification, so those update without waiting for the next poll whichever
+  interval is in force. The register is still polled as well, so a dropped
+  notification cannot leave the heater reading the wrong way round.
+- **Every 10 minutes** it re-reads the things that barely change: hours of operation,
+  auto-off delay and the two registers. Serial number and firmware are read once per
+  connection, since they cannot change while one is open.
 - **After a command**, the new state is published optimistically and a refresh is
   requested, so the UI does not snap back while waiting for the next poll.
 
@@ -122,6 +128,13 @@ Connections are established through Home Assistant's Bluetooth manager, so they
 follow whichever adapter or ESPHome proxy most recently heard the device. If the
 device stops responding the entities go unavailable and the integration keeps
 retrying; it does not need a restart to recover.
+
+Because the vaporizer is normally unplugged between sessions, coming back is
+treated as the expected case rather than an error. When no adapter or proxy can
+hear it, polls fail immediately instead of working through a connection ladder —
+so a command pressed during an outage fails straight away rather than hanging.
+The moment it advertises again, Home Assistant reconnects, including when the
+config entry was left retrying setup because the device was off at startup.
 
 ## Use cases
 

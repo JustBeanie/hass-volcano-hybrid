@@ -70,6 +70,11 @@ OPTIMISTIC_WINDOW = 3.0
 # Device information changes rarely; re-read it on this cadence only.
 DEVICE_INFO_INTERVAL = 600.0
 
+# The coordinator retries on its own schedule, so a poll that cannot reach the
+# device should give up quickly rather than work through a long retry ladder
+# while holding the GATT lock -- every command queues behind that lock.
+CONNECT_ATTEMPTS = 2
+
 
 class VolcanoConnectionError(Exception):
     """Raised when the device cannot be reached."""
@@ -152,6 +157,7 @@ class VolcanoHybrid:
         self._optimistic: dict[str, bool] = {}
         self._optimistic_until = 0.0
         self._device_info_read_at: float | None = None
+        self._static_info_read = False
         self._notifications_started = False
 
     # -- plumbing ----------------------------------------------------------
@@ -166,8 +172,14 @@ class VolcanoHybrid:
         """Return whether a live GATT connection exists."""
         return self._client is not None and self._client.is_connected
 
-    def set_ble_device(self, ble_device: BLEDevice) -> None:
-        """Update the BLEDevice, so reconnects use the closest adapter/proxy."""
+    def set_ble_device(self, ble_device: BLEDevice | None) -> None:
+        """Update the BLEDevice, so reconnects use the closest adapter/proxy.
+
+        ``None`` means no adapter or proxy can currently hear the device, and
+        must be recorded rather than ignored: holding on to the last known
+        BLEDevice sends every later poll into a full connection attempt for a
+        vaporiser that is unplugged, which is both slow and pointless.
+        """
         self._ble_device = ble_device
 
     def register_callback(
@@ -191,6 +203,9 @@ class VolcanoHybrid:
         _LOGGER.debug("%s: disconnected", self.address)
         self._client = None
         self._notifications_started = False
+        # Serial number and firmware are read once per connection, so a new link
+        # has to read them again -- the device may have been swapped.
+        self._static_info_read = False
         self._state.connected = False
         self._notify_listeners()
 
@@ -214,6 +229,7 @@ class VolcanoHybrid:
                 self.address,
                 self._handle_disconnect,
                 use_services_cache=True,
+                max_attempts=CONNECT_ATTEMPTS,
                 # Prefer whatever advertisement arrived most recently, falling
                 # back to the one we started with so retries always have a
                 # device to work from.
@@ -342,7 +358,21 @@ class VolcanoHybrid:
             if target is not None and MIN_TEMP <= target <= MAX_TEMP:
                 self._state.target_temperature = target
 
-            self._apply_status_register(await self._read(CHAR_STATUS_REGISTER))
+            # Kept on every poll even though notifications cover it: a dropped
+            # notification would otherwise leave the heater reading "on" until
+            # the next change, and this is the one value worth a re-read.
+            raw_status = await self._read(CHAR_STATUS_REGISTER)
+            self._apply_status_register(raw_status)
+
+            # A link that answers nothing is dead even though bleak has not
+            # noticed. Reporting it as connected strands every entity on stale
+            # values; failing here hands it to the coordinator, which already
+            # knows how to log the outage once and recover from it.
+            if raw_current is None and raw_target is None and raw_status is None:
+                self._state.connected = False
+                raise VolcanoConnectionError(
+                    f"{self.address} accepted the connection but answered no reads"
+                )
 
             brightness = _decode_int(await self._read(CHAR_BRIGHTNESS))
             if brightness is not None and 0 <= brightness <= 100:
@@ -361,18 +391,22 @@ class VolcanoHybrid:
 
     async def _read_device_information(self) -> None:
         """Read the slow-changing device information. Assumes the lock is held."""
-        self._state.serial_number = (
-            _decode_string(await self._read(CHAR_SERIAL_NUMBER))
-            or self._state.serial_number
-        )
-        self._state.ble_firmware_version = (
-            _decode_firmware(await self._read(CHAR_BLE_FIRMWARE))
-            or self._state.ble_firmware_version
-        )
-        self._state.firmware_version = (
-            _decode_firmware(await self._read(CHAR_FIRMWARE))
-            or self._state.firmware_version
-        )
+        # Serial number and firmware cannot change while a connection is open,
+        # so they are read once per link rather than on every slow cycle.
+        if not self._static_info_read:
+            self._state.serial_number = (
+                _decode_string(await self._read(CHAR_SERIAL_NUMBER))
+                or self._state.serial_number
+            )
+            self._state.ble_firmware_version = (
+                _decode_firmware(await self._read(CHAR_BLE_FIRMWARE))
+                or self._state.ble_firmware_version
+            )
+            self._state.firmware_version = (
+                _decode_firmware(await self._read(CHAR_FIRMWARE))
+                or self._state.firmware_version
+            )
+            self._static_info_read = True
 
         hours = _decode_int(await self._read(CHAR_HOURS_OF_OPERATION))
         if hours is not None:
