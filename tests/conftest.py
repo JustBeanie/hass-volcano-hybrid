@@ -121,6 +121,7 @@ class FakeBleakClient:
         self.writes: list[tuple[str, bytes]] = []
         self.is_connected = True
         self.notify_callbacks: dict[str, object] = {}
+        self.caches_cleared = 0
 
     async def read_gatt_char(self, uuid: str) -> bytes:
         """Return the canned value, or fail the way bleak does."""
@@ -160,6 +161,11 @@ class FakeBleakClient:
         """Drop a notification subscription."""
         self.notify_callbacks.pop(uuid, None)
 
+    async def clear_cache(self) -> bool:
+        """Record that the cached service table was thrown away."""
+        self.caches_cleared += 1
+        return True
+
     async def disconnect(self) -> None:
         """Mark the client as disconnected."""
         self.is_connected = False
@@ -182,9 +188,19 @@ def mock_establish_connection(
     fake_client: FakeBleakClient,
 ) -> Generator[AsyncMock]:
     """Patch bleak_retry_connector so no real BLE traffic happens."""
+
+    async def _establish(*_args: object, **_kwargs: object) -> FakeBleakClient:
+        """Hand back a *connected* client, the way a real connect does.
+
+        This is what makes recovery visible in tests: a link that was torn down
+        and rebuilt has to come back usable.
+        """
+        fake_client.is_connected = True
+        return fake_client
+
     with patch(
         "custom_components.volcano_hybrid.volcano.establish_connection",
-        AsyncMock(return_value=fake_client),
+        AsyncMock(side_effect=_establish),
     ) as mock:
         yield mock
 

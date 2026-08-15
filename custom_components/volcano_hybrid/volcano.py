@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import StrEnum
 import logging
 import struct
 import time
@@ -22,6 +23,7 @@ from bleak.exc import BleakError
 from bleak_retry_connector import (
     BleakClientWithServiceCache,
     BleakNotFoundError,
+    clear_cache as clear_adapter_cache,
     establish_connection,
 )
 
@@ -75,9 +77,43 @@ DEVICE_INFO_INTERVAL = 600.0
 # while holding the GATT lock -- every command queues behind that lock.
 CONNECT_ATTEMPTS = 2
 
+# Dropping the client and reconnecting is enough to clear most unresponsive
+# links. This many in a row means the cached GATT table on the adapter itself is
+# suspect, so the next reset clears that too.
+ADAPTER_CACHE_RESET_AFTER = 3
+
+
+class ConnectionFailure(StrEnum):
+    """Why the device could not be reached.
+
+    The shapes are not interchangeable and the coordinator acts on the
+    difference. A vaporiser that accepts a connection and then answers nothing
+    was reported as a *refused* connection for a while, which sent users looking
+    for a phone app holding a link that Home Assistant itself held.
+    """
+
+    # Nothing can currently hear the device: no adapter, no proxy.
+    NOT_VISIBLE = "not_visible"
+    # Turned away at the connect stage. The only shape that points at another
+    # client holding the single connection the device allows.
+    CONNECT_FAILED = "connect_failed"
+    # Connected, but GATT is unusable -- a stale service table or a wedged
+    # device. Nothing the user can fix by closing an app.
+    NO_READS = "no_reads"
+    WRITE_FAILED = "write_failed"
+
 
 class VolcanoConnectionError(Exception):
     """Raised when the device cannot be reached."""
+
+    def __init__(self, message: str, kind: ConnectionFailure) -> None:
+        """Record what kind of failure this was.
+
+        ``kind`` is deliberately required rather than defaulted: guessing it is
+        the exact bug this class exists to prevent.
+        """
+        super().__init__(message)
+        self.kind = kind
 
 
 @dataclass
@@ -159,6 +195,8 @@ class VolcanoHybrid:
         self._device_info_read_at: float | None = None
         self._static_info_read = False
         self._notifications_started = False
+        self._last_read_error: str | None = None
+        self._no_read_failures = 0
 
     # -- plumbing ----------------------------------------------------------
 
@@ -218,7 +256,8 @@ class VolcanoHybrid:
 
         if (ble_device := self._ble_device) is None:
             raise VolcanoConnectionError(
-                f"{self.address} is not currently visible to any Bluetooth adapter"
+                f"{self.address} is not currently visible to any Bluetooth adapter",
+                ConnectionFailure.NOT_VISIBLE,
             )
 
         _LOGGER.debug("%s: connecting via %s", self.address, ble_device)
@@ -236,7 +275,9 @@ class VolcanoHybrid:
                 ble_device_callback=lambda: self._ble_device or ble_device,
             )
         except (BleakNotFoundError, BleakError, TimeoutError) as err:
-            raise VolcanoConnectionError(f"Could not connect: {err}") from err
+            raise VolcanoConnectionError(
+                f"Could not connect: {err}", ConnectionFailure.CONNECT_FAILED
+            ) from err
 
         self._client = client
         self._state.connected = True
@@ -256,6 +297,40 @@ class VolcanoHybrid:
         """Connect to the device, raising VolcanoConnectionError on failure."""
         async with self._lock:
             await self._ensure_client()
+
+    async def _async_reset_link(self, *, reset_adapter_cache: bool) -> None:
+        """Throw the link away so the next attempt rebuilds it from scratch.
+
+        Assumes the lock is held, which is why it cannot simply call
+        ``async_disconnect`` -- that acquires the same non-reentrant lock and
+        would deadlock the poll it is being called from.
+
+        Without this, a client that bleak still considers connected but that
+        answers no reads was handed straight back by ``_ensure_client`` on every
+        later poll, so the integration could not recover on its own and needed
+        the config entry reloading by hand.
+        """
+        client = self._client
+        self._client = None
+        self._notifications_started = False
+        # A new link has to read these again; they are only valid per-connection.
+        self._static_info_read = False
+        self._state.connected = False
+
+        if client is not None:
+            try:
+                # Clears the cached service table this client resolved against,
+                # local adapter or proxy, so the reconnect rediscovers GATT.
+                await client.clear_cache()
+                await client.disconnect()
+            except (BleakError, TimeoutError, EOFError) as err:
+                _LOGGER.debug("%s: resetting the link failed: %s", self.address, err)
+
+        if reset_adapter_cache:
+            # Swallows its own errors and returns False off a local BlueZ
+            # adapter, where the client-level clear above is the one that counts.
+            cleared = await clear_adapter_cache(self.address)
+            _LOGGER.debug("%s: adapter cache cleared: %s", self.address, cleared)
 
     async def async_disconnect(self) -> None:
         """Disconnect from the device."""
@@ -284,6 +359,12 @@ class VolcanoHybrid:
         try:
             return bytes(await client.read_gatt_char(uuid))
         except (BleakError, TimeoutError) as err:
+            # Kept so a link that answers nothing can report why. Losing this to
+            # a debug line meant an outage was only ever recorded as "answered
+            # no reads", with no way to tell a stale service table (bleak says
+            # the characteristic was not found) from a device that has stopped
+            # responding (a timeout) after the fact.
+            self._last_read_error = f"{uuid}: {err}"
             _LOGGER.debug("%s: read %s failed: %s", self.address, uuid, err)
             return None
 
@@ -293,7 +374,9 @@ class VolcanoHybrid:
         try:
             await client.write_gatt_char(uuid, data, response=True)
         except (BleakError, TimeoutError) as err:
-            raise VolcanoConnectionError(f"Write to {uuid} failed: {err}") from err
+            raise VolcanoConnectionError(
+                f"Write to {uuid} failed: {err}", ConnectionFailure.WRITE_FAILED
+            ) from err
 
     # -- notifications -----------------------------------------------------
 
@@ -369,10 +452,19 @@ class VolcanoHybrid:
             # values; failing here hands it to the coordinator, which already
             # knows how to log the outage once and recover from it.
             if raw_current is None and raw_target is None and raw_status is None:
-                self._state.connected = False
+                self._no_read_failures += 1
+                await self._async_reset_link(
+                    reset_adapter_cache=(
+                        self._no_read_failures >= ADAPTER_CACHE_RESET_AFTER
+                    )
+                )
                 raise VolcanoConnectionError(
                     f"{self.address} accepted the connection but answered no reads"
+                    f" ({self._last_read_error})",
+                    ConnectionFailure.NO_READS,
                 )
+
+            self._no_read_failures = 0
 
             brightness = _decode_int(await self._read(CHAR_BRIGHTNESS))
             if brightness is not None and 0 <= brightness <= 100:

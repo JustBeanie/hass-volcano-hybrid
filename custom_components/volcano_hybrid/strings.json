@@ -71,6 +71,17 @@
           }
         }
       }
+    },
+    "connection_unresponsive": {
+      "title": "{name} is connected but not responding",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{name} is connected but not responding",
+            "description": "The vaporizer accepted the connection and then answered nothing. Home Assistant has already dropped the link and rebuilt it from scratch several times without getting a reply.\n\nThis is not another app holding the connection — the vaporizer let Home Assistant in, so closing the Storz & Bickel app will not help. It usually means the vaporizer's Bluetooth has locked up.\n\nSwitch the vaporizer off at the plug, wait a few seconds, switch it back on, and then select Submit to retry."
+          }
+        }
+      }
     }
   },
   "entity": {

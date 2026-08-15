@@ -17,6 +17,7 @@ from custom_components.volcano_hybrid.const import (
 )
 from custom_components.volcano_hybrid.volcano import (
     CHAR_TARGET_TEMP,
+    ConnectionFailure,
     VolcanoConnectionError,
 )
 
@@ -98,7 +99,7 @@ async def test_reconfigure_reports_an_unreachable_device(
     result = await config_entry.start_reconfigure_flow(hass)
     with patch(
         "custom_components.volcano_hybrid.config_flow.VolcanoHybrid.async_connect",
-        side_effect=VolcanoConnectionError("boom"),
+        side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
 

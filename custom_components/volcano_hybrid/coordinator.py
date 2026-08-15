@@ -24,8 +24,14 @@ from .const import (
     DOMAIN,
     IDLE_INTERVAL,
     ISSUE_CONNECTION_REFUSED,
+    ISSUE_CONNECTION_UNRESPONSIVE,
 )
-from .volcano import VolcanoConnectionError, VolcanoHybrid, VolcanoState
+from .volcano import (
+    ConnectionFailure,
+    VolcanoConnectionError,
+    VolcanoHybrid,
+    VolcanoState,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,6 +40,14 @@ type VolcanoConfigEntry = ConfigEntry[VolcanoDataUpdateCoordinator]
 # The vaporizer accepts one BLE connection at a time. This many consecutive
 # refusals while it is still advertising means something else holds the link.
 CONTENTION_THRESHOLD = 3
+
+# One past ADAPTER_CACHE_RESET_AFTER, deliberately. Every one of these has
+# already had the link torn down and rebuilt underneath it, and the last one
+# also cleared the adapter's cached service table -- so this is the first
+# failure that has had every automatic remedy tried on it and still come back
+# dead. Raising it any earlier would ask the user to power-cycle a vaporizer
+# that the next poll was about to fix on its own.
+UNRESPONSIVE_THRESHOLD = 4
 
 
 class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
@@ -59,6 +73,11 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         self.address = device.address
         self._was_available = True
         self.consecutive_failures = 0
+        # Counted separately from the total: the two repair issues describe
+        # different failures, and a poll that failed for one reason must never
+        # push the other one over its threshold.
+        self.consecutive_refusals = 0
+        self.consecutive_no_reads = 0
         self._reconnect_pending = False
         entry.async_on_unload(device.register_callback(self._handle_push_update))
 
@@ -144,7 +163,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
 
     @callback
     def _handle_update_failure(self, err: VolcanoConnectionError) -> None:
-        """Log the outage once and raise a repair issue if this is contention."""
+        """Log the outage once and raise the repair that fits the failure."""
         self.consecutive_failures += 1
 
         if self._was_available:
@@ -153,35 +172,50 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
                 "Lost connection to the Volcano Hybrid at %s: %s", self.address, err
             )
 
-        # Only a device that is advertising but refusing to connect points at
-        # something else holding the link. One that is simply switched off or
-        # out of range is not something the user can fix by closing an app.
-        if self.consecutive_failures == CONTENTION_THRESHOLD and async_address_present(
-            self.hass, self.address, connectable=True
-        ):
-            ir.async_create_issue(
-                self.hass,
-                DOMAIN,
-                f"{ISSUE_CONNECTION_REFUSED}_{self.config_entry.entry_id}",
-                is_fixable=True,
-                severity=ir.IssueSeverity.WARNING,
-                translation_key=ISSUE_CONNECTION_REFUSED,
-                translation_placeholders={"name": self.config_entry.title},
-                data={"entry_id": self.config_entry.entry_id},
-            )
+        if err.kind is ConnectionFailure.CONNECT_FAILED:
+            self.consecutive_refusals += 1
+            # Only a device that is advertising but refusing to connect points
+            # at something else holding the link. One that is simply switched
+            # off or out of range is not something the user can fix by closing
+            # an app -- and neither is one that let us in and then went quiet,
+            # which used to land here and send people looking for a phone app
+            # that was never open.
+            if self.consecutive_refusals == CONTENTION_THRESHOLD and (
+                async_address_present(self.hass, self.address, connectable=True)
+            ):
+                self._async_raise_issue(ISSUE_CONNECTION_REFUSED)
+        elif err.kind is ConnectionFailure.NO_READS:
+            self.consecutive_no_reads += 1
+            if self.consecutive_no_reads == UNRESPONSIVE_THRESHOLD:
+                self._async_raise_issue(ISSUE_CONNECTION_UNRESPONSIVE)
+
+    @callback
+    def _async_raise_issue(self, issue: str) -> None:
+        """Raise one of this integration's repair issues."""
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"{issue}_{self.config_entry.entry_id}",
+            is_fixable=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=issue,
+            translation_placeholders={"name": self.config_entry.title},
+            data={"entry_id": self.config_entry.entry_id},
+        )
 
     @callback
     def _handle_update_success(self) -> None:
-        """Log recovery once and clear any contention issue."""
+        """Log recovery once and clear both connection issues."""
         self.consecutive_failures = 0
+        self.consecutive_refusals = 0
+        self.consecutive_no_reads = 0
         if not self._was_available:
             self._was_available = True
             _LOGGER.info("Reconnected to the Volcano Hybrid at %s", self.address)
-        ir.async_delete_issue(
-            self.hass,
-            DOMAIN,
-            f"{ISSUE_CONNECTION_REFUSED}_{self.config_entry.entry_id}",
-        )
+        for issue in (ISSUE_CONNECTION_REFUSED, ISSUE_CONNECTION_UNRESPONSIVE):
+            ir.async_delete_issue(
+                self.hass, DOMAIN, f"{issue}_{self.config_entry.entry_id}"
+            )
 
     async def async_shutdown_device(self) -> None:
         """Drop the BLE link."""

@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-08-15
+
+A repair issue told the user to close the Storz & Bickel app on their phone. The
+app was not open — Home Assistant held the only connection to the vaporizer, and
+the failure it was reporting could not have been caused by anything else.
+
+### Fixed
+
+- **"Refusing connections" was raised for a device that had accepted the
+  connection.** Every `VolcanoConnectionError` counted toward the contention
+  threshold, whatever it was. So when the vaporizer let Home Assistant in and
+  then answered no reads, the integration reported it as a refused connection and
+  offered advice — close the phone app, turn off its Bluetooth — that nothing
+  could act on. Failures now carry what kind they are, and only a refusal at the
+  connect stage can raise that issue; it is the one shape another client holding
+  the single allowed connection can actually produce.
+
+- **A link that answered nothing could not recover on its own.** The dead client
+  was left in place, and while bleak still considered it connected every later
+  poll was handed the same one straight back. The only way out was reloading the
+  config entry by hand — which is exactly what fixing the (wrong) repair did, and
+  the only reason it appeared to help. The link is now thrown away and rebuilt,
+  clearing the cached GATT service table with it, so the next poll reconnects
+  from scratch. Three of those in a row also clears the adapter's own cached
+  table.
+
+### Added
+
+- **A repair that describes the failure that actually happened.** If the
+  vaporizer is still unresponsive after the link has been rebuilt and every cache
+  cleared, it says so: connected but not answering, and a power cycle is what
+  clears it. Raised one cycle after the last automatic remedy, so it never asks
+  for a power cycle the next poll was about to make unnecessary.
+
+### Changed
+
+- The single "answered no reads" warning now carries the underlying Bluetooth
+  error. It was logged at debug and therefore lost, which left a real outage
+  impossible to explain after the fact — a stale service table and a device that
+  has stopped responding produced identical log lines.
+
 ## [3.1.3] - 2026-09-06
 
 ### Fixed

@@ -191,10 +191,15 @@ rules:
   repair-issues:
     status: done
     comment: |
-      One issue, raised when the vaporizer is advertising but refusing to
-      connect, which means something else holds its single BLE link. Gated on
-      async_address_present so an out-of-range device -- which the user cannot
-      fix by closing an app -- never triggers it.
+      Two issues, one per failure the user can actually act on, keyed off the
+      ConnectionFailure kind the error carries rather than the failure count.
+      connection_refused means the vaporizer is advertising but turning us away
+      at the connect stage, so something else holds its single BLE link; it is
+      also gated on async_address_present, so an out-of-range device -- which
+      the user cannot fix by closing an app -- never triggers it.
+      connection_unresponsive means it accepted the connection and then answered
+      nothing, and is only raised once rebuilding the link and clearing the
+      cached service tables have failed to bring it back.
   stale-devices:
     status: exempt
     comment: One config entry is one physical vaporizer.

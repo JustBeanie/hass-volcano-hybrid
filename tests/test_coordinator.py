@@ -18,9 +18,12 @@ from custom_components.volcano_hybrid.const import (
     DOMAIN,
     IDLE_INTERVAL,
     ISSUE_CONNECTION_REFUSED,
+    ISSUE_CONNECTION_UNRESPONSIVE,
 )
+from custom_components.volcano_hybrid.coordinator import UNRESPONSIVE_THRESHOLD
 from custom_components.volcano_hybrid.volcano import (
     CHAR_STATUS_REGISTER,
+    ConnectionFailure,
     VolcanoConnectionError,
 )
 
@@ -50,7 +53,7 @@ async def test_command_failure_raises_a_translated_error(
         patch.object(
             coordinator.device,
             "async_turn_heater_on",
-            side_effect=VolcanoConnectionError("nope"),
+            side_effect=VolcanoConnectionError("nope", ConnectionFailure.WRITE_FAILED),
         ),
         pytest.raises(HomeAssistantError) as err,
     ):
@@ -77,7 +80,7 @@ async def test_unavailable_is_logged_once_and_recovery_once(
         patch.object(
             coordinator.device,
             "async_update",
-            side_effect=VolcanoConnectionError("gone"),
+            side_effect=VolcanoConnectionError("gone", ConnectionFailure.NOT_VISIBLE),
         ),
     ):
         for _ in range(4):
@@ -112,7 +115,9 @@ async def test_contention_raises_a_repair_issue(
         patch.object(
             coordinator.device,
             "async_update",
-            side_effect=VolcanoConnectionError("refused"),
+            side_effect=VolcanoConnectionError(
+                "refused", ConnectionFailure.CONNECT_FAILED
+            ),
         ),
     ):
         for _ in range(3):
@@ -144,13 +149,59 @@ async def test_no_repair_issue_when_the_device_is_simply_away(
         patch.object(
             coordinator.device,
             "async_update",
-            side_effect=VolcanoConnectionError("gone"),
+            side_effect=VolcanoConnectionError("gone", ConnectionFailure.NOT_VISIBLE),
         ),
     ):
         for _ in range(5):
             await coordinator.async_refresh()
 
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_an_unresponsive_device_is_never_called_contention(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """A device that accepted the connection cannot be one another app holds.
+
+    This is the regression. Every failure used to count toward the contention
+    threshold, so a vaporizer that let Home Assistant in and then answered
+    nothing raised the "close the Storz & Bickel app" repair -- advice that
+    cannot be acted on, because Home Assistant itself held the only link.
+    """
+    coordinator = loaded_entry.runtime_data
+    registry = ir.async_get(hass)
+    refused = f"{ISSUE_CONNECTION_REFUSED}_{loaded_entry.entry_id}"
+    unresponsive = f"{ISSUE_CONNECTION_UNRESPONSIVE}_{loaded_entry.entry_id}"
+
+    with (
+        patch(
+            "custom_components.volcano_hybrid.coordinator.async_address_present",
+            return_value=True,
+        ),
+        patch.object(
+            coordinator.device,
+            "async_update",
+            side_effect=VolcanoConnectionError(
+                "answered no reads", ConnectionFailure.NO_READS
+            ),
+        ),
+    ):
+        # Contention would already have been declared by now.
+        for _ in range(UNRESPONSIVE_THRESHOLD - 1):
+            await coordinator.async_refresh()
+        assert registry.async_get_issue(DOMAIN, refused) is None
+        # And nothing is asked of the user while the automatic remedies -- a
+        # rebuilt link, then a cleared adapter cache -- still have a turn left.
+        assert registry.async_get_issue(DOMAIN, unresponsive) is None
+
+        await coordinator.async_refresh()
+
+    assert registry.async_get_issue(DOMAIN, refused) is None
+    # The accurate one is raised instead.
+    assert registry.async_get_issue(DOMAIN, unresponsive) is not None
+
+    await coordinator.async_refresh()
+    assert registry.async_get_issue(DOMAIN, unresponsive) is None
 
 
 async def test_contention_can_be_raised_more_than_once(
@@ -176,7 +227,9 @@ async def test_contention_can_be_raised_more_than_once(
             patch.object(
                 coordinator.device,
                 "async_update",
-                side_effect=VolcanoConnectionError("refused"),
+                side_effect=VolcanoConnectionError(
+                    "refused", ConnectionFailure.CONNECT_FAILED
+                ),
             ),
         ):
             for _ in range(3):

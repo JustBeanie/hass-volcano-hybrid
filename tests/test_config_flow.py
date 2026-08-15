@@ -16,7 +16,10 @@ from custom_components.volcano_hybrid.const import (
     CONF_INITIAL_TEMP,
     DOMAIN,
 )
-from custom_components.volcano_hybrid.volcano import VolcanoConnectionError
+from custom_components.volcano_hybrid.volcano import (
+    ConnectionFailure,
+    VolcanoConnectionError,
+)
 
 from .conftest import (
     ADDRESS,
@@ -106,7 +109,7 @@ async def test_bluetooth_confirm_handles_a_failed_connection(
 
     with patch(
         "custom_components.volcano_hybrid.config_flow.VolcanoHybrid.async_connect",
-        side_effect=VolcanoConnectionError("boom"),
+        side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
 
@@ -198,7 +201,7 @@ async def test_user_flow_handles_a_failed_connection(
 
     with patch(
         "custom_components.volcano_hybrid.config_flow.VolcanoHybrid.async_connect",
-        side_effect=VolcanoConnectionError("boom"),
+        side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_ADDRESS: ADDRESS}

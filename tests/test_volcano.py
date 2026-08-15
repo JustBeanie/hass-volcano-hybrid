@@ -12,6 +12,7 @@ from bleak.exc import BleakError
 import pytest
 
 from custom_components.volcano_hybrid.volcano import (
+    ADAPTER_CACHE_RESET_AFTER,
     CHAR_AUTO_OFF_SETTING,
     CHAR_BRIGHTNESS,
     CHAR_CURRENT_TEMP,
@@ -20,6 +21,7 @@ from custom_components.volcano_hybrid.volcano import (
     CHAR_TARGET_TEMP,
     MASK_FAN,
     MASK_HEATER,
+    ConnectionFailure,
     VolcanoConnectionError,
     VolcanoHybrid,
     _decode_firmware,
@@ -252,11 +254,74 @@ async def test_a_link_that_answers_nothing_is_treated_as_disconnected(
 
     with (
         patch.object(fake_client, "read_gatt_char", side_effect=BleakError("gone")),
-        pytest.raises(VolcanoConnectionError, match="answered no reads"),
+        pytest.raises(VolcanoConnectionError, match="answered no reads") as err,
     ):
         await device.async_update()
 
     assert device.state.connected is False
+    assert err.value.kind is ConnectionFailure.NO_READS
+    # The underlying bleak error rides along, so one WARNING is enough to tell a
+    # stale service table from a device that has stopped answering. Losing it to
+    # a debug line left a real outage unexplainable after the fact.
+    assert "gone" in str(err.value)
+
+
+async def test_a_link_that_answers_nothing_is_rebuilt_from_scratch(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """The dead client is thrown away, so the next poll can actually recover.
+
+    It used to be left in place. While bleak still called it connected,
+    ``_ensure_client`` handed the same dead client back on every later poll, so
+    the integration could never recover on its own -- the config entry had to be
+    reloaded by hand.
+    """
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+    before = mock_establish_connection.call_count
+
+    with (
+        patch.object(fake_client, "read_gatt_char", side_effect=BleakError("gone")),
+        pytest.raises(VolcanoConnectionError),
+    ):
+        await device.async_update()
+
+    assert device._client is None
+    assert fake_client.caches_cleared == 1
+
+    # The next poll builds a fresh link rather than reusing the dead one.
+    state = await device.async_update()
+    assert mock_establish_connection.call_count == before + 1
+    assert state.connected is True
+
+
+async def test_a_persistently_dead_link_clears_the_adapter_cache(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """Reconnecting fixes most of these; a stale table on the adapter needs more."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+
+    with (
+        patch.object(fake_client, "read_gatt_char", side_effect=BleakError("gone")),
+        patch(
+            "custom_components.volcano_hybrid.volcano.clear_adapter_cache",
+            AsyncMock(return_value=True),
+        ) as clear_adapter,
+    ):
+        for _ in range(ADAPTER_CACHE_RESET_AFTER):
+            with pytest.raises(VolcanoConnectionError):
+                await device.async_update()
+
+    # Only once the plain reconnect has been given its chances.
+    assert clear_adapter.call_count == 1
+    assert clear_adapter.await_args.args == (ADDRESS,)
+
+    # A working poll puts it back to square one, so a later episode gets the
+    # same escalation rather than clearing the adapter cache immediately.
+    await device.async_update()
+    assert device._no_read_failures == 0
 
 
 async def test_static_device_information_is_read_once_per_connection(

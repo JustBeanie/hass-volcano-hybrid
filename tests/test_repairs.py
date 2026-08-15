@@ -9,9 +9,16 @@ from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.volcano_hybrid.const import DOMAIN, ISSUE_CONNECTION_REFUSED
+from custom_components.volcano_hybrid.const import (
+    DOMAIN,
+    ISSUE_CONNECTION_REFUSED,
+    ISSUE_CONNECTION_UNRESPONSIVE,
+)
 from custom_components.volcano_hybrid.repairs import async_create_fix_flow
-from custom_components.volcano_hybrid.volcano import VolcanoConnectionError
+from custom_components.volcano_hybrid.volcano import (
+    ConnectionFailure,
+    VolcanoConnectionError,
+)
 
 from .conftest import FakeBleakClient
 
@@ -72,7 +79,9 @@ async def test_repair_round_trip(
         patch.object(
             coordinator.device,
             "async_update",
-            side_effect=VolcanoConnectionError("refused"),
+            side_effect=VolcanoConnectionError(
+                "refused", ConnectionFailure.CONNECT_FAILED
+            ),
         ),
     ):
         for _ in range(3):
@@ -84,3 +93,22 @@ async def test_repair_round_trip(
 
     flow = await async_create_fix_flow(hass, issue_id, issue.data)
     assert flow is not None
+
+
+async def test_the_unresponsive_issue_gets_a_flow_too(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """The second issue is fixable, and reloading is what actually clears it."""
+    issue_id = f"{ISSUE_CONNECTION_UNRESPONSIVE}_{loaded_entry.entry_id}"
+    flow = await async_create_fix_flow(
+        hass, issue_id, {"entry_id": loaded_entry.entry_id}
+    )
+    flow.hass = hass
+
+    assert (await flow.async_step_init())["step_id"] == "confirm"
+
+    with patch.object(hass.config_entries, "async_reload", AsyncMock()) as reload:
+        result = await flow.async_step_confirm({})
+
+    assert result["type"] == "create_entry"
+    reload.assert_awaited_once_with(loaded_entry.entry_id)

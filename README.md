@@ -256,7 +256,10 @@ These are design constraints, not bugs:
 - **One Bluetooth connection at a time.** The vaporizer accepts a single BLE link, so
   Home Assistant and the Storz & Bickel phone app are mutually exclusive. If the app
   is connected, Home Assistant cannot be, and the integration will raise a repair
-  issue telling you so.
+  issue telling you so. That issue is raised only when the vaporizer turns Home
+  Assistant away at the connect stage, which is the only thing another app holding
+  the link can cause — a device that accepts the connection and then stops answering
+  is a separate fault, and gets a separate repair that does not blame the app.
 - **No temperature while idle.** With the heater off the device reports a −18 °C
   placeholder rather than an ambient reading, so the temperature sensor is `unknown`
   until it starts heating. Reporting the placeholder as a real temperature would
