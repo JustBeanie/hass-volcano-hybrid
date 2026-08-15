@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.1] - 2026-08-15
+
+### Fixed
+
+- **Reconnecting after a power cycle could sit behind a debouncer cooldown.**
+  3.1.0 made a fresh advertisement trigger a reconnect, which is the right signal,
+  but routed it through `async_request_refresh` — and that debouncer has a ten
+  second cooldown which any recent command has already started. So the reconnect
+  waited out whatever was left of it. Measured on hardware: 10-15 seconds when a
+  command had just run, under a second when the cooldown happened to have expired.
+  The advertisement path now refreshes directly. A guard flag keeps a burst of
+  advertisements to one attempt at a time, and clears afterwards whether or not
+  the attempt succeeded, since an advertisement means the device really is there.
+
 ## [3.1.0] - 2026-08-15
 
 Unplugging the vaporizer and plugging it back in is how the thing is actually used,

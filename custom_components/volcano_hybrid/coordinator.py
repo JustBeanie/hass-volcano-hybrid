@@ -59,6 +59,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         self.address = device.address
         self._was_available = True
         self.consecutive_failures = 0
+        self._reconnect_pending = False
         entry.async_on_unload(device.register_callback(self._handle_push_update))
 
     @callback
@@ -88,13 +89,31 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         self.device.set_ble_device(service_info.device)
 
         # Hearing the vaporiser again is the earliest possible signal that it is
-        # back. Waiting for the next scheduled poll instead made recovery from a
-        # power cycle take anywhere from a second to several minutes. The
-        # coordinator debounces, so an advertisement burst cannot storm it.
-        if not self.device.connected:
+        # back, so this reconnects rather than waiting for the next scheduled
+        # poll. It deliberately does not go through async_request_refresh: that
+        # debouncer has a ten second cooldown which any recent command has
+        # already started, so a reconnect could sit behind it for the remainder
+        # -- measured at 10-15s on real hardware, against under a second when
+        # the cooldown happened to have expired.
+        if not self.device.connected and not self._reconnect_pending:
+            self._reconnect_pending = True
             self.config_entry.async_create_task(
-                self.hass, self.async_request_refresh(), eager_start=True
+                self.hass, self._async_reconnect(), eager_start=True
             )
+
+    async def _async_reconnect(self) -> None:
+        """Reconnect on an advertisement, then let the next one try again.
+
+        Advertisements arrive continuously, so the guard flag keeps this to one
+        attempt at a time. Clearing it on failure as well as success is
+        deliberate: an advertisement means the device really is there, so the
+        next one is worth acting on. A device that is switched off sends none,
+        which is what stops this from becoming a retry loop.
+        """
+        try:
+            await self.async_refresh()
+        finally:
+            self._reconnect_pending = False
 
     async def _async_update_data(self) -> VolcanoState:
         """Fetch the current device state."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from unittest.mock import AsyncMock, patch
 
@@ -239,17 +240,67 @@ async def test_a_live_link_is_kept_even_with_no_advertisement(
 async def test_an_advertisement_refreshes_a_dropped_link(
     hass: HomeAssistant, loaded_entry: MockConfigEntry, fake_client: FakeBleakClient
 ) -> None:
-    """Hearing the device again reconnects now, not at the next scheduled poll."""
+    """Hearing the device again reconnects now, not at the next scheduled poll.
+
+    It must bypass async_request_refresh. That debouncer has a ten second
+    cooldown which any recent command has already started, and a reconnect
+    landing at the end of it measured 10-15s on real hardware.
+    """
     coordinator = loaded_entry.runtime_data
+
+    # Put the debouncer into cooldown, exactly as a button press would, and
+    # only then drop the link -- priming it reconnects the fake device.
+    await coordinator.async_request_refresh()
+    await hass.async_block_till_done()
     coordinator.device._handle_disconnect(fake_client)
 
-    with patch.object(coordinator, "async_request_refresh") as refresh:
+    with (
+        patch.object(coordinator, "async_refresh") as refresh,
+        patch.object(coordinator, "async_request_refresh") as debounced,
+    ):
         coordinator.async_set_ble_device(
             make_service_info(), BluetoothChange.ADVERTISEMENT
         )
         await hass.async_block_till_done()
 
     assert refresh.call_count == 1
+    assert debounced.call_count == 0
+
+
+async def test_a_burst_of_advertisements_makes_one_attempt(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry, fake_client: FakeBleakClient
+) -> None:
+    """Advertisements arrive continuously; only one reconnect runs at a time."""
+    coordinator = loaded_entry.runtime_data
+    coordinator.device._handle_disconnect(fake_client)
+
+    # A real reconnect is a GATT connect, so it is in flight while the rest of
+    # the burst arrives. Holding it open here is what makes that true in a test.
+    calls = 0
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _slow_refresh() -> None:
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+
+    with patch.object(coordinator, "async_refresh", _slow_refresh):
+        for _ in range(5):
+            coordinator.async_set_ble_device(
+                make_service_info(), BluetoothChange.ADVERTISEMENT
+            )
+        await started.wait()
+        assert coordinator._reconnect_pending is True
+
+        release.set()
+        await hass.async_block_till_done()
+
+    assert calls == 1
+
+    # The flag clears afterwards, so a later advertisement can try again.
+    assert coordinator._reconnect_pending is False
 
 
 async def test_an_advertisement_while_connected_does_not_refresh(
@@ -258,7 +309,7 @@ async def test_an_advertisement_while_connected_does_not_refresh(
     """A healthy link just adopts the new device; advertisements are frequent."""
     coordinator = loaded_entry.runtime_data
 
-    with patch.object(coordinator, "async_request_refresh") as refresh:
+    with patch.object(coordinator, "async_refresh") as refresh:
         service_info = make_service_info()
         coordinator.async_set_ble_device(service_info, BluetoothChange.ADVERTISEMENT)
         await hass.async_block_till_done()
