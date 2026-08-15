@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Coroutine
-import contextlib
 import logging
 from typing import Any
 
@@ -20,26 +18,12 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import (
-    ANIMATION_ASCENDING,
-    ANIMATION_BLINKING,
-    ANIMATION_BREATHING,
-    ANIMATION_DESCENDING,
-    ANIMATION_NONE,
-    DEFAULT_BRIGHTNESS,
-    DOMAIN,
-    ISSUE_CONNECTION_REFUSED,
-    UPDATE_INTERVAL,
-)
+from .const import DOMAIN, ISSUE_CONNECTION_REFUSED, UPDATE_INTERVAL
 from .volcano import VolcanoConnectionError, VolcanoHybrid, VolcanoState
 
 _LOGGER = logging.getLogger(__name__)
 
 type VolcanoConfigEntry = ConfigEntry[VolcanoDataUpdateCoordinator]
-
-ANIMATION_STEP = 8
-ANIMATION_FRAME_DELAY = 0.1
-BLINK_FRAME_DELAY = 0.5
 
 # The vaporizer accepts one BLE connection at a time. This many consecutive
 # refusals while it is still advertising means something else holds the link.
@@ -67,8 +51,6 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         )
         self.device = device
         self.address = device.address
-        self._fan_timer_task: asyncio.Task[None] | None = None
-        self._animation_task: asyncio.Task[None] | None = None
         self._was_available = True
         self.consecutive_failures = 0
         entry.async_on_unload(device.register_callback(self._handle_push_update))
@@ -139,7 +121,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
     @callback
     def _handle_update_success(self) -> None:
         """Log recovery once and clear any contention issue."""
-        self._consecutive_failures = 0
+        self.consecutive_failures = 0
         if not self._was_available:
             self._was_available = True
             _LOGGER.info("Reconnected to the Volcano Hybrid at %s", self.address)
@@ -150,9 +132,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         )
 
     async def async_shutdown_device(self) -> None:
-        """Stop background work and drop the BLE link."""
-        self.async_cancel_fan_timer()
-        await self.async_stop_animation()
+        """Drop the BLE link."""
         await self.device.async_disconnect()
 
     # -- commands ----------------------------------------------------------
@@ -208,100 +188,3 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
     async def async_set_register2(self, enabled: bool) -> None:
         """Set register 2."""
         await self._async_command(self.device.async_set_register2(enabled))
-
-    # -- fan timer ---------------------------------------------------------
-
-    async def async_fan_timer(
-        self,
-        duration: float,
-        turn_off_heat: bool = False,
-        turn_off_screen: bool = False,
-    ) -> None:
-        """Start the fan and stop it again after ``duration`` seconds."""
-        self.async_cancel_fan_timer()
-        await self.async_turn_fan_on()
-        self._fan_timer_task = self.config_entry.async_create_background_task(
-            self.hass,
-            self._fan_timer(duration, turn_off_heat, turn_off_screen),
-            f"{DOMAIN} fan timer {self.address}",
-        )
-
-    @callback
-    def async_cancel_fan_timer(self) -> None:
-        """Cancel a running fan timer."""
-        if self._fan_timer_task is not None and not self._fan_timer_task.done():
-            self._fan_timer_task.cancel()
-        self._fan_timer_task = None
-
-    async def _fan_timer(
-        self, duration: float, turn_off_heat: bool, turn_off_screen: bool
-    ) -> None:
-        """Wait out the fan timer, then shut things down."""
-        await asyncio.sleep(duration)
-        try:
-            await self.device.async_turn_fan_off()
-            if turn_off_heat:
-                await self.device.async_turn_heater_off()
-            if turn_off_screen:
-                await self.device.async_set_brightness(0)
-        except VolcanoConnectionError as err:
-            _LOGGER.warning("Fan timer could not reach the device: %s", err)
-        await self.async_request_refresh()
-
-    # -- screen animation --------------------------------------------------
-
-    async def async_start_animation(self, animation_type: str) -> None:
-        """Start a screen animation, replacing any running one."""
-        await self.async_stop_animation()
-        if animation_type == ANIMATION_NONE:
-            return
-        self._animation_task = self.config_entry.async_create_background_task(
-            self.hass,
-            self._animate(animation_type),
-            f"{DOMAIN} animation {self.address}",
-        )
-
-    async def async_stop_animation(self) -> None:
-        """Stop the running animation and restore the default brightness."""
-        task = self._animation_task
-        self._animation_task = None
-        if task is None or task.done():
-            return
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-        # Restore brightness from here rather than the animation task: awaiting
-        # anything inside a cancelled task raises CancelledError immediately.
-        with contextlib.suppress(VolcanoConnectionError):
-            await self.device.async_set_brightness(DEFAULT_BRIGHTNESS)
-        await self.async_request_refresh()
-
-    async def _animate(self, animation_type: str) -> None:
-        """Drive the screen brightness in a loop until cancelled."""
-        brightness = 0
-        ascending = True
-        delay = (
-            BLINK_FRAME_DELAY
-            if animation_type == ANIMATION_BLINKING
-            else ANIMATION_FRAME_DELAY
-        )
-        try:
-            while True:
-                if animation_type == ANIMATION_BLINKING:
-                    brightness = 0 if brightness else 100
-                elif animation_type == ANIMATION_BREATHING:
-                    brightness += ANIMATION_STEP if ascending else -ANIMATION_STEP
-                    if brightness >= 100 or brightness <= 0:
-                        ascending = not ascending
-                    brightness = min(100, max(0, brightness))
-                elif animation_type == ANIMATION_ASCENDING:
-                    brightness = 0 if brightness >= 100 else brightness + ANIMATION_STEP
-                elif animation_type == ANIMATION_DESCENDING:
-                    brightness = 100 if brightness <= 0 else brightness - ANIMATION_STEP
-                else:
-                    return
-
-                await self.device.async_set_brightness(brightness)
-                await asyncio.sleep(delay)
-        except VolcanoConnectionError as err:
-            _LOGGER.warning("Screen animation stopped: %s", err)

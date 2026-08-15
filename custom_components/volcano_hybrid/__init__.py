@@ -19,17 +19,15 @@ from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
 )
-from homeassistant.helpers.typing import ConfigType
 
 from .const import CONF_FAN_ON_CONNECT, CONF_INITIAL_TEMP, CONF_MAC_ADDRESS, DOMAIN
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
-from .services import async_setup_services
 from .volcano import VolcanoConnectionError, VolcanoHybrid
 
 _LOGGER = logging.getLogger(__name__)
 
-# The integration is config-entry only; async_setup exists purely to register
-# the actions, per the action-setup quality-scale rule.
+# The integration is config-entry only. This rejects a stray `volcano_hybrid:`
+# block in configuration.yaml rather than silently ignoring it.
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 PLATFORMS: list[Platform] = [
@@ -40,12 +38,6 @@ PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.SWITCH,
 ]
-
-
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the integration actions."""
-    async_setup_services(hass)
-    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> bool:

@@ -17,7 +17,7 @@ they can be used in automations, scripts and dashboards like anything else.
 
 - **Climate entity** — target temperature, heater on/off and fan on/off in one card
 - **Individual switches** for the heater and the fan
-- **Screen backlight** as a dimmable light, plus screen animations
+- **Screen backlight** as a dimmable light
 - **Auto-off delay** as a configurable number entity
 - **Diagnostics** — serial number, both firmware versions, hours of operation and
   live connection state
@@ -148,7 +148,8 @@ actions:
 ```
 
 **Tell me when it is ready.** The vaporizer takes a couple of minutes to reach
-temperature and it is easy to wander off. Use the screen itself as the alert:
+temperature and it is easy to wander off. Pulse the screen as a visual cue, and
+notify as well so it reaches you in another room:
 
 ```yaml
 triggers:
@@ -156,26 +157,49 @@ triggers:
     entity_id: sensor.volcano_hybrid_temperature
     above: 179
 actions:
-  - action: volcano_hybrid.screen_animation
-    target:
-      entity_id: climate.volcano_hybrid
+  - repeat:
+      count: 3
+      sequence:
+        - action: light.turn_on
+          target:
+            entity_id: light.volcano_hybrid_screen
+          data:
+            brightness_pct: 100
+        - delay:
+            seconds: 1
+        - action: light.turn_on
+          target:
+            entity_id: light.volcano_hybrid_screen
+          data:
+            brightness_pct: 10
+        - delay:
+            seconds: 1
+  - action: notify.persistent_notification
     data:
-      animation_type: breathing
+      message: Volcano is up to temperature.
 ```
 
-**Fill a bag without standing over it.** Run the fan for a measured time and shut
-everything down afterwards:
+**Fill a bag without standing over it.** Run the fan for a measured time, then shut
+everything down:
 
 ```yaml
 actions:
-  - action: volcano_hybrid.fan_timer
+  - action: switch.turn_on
     target:
-      entity_id: climate.volcano_hybrid
-    data:
-      duration: 36
-      turn_off_heat: true
-      turn_off_screen: true
+      entity_id: switch.volcano_hybrid_fan
+  - delay:
+      seconds: 36
+  - action: switch.turn_off
+    target:
+      entity_id: switch.volcano_hybrid_fan
+  - action: switch.turn_off
+    target:
+      entity_id: switch.volcano_hybrid_heater
 ```
+
+A `delay` does not survive a Home Assistant restart. If Home Assistant restarts
+mid-bag the fan keeps running until you stop it, so pair this with the auto-off
+number entity if that matters to you.
 
 **Never leave it heating.** The device has its own auto-off, but it is capped at
 180 minutes and does not know whether you are home:
@@ -242,52 +266,8 @@ The temperature sensor reports **unknown** while the heater is idle. That is not
 a fault: the device reports a −18 °C placeholder when the probe has no live
 reading, and surfacing that as a real temperature would poison your history.
 
-## Actions
-
-### `volcano_hybrid.fan_timer`
-
-Runs the fan for a set time, then stops it — optionally switching off the heater
-and the screen too.
-
-```yaml
-action: volcano_hybrid.fan_timer
-target:
-  entity_id: climate.volcano_hybrid
-data:
-  duration: 36
-  turn_off_heat: false
-  turn_off_screen: false
-```
-
-| Field | Required | Description |
-| --- | --- | --- |
-| `duration` | yes | Seconds to run the fan, 1–3600 |
-| `turn_off_heat` | no | Also switch the heater off when the timer expires |
-| `turn_off_screen` | no | Also switch the screen off when the timer expires |
-
-A pending timer is cancelled if the integration is reloaded or removed, so it can
-never operate the device after Home Assistant has stopped managing it.
-
-### `volcano_hybrid.screen_animation`
-
-Animates the screen brightness — useful as a "your session is ready" cue.
-
-```yaml
-action: volcano_hybrid.screen_animation
-target:
-  entity_id: climate.volcano_hybrid
-data:
-  animation_type: breathing
-```
-
-| Field | Required | Description |
-| --- | --- | --- |
-| `animation_type` | yes | `none`, `blinking`, `breathing`, `ascending` or `descending` |
-
-Use `none` to stop an animation and restore the default brightness.
-
-This integration provides no custom triggers or conditions; use the standard
-state triggers and conditions against its entities.
+This integration provides no custom actions, triggers or conditions — use Home
+Assistant's standard ones against the entities above.
 
 ## Removal
 

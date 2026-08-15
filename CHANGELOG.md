@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-08-11
+
+**Breaking.** The two custom actions are gone. Any automation, script or dashboard
+calling them will fail with "service not found".
+
+### Removed
+
+- `volcano_hybrid.fan_timer`
+- `volcano_hybrid.screen_animation`
+
+Both were convenience wrappers over entities the integration already exposes, so
+nothing is actually lost — the same behaviour is a few lines of built-in actions,
+and the **Use cases** section of the README now shows exactly that. A fan timer is
+`switch.turn_on`, a `delay`, and `switch.turn_off`; a screen animation is a `repeat`
+over `light.turn_on`. The one behavioural difference is that a `delay` does not
+survive a Home Assistant restart, where the old action's timer was cancelled
+cleanly on unload.
+
+Removing them also removed roughly 180 lines of coordinator machinery that only
+those two actions could reach.
+
+### Fixed
+
+- **The connection-contention repair could only fire once.** The success handler
+  reset a differently-spelled attribute than the failure handler incremented, so
+  the consecutive-failure counter never returned to zero. After the first episode
+  the `== threshold` check could never match again and later contention went
+  unreported. Caught while removing the actions; there is now a test that runs two
+  separate episodes.
+
 ## [2.1.1] - 2026-08-11
 
 ### Fixed

@@ -142,47 +142,6 @@
       }
     }
   },
-  "selector": {
-    "animation_type": {
-      "options": {
-        "none": "None (stop animating)",
-        "blinking": "Blinking",
-        "breathing": "Breathing",
-        "ascending": "Ascending",
-        "descending": "Descending"
-      }
-    }
-  },
-  "services": {
-    "fan_timer": {
-      "name": "Fan timer",
-      "description": "Runs the fan for a set time, then stops it.",
-      "fields": {
-        "duration": {
-          "name": "Duration",
-          "description": "How long to run the fan, in seconds."
-        },
-        "turn_off_heat": {
-          "name": "Turn off heat",
-          "description": "Also switch the heater off when the timer expires."
-        },
-        "turn_off_screen": {
-          "name": "Turn off screen",
-          "description": "Also switch the screen off when the timer expires."
-        }
-      }
-    },
-    "screen_animation": {
-      "name": "Screen animation",
-      "description": "Animates the screen brightness. Use the 'none' animation to stop and restore the default brightness.",
-      "fields": {
-        "animation_type": {
-          "name": "Animation",
-          "description": "Which animation to run."
-        }
-      }
-    }
-  },
   "exceptions": {
     "cannot_connect": {
       "message": "Could not connect to the Volcano Hybrid at {address}: {error}"
@@ -192,12 +151,6 @@
     },
     "command_failed": {
       "message": "The command could not be sent to the Volcano Hybrid: {error}"
-    },
-    "no_target": {
-      "message": "No Volcano Hybrid was found for this action."
-    },
-    "entry_not_loaded": {
-      "message": "{target} is not loaded, so this action cannot run."
     }
   }
 }

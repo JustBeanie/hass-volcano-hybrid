@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from unittest.mock import AsyncMock, patch
 
@@ -13,12 +12,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.volcano_hybrid.const import DOMAIN, ISSUE_CONNECTION_REFUSED
-from custom_components.volcano_hybrid.volcano import (
-    CHAR_BRIGHTNESS,
-    VolcanoConnectionError,
-)
-
-from .conftest import FakeBleakClient
+from custom_components.volcano_hybrid.volcano import VolcanoConnectionError
 
 CLIMATE = "climate.s_b_volcano_h"
 
@@ -32,74 +26,6 @@ async def loaded_entry(
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
     return config_entry
-
-
-@pytest.mark.parametrize(
-    "animation", ["blinking", "ascending", "descending", "breathing"]
-)
-async def test_every_animation_drives_the_brightness(
-    hass: HomeAssistant,
-    loaded_entry: MockConfigEntry,
-    fake_client: FakeBleakClient,
-    animation: str,
-) -> None:
-    """Each animation writes brightness values and stops cleanly."""
-    coordinator = loaded_entry.runtime_data
-    fake_client.writes.clear()
-
-    await coordinator.async_start_animation(animation)
-    # Let a handful of frames run.
-    for _ in range(6):
-        await asyncio.sleep(0)
-    await coordinator.async_stop_animation()
-    await hass.async_block_till_done()
-
-    written = [data for uuid, data in fake_client.writes if uuid == CHAR_BRIGHTNESS]
-    assert written, f"{animation} wrote no brightness values"
-    # Stopping always restores the default.
-    assert written[-1] == (70).to_bytes(2, "little")
-    assert coordinator._animation_task is None
-
-
-async def test_unknown_animation_returns_immediately(
-    hass: HomeAssistant, loaded_entry: MockConfigEntry
-) -> None:
-    """An animation type the loop does not recognise exits rather than spins."""
-    coordinator = loaded_entry.runtime_data
-    await coordinator._animate("not-a-real-animation")
-
-
-async def test_animation_survives_a_connection_error(
-    hass: HomeAssistant, loaded_entry: MockConfigEntry
-) -> None:
-    """A device that drops mid-animation stops the loop instead of raising."""
-    coordinator = loaded_entry.runtime_data
-
-    with patch.object(
-        coordinator.device,
-        "async_set_brightness",
-        side_effect=VolcanoConnectionError("gone"),
-    ):
-        await coordinator._animate("breathing")
-
-
-async def test_fan_timer_survives_a_connection_error(
-    hass: HomeAssistant, loaded_entry: MockConfigEntry, caplog: pytest.LogCaptureFixture
-) -> None:
-    """A device that drops before the timer expires logs rather than raising."""
-    coordinator = loaded_entry.runtime_data
-
-    with (
-        patch("custom_components.volcano_hybrid.coordinator.asyncio.sleep"),
-        patch.object(
-            coordinator.device,
-            "async_turn_fan_off",
-            side_effect=VolcanoConnectionError("gone"),
-        ),
-    ):
-        await coordinator._fan_timer(1, turn_off_heat=True, turn_off_screen=True)
-
-    assert "Fan timer could not reach the device" in caplog.text
 
 
 async def test_command_failure_raises_a_translated_error(
@@ -213,3 +139,43 @@ async def test_no_repair_issue_when_the_device_is_simply_away(
             await coordinator.async_refresh()
 
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_contention_can_be_raised_more_than_once(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """A second episode raises the issue again.
+
+    The failure counter has to reset on success. It previously did not -- the
+    reset assigned a differently-spelled attribute -- so the `== THRESHOLD`
+    check could only ever match once in a Home Assistant lifetime, and every
+    later contention went unreported.
+    """
+    coordinator = loaded_entry.runtime_data
+    issue_id = f"{ISSUE_CONNECTION_REFUSED}_{loaded_entry.entry_id}"
+    registry = ir.async_get(hass)
+
+    async def _episode() -> None:
+        with (
+            patch(
+                "custom_components.volcano_hybrid.coordinator.async_address_present",
+                return_value=True,
+            ),
+            patch.object(
+                coordinator.device,
+                "async_update",
+                side_effect=VolcanoConnectionError("refused"),
+            ),
+        ):
+            for _ in range(3):
+                await coordinator.async_refresh()
+
+    await _episode()
+    assert registry.async_get_issue(DOMAIN, issue_id) is not None
+
+    await coordinator.async_refresh()
+    assert registry.async_get_issue(DOMAIN, issue_id) is None
+    assert coordinator.consecutive_failures == 0
+
+    await _episode()
+    assert registry.async_get_issue(DOMAIN, issue_id) is not None

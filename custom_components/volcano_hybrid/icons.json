@@ -65,13 +65,5 @@
         "default": "mdi:thermometer-minus"
       }
     }
-  },
-  "services": {
-    "fan_timer": {
-      "service": "mdi:fan-clock"
-    },
-    "screen_animation": {
-      "service": "mdi:animation"
-    }
   }
 }
