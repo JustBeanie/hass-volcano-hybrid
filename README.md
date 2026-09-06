@@ -4,6 +4,10 @@
 [![Quality scale](https://img.shields.io/badge/quality%20scale-platinum-E5E4E2.svg)](https://developers.home-assistant.io/docs/core/integration-quality-scale/)
 [![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=JustBeanie&repository=hass-volcano-hybrid&category=integration)
 
+<p align="center">
+  <img src="assets/volcano-hybrid-ha-sb.png" alt="Volcano Hybrid — HA × S&amp;B" width="360">
+</p>
+
 Control a **Storz & Bickel Volcano Hybrid** vaporizer from Home Assistant over
 Bluetooth LE.
 
