@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.2] - 2026-09-05
+
+### Added
+
+- Direct **Open in HACS** and **Add to Home Assistant** buttons for the two
+  installation steps.
+- Repository release and workflow badges, plus the approved Volcano Hybrid
+  branding lockup.
+
+### Changed
+
+- Moved the HACS button next to the HACS installation instructions so it is
+  available where users need it.
+- Expanded installation, troubleshooting, contribution and release-history
+  guidance in the README.
+
 ## [3.1.1] - 2026-08-15
 
 ### Fixed
