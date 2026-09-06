@@ -1,34 +1,34 @@
 # Brand assets
 
+## Runtime branding
+
+Home Assistant 2026.3 and newer loads the integration's runtime branding from
+[`custom_components/volcano_hybrid/brand/`](../custom_components/volcano_hybrid/brand/).
+Those files are the approved Volcano Hybrid HA × S&B artwork and are included
+with the integration itself.
+
+The files in this directory are retained only as a staging area for a future
+pull request to the Home Assistant brands repository.
+
 For the [`brands`](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/brands/)
 quality-scale rule, these need to be submitted as a pull request to
 [home-assistant/brands](https://github.com/home-assistant/brands) under
 `custom_integrations/volcano_hybrid/`. They do nothing sitting in this repository.
 
-## Status: not ready to submit
+## Status: not yet submitted
 
-`custom_integrations/volcano_hybrid/logo.png` and `logo@2x.png` are generated from
-the only source available — a 1440x810 **JPEG** that was previously committed here
-with a `.png` extension. They are now real PNGs, trimmed to the artwork and sized
-inside the spec (572x213 and 1144x426, shortest side within the required ranges).
+The staging directory now contains the same approved transparent artwork as the
+runtime `brand/` directory:
 
-Two things still block a submission:
+- `icon.png` and `icon@2x.png`: the square volcano-and-house mark.
+- `logo.png` and `logo@2x.png`: the full `HA × S&B` lockup.
 
-1. **No icon.** `icon.png` (256x256) and `icon@2x.png` (512x512) must be square. The
-   artwork is a 2.69:1 wordmark with no square element that reads on its own. The
-   script `V` is the only candidate and cropping it invents a mark the brand owner
-   never made.
-2. **Quality.** The source is JPEG-compressed, so there are ringing artefacts around
-   the lettering, and the light grey panel is baked into the image rather than being
-   transparent. The spec prefers transparency. The panel cannot simply be keyed out
-   because the word "HYBRID" is white and would vanish against a light theme.
-
-The fix is a clean source asset — ideally vector, or a PNG with a real alpha channel
-— from Storz & Bickel's press material, rather than anything derived further from
-this JPEG.
+The files meet the PNG, transparency and size requirements. The quality-scale item
+remains `todo` only because the assets have not yet been submitted to the upstream
+Home Assistant brands repository.
 
 ## Regenerating
 
-The current files were produced by trimming the source to its artwork bounding box,
-saving that at native resolution as `logo@2x.png`, and downscaling by half with
-Lanczos for `logo.png` — so neither is upscaled.
+The runtime icon was generated from the approved lockup, and the logo variants are
+downscaled copies of the approved transparent lockup. The normal and hDPI files are
+256x256 and 512x512 respectively.

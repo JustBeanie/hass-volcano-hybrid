@@ -17,11 +17,11 @@ rules:
   brands:
     status: todo
     comment: |
-      Blocked on artwork, not on process. The images previously staged in
-      brands/ were JPEGs renamed to .png (no alpha, and the @2x file was
-      byte-identical to the base), which the brands repository rejects. A
-      spec-compliant square icon does not exist yet. See the README section on
-      contributing artwork.
+      The integration now ships spec-compliant local icon and logo assets in
+      custom_components/volcano_hybrid/brand/, which Home Assistant 2026.3+
+      uses at runtime. The quality-scale rule still requires the assets to be
+      submitted to the Home Assistant brands repository; that upstream PR is
+      still pending.
   common-modules:
     status: done
     comment: |
