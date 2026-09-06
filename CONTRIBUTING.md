@@ -73,6 +73,6 @@ requirement and CI enforces it.
 
 ## Quality scale
 
-The integration targets [Bronze](https://developers.home-assistant.io/docs/core/integration-quality-scale/).
+The integration targets [Platinum](https://developers.home-assistant.io/docs/core/integration-quality-scale/).
 `custom_components/volcano_hybrid/quality_scale.yaml` records the status of every
 rule; keep it honest if you change something it covers.

@@ -3,6 +3,10 @@
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 [![Quality scale](https://img.shields.io/badge/quality%20scale-platinum-E5E4E2.svg)](https://developers.home-assistant.io/docs/core/integration-quality-scale/)
 [![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=JustBeanie&repository=hass-volcano-hybrid&category=integration)
+[![Latest release](https://img.shields.io/github/v/release/JustBeanie/hass-volcano-hybrid?display_name=tag&sort=semver)](https://github.com/JustBeanie/hass-volcano-hybrid/releases/latest)
+[![HACS validation](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/hacs.yaml/badge.svg)](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/hacs.yaml)
+[![Hassfest](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/hassfest.yaml)
+[![Tests and lint](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/lint.yaml/badge.svg)](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/lint.yaml)
 
 <p align="center">
   <img src="assets/volcano-hybrid-ha-sb.png" alt="Volcano Hybrid — HA × S&amp;B" width="360">
@@ -67,6 +71,8 @@ Bickel phone app is connected, Home Assistant cannot connect, and vice versa.
 4. Search HACS for **Volcano Hybrid** and select **Download**.
 5. Restart Home Assistant.
 
+See the [release history](CHANGELOG.md) for changes between versions.
+
 ### Manual
 
 1. Download the latest release from the
@@ -77,6 +83,8 @@ Bickel phone app is connected, Home Assistant cannot connect, and vice versa.
 3. Restart Home Assistant.
 
 ## Setup
+
+[![Add the Volcano Hybrid integration to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=volcano_hybrid)
 
 Switch the vaporizer on and make sure the Storz & Bickel app is not connected to it.
 
@@ -329,6 +337,13 @@ logger:
     custom_components.volcano_hybrid: debug
 ```
 
+If these checks do not solve the problem, [open an issue](https://github.com/JustBeanie/hass-volcano-hybrid/issues/new/choose)
+with the diagnostics download, relevant debug logs, Home Assistant version,
+integration version, firmware version, and whether the device is reached through
+the host adapter or an ESPHome Bluetooth proxy. Please search [open and closed
+issues](https://github.com/JustBeanie/hass-volcano-hybrid/issues?q=is%3Aissue)
+first.
+
 ## Dependencies
 
 The integration pulls in one PyPI package,
@@ -338,7 +353,8 @@ is the same connection helper Home Assistant's own Bluetooth integrations use.
 
 ## Contributing
 
-Issues and pull requests are welcome. Run the checks before opening one:
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
+the development workflow and run the checks before opening one:
 
 ```bash
 python -m pytest tests/ && python -m ruff check . && python -m ruff format --check .
