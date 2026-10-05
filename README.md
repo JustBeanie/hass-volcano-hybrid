@@ -43,11 +43,7 @@ they can be used in automations, scripts and dashboards like anything else.
 | Venty, Crafty, Mighty | No | Different Bluetooth protocols; untested here |
 
 Developed against firmware `V01.03.00.00` with BLE firmware `V01.00.00.00`. Other
-firmware revisions are expected to work — the protocol has been stable. The status
-register bits, fault codes and settings words come from the firmware decode in
-magikh0e's [Volcano BLE spec](https://github.com/magikh0e/home-assistant-volcano-hybrid/blob/main/VOLCANO_BLE_SPEC.md);
-the device settings switches ship disabled by default.
-
+firmware revisions are expected to work — the protocol has been stable. 
 ## Requirements
 
 - Home Assistant 2025.2 or newer
