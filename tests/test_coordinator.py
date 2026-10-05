@@ -392,16 +392,27 @@ async def test_a_disconnect_is_not_recorded_as_a_successful_update(
     assert notify.call_count == 1
 
 
-async def test_a_connected_push_still_publishes_data(
+async def test_a_connected_push_does_not_postpone_the_next_poll(
     hass: HomeAssistant, loaded_entry: MockConfigEntry
 ) -> None:
-    """A live notification is a real update and still resets the poll timer."""
+    """A notification reaches the entities without touching the poll timer.
+
+    Pushes carry no temperature. Routing them through async_set_updated_data
+    reset the refresh timer on every status-bit change, which stretched the
+    10 s temperature cadence whenever the setpoint bit flickered.
+    """
     coordinator = loaded_entry.runtime_data
 
-    with patch.object(coordinator, "async_set_updated_data") as set_data:
+    with (
+        patch.object(coordinator, "async_set_updated_data") as set_data,
+        patch.object(coordinator, "async_update_listeners") as notify,
+        patch.object(coordinator, "_schedule_refresh") as reschedule,
+    ):
         coordinator.device._notification_handler(None, bytearray(RAW_STATUS_HEATING))
 
-    assert set_data.call_count == 1
+    assert set_data.call_count == 0
+    assert reschedule.call_count == 0
+    assert notify.call_count == 1
 
 
 async def test_the_interval_follows_whether_the_device_is_working(

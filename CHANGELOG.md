@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.1] - 2026-10-04
+
+### Fixed
+
+- **The temperature updated every 15 seconds or more while heating, not 10.** Every
+  status-register notification reset Home Assistant's poll timer, and a
+  notification carries no temperature, so each one postponed the next temperature
+  read by a full interval. 3.3.0 made this much worse by publishing every
+  status-bit change, including the "target reached" bit that flickers as the heat
+  block holds its setpoint. Notifications now update the entities without touching
+  the poll schedule.
+
 ## [3.3.0] - 2026-10-04
 
 The status registers are decoded. Until now the integration used two bits of one

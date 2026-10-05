@@ -82,18 +82,20 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         entry.async_on_unload(device.register_callback(self._handle_push_update))
 
     @callback
-    def _handle_push_update(self, state: VolcanoState) -> None:
-        """Handle a state update pushed from the device."""
-        if not state.connected:
-            # A dropped link is not a successful poll. async_set_updated_data
-            # would record it as one -- it sets last_update_success and resets
-            # the refresh timer -- which left the failure counter at zero and
-            # the diagnostic sensors reporting available through an outage.
-            # The coordinator's data is the same VolcanoState object the device
-            # mutates, so listeners still see the new availability.
-            self.async_update_listeners()
-            return
-        self.async_set_updated_data(state)
+    def _handle_push_update(self, _state: VolcanoState) -> None:
+        """Handle a state update pushed from the device.
+
+        Never routed through async_set_updated_data. That call resets the
+        refresh timer, and a push carries only the status register -- the
+        temperature comes from polls alone. Each push therefore postponed the
+        next temperature read by a full interval; once 3.3.0 published every
+        status-bit change, "target reached" flickering around the setpoint
+        stretched the 10 s cadence to 15 s and more. It would also have
+        recorded a dropped link as a successful update. The coordinator's data
+        is the same VolcanoState object the device mutates, so notifying the
+        listeners is all a push needs.
+        """
+        self.async_update_listeners()
 
     @callback
     def async_set_ble_device(
