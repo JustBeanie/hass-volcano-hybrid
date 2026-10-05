@@ -27,8 +27,10 @@ they can be used in automations, scripts and dashboards like anything else.
 - **Individual switches** for the heater and the fan
 - **Screen backlight** as a dimmable light
 - **Auto-off delay** as a configurable number entity
-- **Diagnostics** — serial number, both firmware versions, hours of operation and
-  live connection state
+- **Fault reporting** — a heater/pump fault sensor and a last-fault sensor that
+  names the newest entry in the device's own error log
+- **Diagnostics** — serial number, both firmware versions, hours of operation,
+  service (burn-in) mode and live connection state
 - **Works through ESPHome Bluetooth proxies**, so the vaporizer does not need to
   be in range of the machine running Home Assistant
 
@@ -41,9 +43,10 @@ they can be used in automations, scripts and dashboards like anything else.
 | Venty, Crafty, Mighty | No | Different Bluetooth protocols; untested here |
 
 Developed against firmware `V01.03.00.00` with BLE firmware `V01.00.00.00`. Other
-firmware revisions are expected to work — the protocol has been stable — but the two
-`Register` switches are disabled by default because their meaning is not confirmed
-across revisions.
+firmware revisions are expected to work — the protocol has been stable. The status
+register bits, fault codes and settings words come from the firmware decode in
+magikh0e's [Volcano BLE spec](https://github.com/magikh0e/home-assistant-volcano-hybrid/blob/main/VOLCANO_BLE_SPEC.md);
+the device settings switches ship disabled by default.
 
 ## Requirements
 
@@ -123,7 +126,7 @@ The integration holds a **persistent Bluetooth connection** rather than connecti
 for each read. Over that connection:
 
 - **Every 10 seconds while the heater or fan is running** it polls the current
-  temperature, target temperature, status register and screen brightness. The heat
+  temperature, target temperature, status registers 1 and 2 and screen brightness. The heat
   block moves fast enough that a longer interval makes the climate card feel broken.
 - **Every 60 seconds once both are off.** There is no ramp left to watch, and a
   cooling vaporizer does not need six polls a minute. Pressing a button in Home
@@ -133,7 +136,9 @@ for each read. Over that connection:
   interval is in force. The register is still polled as well, so a dropped
   notification cannot leave the heater reading the wrong way round.
 - **Every 10 minutes** it re-reads the things that barely change: hours of operation,
-  auto-off delay and the two registers. Serial number and firmware are read once per
+  auto-off delay, status registers 3–5 and the error history. The history is also
+  re-read the moment a fault bit appears, so the last-fault sensor does not lag a
+  fault by ten minutes. Serial number and firmware are read once per
   connection, since they cannot change while one is open.
 - **After a command**, the new state is published optimistically and a refresh is
   requested, so the UI does not snap back while waiting for the next poll.
@@ -256,15 +261,23 @@ These are design constraints, not bugs:
 - **One Bluetooth connection at a time.** The vaporizer accepts a single BLE link, so
   Home Assistant and the Storz & Bickel phone app are mutually exclusive. If the app
   is connected, Home Assistant cannot be, and the integration will raise a repair
-  issue telling you so.
+  issue telling you so. That issue is raised only when the vaporizer turns Home
+  Assistant away at the connect stage, which is the only thing another app holding
+  the link can cause — a device that accepts the connection and then stops answering
+  is a separate fault, and gets a separate repair that does not blame the app.
 - **No temperature while idle.** With the heater off the device reports a −18 °C
   placeholder rather than an ambient reading, so the temperature sensor is `unknown`
   until it starts heating. Reporting the placeholder as a real temperature would
   poison your history.
-- **`Register 2` and `Register 3` are not labelled.** On the stock firmware these
-  appear to control the display during cooling and the vibration alert, but that is
-  not confirmed across firmware revisions, so they are named after the registers they
-  write and ship disabled by default.
+- **Status registers 4 and 5 are not decoded.** Nothing is known about their bits
+  yet; they are exposed as raw hex for diagnosis and stay unknown on a device that
+  does not report them.
+- **Error-log order is not confirmed.** The firmware design puts the newest fault
+  first, history 1 before history 2, and the last-fault sensor follows that. It has
+  not been checked against a device with several faults logged.
+- **Status register 1 is never written.** It does not accept the set/clear word the
+  settings registers use, and a write there can stop the pump and corrupt the
+  register until the vaporizer is unplugged.
 - **Hours of operation only counts hours.** The device exposes minutes separately and
   the sensor reports whole hours, so it steps rather than climbs smoothly.
 - **No control the device itself does not expose.** There is no bag-volume sensor, no
@@ -283,11 +296,19 @@ These are design constraints, not bugs:
 | `number.<name>_auto_off_time` | 1–180 minutes |
 | `sensor.<name>_temperature` | Current heat-block temperature |
 | `binary_sensor.<name>_connection` | Whether Home Assistant holds a Bluetooth link |
+| `binary_sensor.<name>_heater_pump_fault` | The heater timing fault that stops both the heater and the pump. Attributes carry the heater-only fault, the pump interlock fault and any regulation faults |
+| `binary_sensor.<name>_service_mode` | The service / burn-in mode: the device heats itself to 230 °C for ten minutes |
+| `sensor.<name>_last_fault` | The newest fault in the device's error log, by name (`none` for an empty log). Attributes carry the whole log, decoded and raw |
+| `switch.<name>_register_3` | Vibration (disabled by default; entity ID kept from before it was decoded) |
+| `switch.<name>_register_2` | Display stays on while cooling (disabled by default; entity ID kept likewise) |
+| `switch.<name>_display_fahrenheit` | Device display in °F instead of °C (disabled by default) |
 
 Plus diagnostic sensors for the serial number, firmware versions, hours of
-operation, brightness and auto-off delay. A few debug entities (raw register,
-connection status, heater/fan status text) ship disabled by default and can be
-enabled from the device page.
+operation, brightness and auto-off delay. Debug entities ship disabled by default
+and can be enabled from the device page: status registers 1–5 and error history
+1–2 as raw hex, connection status and heater/fan status text. A fresh install names
+the settings switches `vibration` and `display_while_cooling`; an upgrade keeps the
+existing `register_3` / `register_2` entity IDs.
 
 The temperature sensor reports **unknown** while the heater is idle. That is not
 a fault: the device reports a −18 °C placeholder when the probe has no live

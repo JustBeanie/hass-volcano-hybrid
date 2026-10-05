@@ -12,17 +12,34 @@ from bleak.exc import BleakError
 import pytest
 
 from custom_components.volcano_hybrid.volcano import (
+    ADAPTER_CACHE_RESET_AFTER,
     CHAR_AUTO_OFF_SETTING,
     CHAR_BRIGHTNESS,
     CHAR_CURRENT_TEMP,
+    CHAR_HISTORY1,
+    CHAR_HISTORY2,
+    CHAR_REGISTER2,
+    CHAR_REGISTER3,
     CHAR_SERIAL_NUMBER,
     CHAR_STATUS_REGISTER,
     CHAR_TARGET_TEMP,
+    MASK_DISPLAY_COOLING_OFF,
+    MASK_FAHRENHEIT,
     MASK_FAN,
     MASK_HEATER,
+    MASK_HEATER_FAULT,
+    MASK_HEATER_PUMP_FAULT,
+    MASK_PUMP_INTERLOCK,
+    MASK_R1_ERR,
+    MASK_R2_ERR,
+    MASK_SERVICE_MODE,
+    MASK_VIBRATION_OFF,
+    R2_ERROR_FLAGS,
+    ConnectionFailure,
     VolcanoConnectionError,
     VolcanoHybrid,
     _decode_firmware,
+    _decode_history,
     _decode_int,
     _decode_string,
     _decode_temperature,
@@ -252,11 +269,74 @@ async def test_a_link_that_answers_nothing_is_treated_as_disconnected(
 
     with (
         patch.object(fake_client, "read_gatt_char", side_effect=BleakError("gone")),
-        pytest.raises(VolcanoConnectionError, match="answered no reads"),
+        pytest.raises(VolcanoConnectionError, match="answered no reads") as err,
     ):
         await device.async_update()
 
     assert device.state.connected is False
+    assert err.value.kind is ConnectionFailure.NO_READS
+    # The underlying bleak error rides along, so one WARNING is enough to tell a
+    # stale service table from a device that has stopped answering. Losing it to
+    # a debug line left a real outage unexplainable after the fact.
+    assert "gone" in str(err.value)
+
+
+async def test_a_link_that_answers_nothing_is_rebuilt_from_scratch(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """The dead client is thrown away, so the next poll can actually recover.
+
+    It used to be left in place. While bleak still called it connected,
+    ``_ensure_client`` handed the same dead client back on every later poll, so
+    the integration could never recover on its own -- the config entry had to be
+    reloaded by hand.
+    """
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+    before = mock_establish_connection.call_count
+
+    with (
+        patch.object(fake_client, "read_gatt_char", side_effect=BleakError("gone")),
+        pytest.raises(VolcanoConnectionError),
+    ):
+        await device.async_update()
+
+    assert device._client is None
+    assert fake_client.caches_cleared == 1
+
+    # The next poll builds a fresh link rather than reusing the dead one.
+    state = await device.async_update()
+    assert mock_establish_connection.call_count == before + 1
+    assert state.connected is True
+
+
+async def test_a_persistently_dead_link_clears_the_adapter_cache(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """Reconnecting fixes most of these; a stale table on the adapter needs more."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+
+    with (
+        patch.object(fake_client, "read_gatt_char", side_effect=BleakError("gone")),
+        patch(
+            "custom_components.volcano_hybrid.volcano.clear_adapter_cache",
+            AsyncMock(return_value=True),
+        ) as clear_adapter,
+    ):
+        for _ in range(ADAPTER_CACHE_RESET_AFTER):
+            with pytest.raises(VolcanoConnectionError):
+                await device.async_update()
+
+    # Only once the plain reconnect has been given its chances.
+    assert clear_adapter.call_count == 1
+    assert clear_adapter.await_args.args == (ADDRESS,)
+
+    # A working poll puts it back to square one, so a later episode gets the
+    # same escalation rather than clearing the adapter cache immediately.
+    await device.async_update()
+    assert device._no_read_failures == 0
 
 
 async def test_static_device_information_is_read_once_per_connection(
@@ -311,7 +391,10 @@ async def test_missing_characteristics_are_tolerated(
 
     assert state.connected is True
     assert state.serial_number is None
-    assert state.register2 is None
+    assert state.status2 is None
+    assert state.status5 is None
+    assert state.last_fault is None
+    assert state.vibration is None
 
 
 async def test_connect_failure_is_wrapped(
@@ -413,3 +496,157 @@ async def test_auto_off_falls_back_to_the_second_characteristic(
         await device.async_set_auto_off_minutes(45)
 
     assert device.state.auto_off_minutes == 45
+
+
+def test_spec_masks() -> None:
+    """The masks match the published spec, and the ERR masks are their ORs."""
+    assert (MASK_HEATER_FAULT, MASK_HEATER_PUMP_FAULT, MASK_PUMP_INTERLOCK) == (
+        0x0008,
+        0x0010,
+        0x4000,
+    )
+    assert MASK_R1_ERR == (
+        MASK_HEATER_FAULT | MASK_HEATER_PUMP_FAULT | MASK_PUMP_INTERLOCK
+    )
+    r2_err = 0
+    for mask in R2_ERROR_FLAGS:
+        r2_err |= mask
+    assert r2_err == MASK_R2_ERR == 0x003B
+    assert (MASK_SERVICE_MODE, MASK_FAHRENHEIT, MASK_DISPLAY_COOLING_OFF) == (
+        0x0040,
+        0x0200,
+        0x1000,
+    )
+    assert MASK_VIBRATION_OFF == 0x0400
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("0000000000000000", []),
+        ("6100000000000000", [61]),
+        ("6165530000000000", [61, 65, 53]),
+        ("6100720000000000", [61, 72]),
+        ("ABCD", None),
+        ("123", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_decode_history(text: str | None, expected: list[int] | None) -> None:
+    """Two-digit decimal fields, 00 is an empty slot, anything else is unknown."""
+    assert _decode_history(text) == expected
+
+
+async def test_history_reads_both_logs_newest_first(
+    mock_establish_connection: object, fake_client: FakeBleakClient
+) -> None:
+    """History 1 comes before history 2, and 0 means an empty log."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    state = await device.async_update()
+    assert state.fault_log == []
+    assert state.last_fault == 0
+
+    fake_client.reads[CHAR_HISTORY1] = b"4500000000000000"
+    fake_client.reads[CHAR_HISTORY2] = b"6000000000000000"
+    device._device_info_read_at = None
+    state = await device.async_update()
+    assert state.fault_log == [45, 60]
+    assert state.last_fault == 45
+
+
+async def test_register2_is_read_every_poll(
+    mock_establish_connection: object, fake_client: FakeBleakClient
+) -> None:
+    """Service mode lives in register 2, so it is not left to the slow cycle."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+    assert device.state.service_mode is False
+
+    fake_client.reads[CHAR_REGISTER2] = MASK_SERVICE_MODE.to_bytes(4, "little")
+    await device.async_update()
+    assert device.state.service_mode is True
+
+
+async def test_a_new_fault_rereads_the_history(
+    mock_establish_connection: object, fake_client: FakeBleakClient
+) -> None:
+    """A fault appearing between slow cycles refreshes the log straight away."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+    assert device.state.last_fault == 0
+
+    fake_client.reads[CHAR_STATUS_REGISTER] = MASK_HEATER_PUMP_FAULT.to_bytes(
+        4, "little"
+    )
+    fake_client.reads[CHAR_HISTORY1] = b"6100000000000000"
+    await device.async_update()
+    assert device.state.heater_pump_fault is True
+    assert device.state.last_fault == 61
+
+    # Still faulted: no further re-read until the slow cycle.
+    fake_client.reads[CHAR_HISTORY1] = b"6861000000000000"
+    await device.async_update()
+    assert device.state.last_fault == 61
+
+
+@pytest.mark.parametrize(
+    ("method", "enabled", "uuid", "word"),
+    [
+        ("async_set_vibration", True, CHAR_REGISTER3, 0x00010400),
+        ("async_set_vibration", False, CHAR_REGISTER3, 0x00000400),
+        ("async_set_display_while_cooling", True, CHAR_REGISTER2, 0x00011000),
+        ("async_set_display_while_cooling", False, CHAR_REGISTER2, 0x00001000),
+        ("async_set_display_fahrenheit", True, CHAR_REGISTER2, 0x00000200),
+        ("async_set_display_fahrenheit", False, CHAR_REGISTER2, 0x00010200),
+    ],
+)
+async def test_setting_writes_the_set_clear_word(
+    mock_establish_connection: object,
+    fake_client: FakeBleakClient,
+    method: str,
+    enabled: bool,
+    uuid: str,
+    word: int,
+) -> None:
+    """Settings are a 4-byte set/clear word, and the state is read back."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+
+    await getattr(device, method)(enabled)
+
+    assert fake_client.writes[-1] == (uuid, word.to_bytes(4, "little"))
+    attribute = method.removeprefix("async_set_")
+    assert getattr(device.state, attribute) is enabled
+
+
+async def test_a_rejected_setting_is_not_reported_as_applied(
+    mock_establish_connection: object, fake_client: FakeBleakClient
+) -> None:
+    """The read-back shows what the device latched, not what was asked."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+    fake_client.write_gatt_char = AsyncMock()  # accepts, changes nothing
+
+    await device.async_set_display_fahrenheit(True)
+
+    assert device.state.display_fahrenheit is False
+
+
+async def test_status_register_1_is_never_written(
+    mock_establish_connection: object, fake_client: FakeBleakClient
+) -> None:
+    """Register 1 rejects the set/clear convention and corrupts on a write."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+
+    async with device._lock:
+        with pytest.raises(ValueError):
+            await device._write_register_bits(CHAR_STATUS_REGISTER, MASK_HEATER, True)
+    assert not fake_client.writes

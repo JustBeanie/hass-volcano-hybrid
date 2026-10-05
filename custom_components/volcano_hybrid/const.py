@@ -19,8 +19,12 @@ CONF_MAC_ADDRESS = "mac_address"
 CONF_INITIAL_TEMP = "initial_temperature"
 CONF_FAN_ON_CONNECT = "fan_on_connect"
 
-# Repair issues.
+# Repair issues. These describe two different failures and must not be swapped:
+# refused is turned away at the connect stage, which is the only shape another
+# client holding the link can produce; unresponsive means the vaporizer let us
+# in and then answered nothing, which no phone app can cause.
 ISSUE_CONNECTION_REFUSED = "connection_refused"
+ISSUE_CONNECTION_UNRESPONSIVE = "connection_unresponsive"
 
 # Device limits.
 MIN_TEMP = 40

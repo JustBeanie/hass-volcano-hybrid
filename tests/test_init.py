@@ -20,6 +20,7 @@ from custom_components.volcano_hybrid.const import (
 from custom_components.volcano_hybrid.volcano import (
     CHAR_FAN_ON,
     CHAR_TARGET_TEMP,
+    ConnectionFailure,
     VolcanoConnectionError,
 )
 
@@ -107,7 +108,7 @@ async def test_setup_retries_when_connection_fails(
 
     with patch(
         "custom_components.volcano_hybrid.VolcanoHybrid.async_update",
-        side_effect=VolcanoConnectionError("nope"),
+        side_effect=VolcanoConnectionError("nope", ConnectionFailure.CONNECT_FAILED),
     ):
         assert not await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()

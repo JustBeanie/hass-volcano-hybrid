@@ -6,11 +6,16 @@ from homeassistant.components.repairs import RepairsFlow
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 
-from .const import ISSUE_CONNECTION_REFUSED
+from .const import ISSUE_CONNECTION_REFUSED, ISSUE_CONNECTION_UNRESPONSIVE
 
 
-class ConnectionRefusedRepairFlow(RepairsFlow):
-    """Walk the user through freeing up the vaporizer's Bluetooth link."""
+class RetryRepairFlow(RepairsFlow):
+    """Walk the user through fixing the link, then retry it.
+
+    Both connection issues end the same way -- the user does something to the
+    vaporizer and wants to know straight away whether it worked -- so they share
+    a flow and differ only in the text the issue's translation key supplies.
+    """
 
     def __init__(self, entry_id: str) -> None:
         """Store the entry this issue belongs to."""
@@ -41,9 +46,10 @@ async def async_create_fix_flow(
     data: dict[str, str | int | float | None] | None,
 ) -> RepairsFlow:
     """Create the fix flow for a Volcano Hybrid issue."""
-    if issue_id.startswith(ISSUE_CONNECTION_REFUSED) and data:
+    known = (ISSUE_CONNECTION_REFUSED, ISSUE_CONNECTION_UNRESPONSIVE)
+    if data and issue_id.startswith(known):
         entry_id = data["entry_id"]
         assert isinstance(entry_id, str)
-        return ConnectionRefusedRepairFlow(entry_id)
+        return RetryRepairFlow(entry_id)
 
     raise ValueError(f"Unknown repair issue: {issue_id}")
