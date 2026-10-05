@@ -47,21 +47,31 @@ SWITCHES: tuple[VolcanoSwitchEntityDescription, ...] = (
             coordinator.async_turn_fan_on() if on else coordinator.async_turn_fan_off()
         ),
     ),
+    # The keys stay "register3" / "register2" from before these were decoded, so
+    # existing unique_ids and entity_ids survive the rename.
     VolcanoSwitchEntityDescription(
         key="register3",
-        translation_key="register3",
+        translation_key="vibration",
         entity_category=EntityCategory.CONFIG,
         entity_registry_enabled_default=False,
-        is_on_fn=lambda state: state.register3,
-        set_fn=lambda coordinator, on: coordinator.async_set_register3(on),
+        is_on_fn=lambda state: state.vibration,
+        set_fn=lambda coordinator, on: coordinator.async_set_vibration(on),
     ),
     VolcanoSwitchEntityDescription(
         key="register2",
-        translation_key="register2",
+        translation_key="display_while_cooling",
         entity_category=EntityCategory.CONFIG,
         entity_registry_enabled_default=False,
-        is_on_fn=lambda state: state.register2,
-        set_fn=lambda coordinator, on: coordinator.async_set_register2(on),
+        is_on_fn=lambda state: state.display_while_cooling,
+        set_fn=lambda coordinator, on: coordinator.async_set_display_while_cooling(on),
+    ),
+    VolcanoSwitchEntityDescription(
+        key="display_fahrenheit",
+        translation_key="display_fahrenheit",
+        entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
+        is_on_fn=lambda state: state.display_fahrenheit,
+        set_fn=lambda coordinator, on: coordinator.async_set_display_fahrenheit(on),
     ),
 )
 

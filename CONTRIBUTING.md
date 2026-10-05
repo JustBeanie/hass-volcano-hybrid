@@ -15,7 +15,7 @@ Thanks for considering a contribution.
       custom_components.volcano_hybrid: debug
   ```
 
-- For anything the device reports incorrectly, enable the **Raw register**
+- For anything the device reports incorrectly, enable the **Status register 1**
   diagnostic sensor on the device page and include its attributes. Those are the
   raw bytes off the wire and they are usually enough to identify a decoding
   problem without owning the hardware.

@@ -5,7 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.2.0] - 2026-08-15
+## [3.3.0] - 2026-10-04
+
+The status registers are decoded. Until now the integration used two bits of one
+register — heater and fan — and named two switches after registers it could not
+explain. The firmware decode in magikh0e's
+[Volcano BLE spec](https://github.com/magikh0e/home-assistant-volcano-hybrid/blob/main/VOLCANO_BLE_SPEC.md)
+covers the rest. This release also ships the 3.2.0 connection fixes below, which
+were never released on their own.
+
+### Added
+
+- **Heater/pump fault** binary sensor: the heater timing fault that stops both the
+  heater and the pump. Its attributes carry the heater-only fault, the pump
+  interlock fault and any regulation faults from status register 2.
+- **Service mode** binary sensor: the burn-in mode, which heats the device to
+  230 °C for ten minutes.
+- **Last fault** sensor. It reads the device's error history rather than reprinting
+  it: it names the newest logged fault, and its attributes carry the whole log,
+  decoded and raw.
+- Raw hex sensors for status registers 2–5 and error history 1–2, disabled by
+  default. Registers 4 and 5 are not decoded yet and stay unknown on a device that
+  does not report them.
+- **Display Fahrenheit** switch, disabled by default.
+
+### Fixed
+
+- **The two `Register` switches never did what they claimed.** They read the whole
+  register as one on/off value and wrote a single byte. The settings are single
+  bits — display while cooling is register 2 bit 12, vibration is register 3 bit 10,
+  both inverted — and the device expects a four-byte set/clear word. They are now
+  named **Display while cooling** and **Vibration**, decode the right bit, write the
+  right word, and read the register back afterwards, so a write the device rejects
+  does not show as applied. Existing entity IDs (`switch.<name>_register_2` and
+  `_register_3`) are unchanged.
+
+### Changed
+
+- Status register 2 is read on every poll rather than every ten minutes, since
+  service mode and the regulation faults live there.
+- The **Raw register** sensor is now named **Status register 1**. Its entity ID is
+  unchanged.
+
+## [3.2.0] - 2026-08-15 (unreleased; shipped in 3.3.0)
 
 A repair issue told the user to close the Storz & Bickel app on their phone. The
 app was not open — Home Assistant held the only connection to the vaporizer, and

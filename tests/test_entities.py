@@ -38,6 +38,10 @@ from custom_components.volcano_hybrid.volcano import (
     CHAR_FAN_ON,
     CHAR_HEAT_OFF,
     CHAR_HEAT_ON,
+    CHAR_HISTORY1,
+    CHAR_REGISTER2,
+    CHAR_REGISTER3,
+    CHAR_STATUS_REGISTER,
     CHAR_TARGET_TEMP,
 )
 
@@ -69,12 +73,12 @@ async def test_all_entities_are_created(
         by_platform[entity.domain] = by_platform.get(entity.domain, 0) + 1
 
     assert by_platform == {
-        Platform.BINARY_SENSOR: 1,
+        Platform.BINARY_SENSOR: 3,
         Platform.CLIMATE: 1,
         Platform.LIGHT: 1,
         Platform.NUMBER: 2,
-        Platform.SENSOR: 11,
-        Platform.SWITCH: 4,
+        Platform.SENSOR: 18,
+        Platform.SWITCH: 5,
     }
     assert len({entity.device_id for entity in entities}) == 1
 
@@ -218,8 +222,8 @@ async def test_switches_drive_the_device(
     """Each switch writes its characteristic."""
     registry = er.async_get(hass)
     for entity_id in (
-        "switch.s_b_volcano_h_register_3",
-        "switch.s_b_volcano_h_register_2",
+        "switch.s_b_volcano_h_vibration",
+        "switch.s_b_volcano_h_display_while_cooling",
     ):
         registry.async_update_entity(entity_id, disabled_by=None)
     await hass.config_entries.async_reload(loaded_entry.entry_id)
@@ -228,8 +232,8 @@ async def test_switches_drive_the_device(
     for entity_id, service in (
         ("switch.s_b_volcano_h_heater", SERVICE_TURN_ON),
         ("switch.s_b_volcano_h_fan", SERVICE_TURN_ON),
-        ("switch.s_b_volcano_h_register_3", SERVICE_TURN_OFF),
-        ("switch.s_b_volcano_h_register_2", SERVICE_TURN_OFF),
+        ("switch.s_b_volcano_h_vibration", SERVICE_TURN_OFF),
+        ("switch.s_b_volcano_h_display_while_cooling", SERVICE_TURN_OFF),
     ):
         await hass.services.async_call(
             "switch", service, {ATTR_ENTITY_ID: entity_id}, blocking=True
@@ -239,8 +243,11 @@ async def test_switches_drive_the_device(
     written = {uuid for uuid, _ in fake_client.writes}
     assert CHAR_HEAT_ON in written
     assert CHAR_FAN_ON in written
-    assert hass.states.get("switch.s_b_volcano_h_register_3").state == "off"
-    assert hass.states.get("switch.s_b_volcano_h_register_2").state == "off"
+    assert hass.states.get("switch.s_b_volcano_h_vibration").state == "off"
+    # Both settings are inverted bits, so "off" SETS them (no clear flag).
+    assert (CHAR_REGISTER3, (0x0400).to_bytes(4, "little")) in fake_client.writes
+    assert (CHAR_REGISTER2, (0x1000).to_bytes(4, "little")) in fake_client.writes
+    assert hass.states.get("switch.s_b_volcano_h_display_while_cooling").state == "off"
 
 
 async def test_numbers_write_to_the_device(
@@ -272,7 +279,7 @@ async def test_diagnostic_sensors(
     """Device information sensors report the decoded values."""
     registry = er.async_get(hass)
     for entity_id in (
-        "sensor.s_b_volcano_h_raw_register",
+        "sensor.s_b_volcano_h_status_register_1",
         "sensor.s_b_volcano_h_connection_status",
     ):
         registry.async_update_entity(entity_id, disabled_by=None)
@@ -291,7 +298,7 @@ async def test_diagnostic_sensors(
 
     # The raw register sensor used to be stuck on "unknown" forever because its
     # work sat in async_update, which a CoordinatorEntity never calls.
-    raw = hass.states.get("sensor.s_b_volcano_h_raw_register")
+    raw = hass.states.get("sensor.s_b_volcano_h_status_register_1")
     assert raw.state not in (None, "unknown")
     assert raw.attributes["current_temperature"] == "4cffffff"
 
@@ -308,3 +315,91 @@ async def test_light_before_the_first_brightness_read(
     state = hass.states.get(SCREEN)
     assert state.state == "unknown"
     assert state.attributes.get(ATTR_BRIGHTNESS) is None
+
+
+async def test_fault_and_service_mode_sensors(
+    hass: HomeAssistant,
+    mock_bluetooth: AsyncMock,
+    config_entry: MockConfigEntry,
+    fake_client: FakeBleakClient,
+) -> None:
+    """The status register bits drive the fault and service mode sensors."""
+    # Fault 61 (heater and pump stopped) plus the pump interlock bit.
+    fake_client.reads[CHAR_STATUS_REGISTER] = (0x4010).to_bytes(4, "little")
+    # Service mode plus a heartbeat timeout.
+    fake_client.reads[CHAR_REGISTER2] = (0x0048).to_bytes(4, "little")
+    fake_client.reads[CHAR_HISTORY1] = b"6165000000000000"
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    fault = hass.states.get("binary_sensor.s_b_volcano_h_heater_pump_fault")
+    assert fault.state == "on"
+    assert fault.attributes["heater_fault"] is False
+    assert fault.attributes["pump_interlock_fault"] is True
+    assert fault.attributes["regulation_faults"] == ["heartbeat_timeout"]
+    assert hass.states.get("binary_sensor.s_b_volcano_h_service_mode").state == "on"
+
+    last = hass.states.get("sensor.s_b_volcano_h_last_fault")
+    assert last.state == "heater_pump_timing_fault"
+    assert last.attributes["code"] == 61
+    assert [entry["code"] for entry in last.attributes["log"]] == [61, 65]
+    assert last.attributes["log"][1]["hex"] == "0x41"
+    assert last.attributes["error_history_1"] == b"6165000000000000".hex()
+
+
+async def test_a_clean_device_reports_no_fault(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """An idle device with an empty log reports nothing wrong."""
+    assert (
+        hass.states.get("binary_sensor.s_b_volcano_h_heater_pump_fault").state == "off"
+    )
+    assert hass.states.get("binary_sensor.s_b_volcano_h_service_mode").state == "off"
+    assert hass.states.get("sensor.s_b_volcano_h_last_fault").state == "none"
+
+
+async def test_raw_register_sensors(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """Registers 2-5 and both logs are exposed as hex; a missing one is unknown."""
+    registry = er.async_get(hass)
+    sensors = {
+        "status_register_2": "00000000",
+        "status_register_4": "00000000",
+        "status_register_5": "unknown",
+        "error_history_1": b"0000000000000000".hex(),
+    }
+    for key in sensors:
+        registry.async_update_entity(f"sensor.s_b_volcano_h_{key}", disabled_by=None)
+    await hass.config_entries.async_reload(loaded_entry.entry_id)
+    await hass.async_block_till_done()
+
+    for key, expected in sensors.items():
+        assert hass.states.get(f"sensor.s_b_volcano_h_{key}").state == expected
+
+
+async def test_renamed_switches_keep_their_entity_ids(
+    hass: HomeAssistant, mock_bluetooth: AsyncMock, config_entry: MockConfigEntry
+) -> None:
+    """The decoded switches keep the entity_ids they had as "Register 2/3"."""
+    config_entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    for number in (2, 3):
+        registry.async_get_or_create(
+            "switch",
+            "volcano_hybrid",
+            f"aa:bb:cc:dd:ee:ff_register{number}",
+            suggested_object_id=f"s_b_volcano_h_register_{number}",
+            config_entry=config_entry,
+        )
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    for number in (2, 3):
+        assert (
+            registry.async_get_entity_id(
+                "switch", "volcano_hybrid", f"aa:bb:cc:dd:ee:ff_register{number}"
+            )
+            == f"switch.s_b_volcano_h_register_{number}"
+        )

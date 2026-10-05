@@ -271,10 +271,14 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         """Set the auto-off delay."""
         await self._async_command(self.device.async_set_auto_off_minutes(minutes))
 
-    async def async_set_register3(self, enabled: bool) -> None:
-        """Set register 3."""
-        await self._async_command(self.device.async_set_register3(enabled))
+    async def async_set_vibration(self, enabled: bool) -> None:
+        """Enable or disable vibration."""
+        await self._async_command(self.device.async_set_vibration(enabled))
 
-    async def async_set_register2(self, enabled: bool) -> None:
-        """Set register 2."""
-        await self._async_command(self.device.async_set_register2(enabled))
+    async def async_set_display_while_cooling(self, enabled: bool) -> None:
+        """Keep the display on while cooling, or not."""
+        await self._async_command(self.device.async_set_display_while_cooling(enabled))
+
+    async def async_set_display_fahrenheit(self, enabled: bool) -> None:
+        """Show Fahrenheit or Celsius on the device."""
+        await self._async_command(self.device.async_set_display_fahrenheit(enabled))

@@ -88,6 +88,12 @@
     "binary_sensor": {
       "connection": {
         "name": "Connection"
+      },
+      "heater_pump_fault": {
+        "name": "Heater/pump fault"
+      },
+      "service_mode": {
+        "name": "Service mode"
       }
     },
     "light": {
@@ -111,7 +117,7 @@
         "name": "Connection status"
       },
       "raw_register": {
-        "name": "Raw register"
+        "name": "Status register 1"
       },
       "heater_status": {
         "name": "Heater status"
@@ -136,6 +142,42 @@
       },
       "auto_off_time": {
         "name": "Auto-off time"
+      },
+      "last_fault": {
+        "name": "Last fault",
+        "state": {
+          "none": "No fault logged",
+          "regulation_reading_low": "Regulation reading pinned low",
+          "sensor_short": "Temperature sensor short circuit",
+          "sensor_open": "Temperature sensor open circuit",
+          "heater_timing_fault": "Heater timing fault (heater stopped)",
+          "heater_pump_timing_fault": "Heater timing fault (heater and pump stopped)",
+          "regulation_average_high": "Regulation average too high",
+          "regulation_value_outside_window": "Regulation value outside valid window",
+          "heartbeat_timeout": "Heartbeat timeout",
+          "heater_feedback_low": "Heater feedback too low",
+          "heater_feedback_high": "Heater feedback too high",
+          "heater_feedback_deviation": "Heater feedback outside its band",
+          "unrecognised": "Unrecognised fault"
+        }
+      },
+      "status_register_2": {
+        "name": "Status register 2"
+      },
+      "status_register_3": {
+        "name": "Status register 3"
+      },
+      "status_register_4": {
+        "name": "Status register 4"
+      },
+      "status_register_5": {
+        "name": "Status register 5"
+      },
+      "error_history_1": {
+        "name": "Error history 1"
+      },
+      "error_history_2": {
+        "name": "Error history 2"
       }
     },
     "switch": {
@@ -145,11 +187,14 @@
       "fan": {
         "name": "Fan"
       },
-      "register3": {
-        "name": "Register 3"
+      "vibration": {
+        "name": "Vibration"
       },
-      "register2": {
-        "name": "Register 2"
+      "display_while_cooling": {
+        "name": "Display while cooling"
+      },
+      "display_fahrenheit": {
+        "name": "Display Fahrenheit"
       }
     }
   },

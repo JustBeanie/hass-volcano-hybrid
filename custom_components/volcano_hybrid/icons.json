@@ -43,6 +43,27 @@
       },
       "auto_off_time": {
         "default": "mdi:timer-off"
+      },
+      "last_fault": {
+        "default": "mdi:history"
+      },
+      "status_register_2": {
+        "default": "mdi:code-json"
+      },
+      "status_register_3": {
+        "default": "mdi:code-json"
+      },
+      "status_register_4": {
+        "default": "mdi:code-json"
+      },
+      "status_register_5": {
+        "default": "mdi:code-json"
+      },
+      "error_history_1": {
+        "default": "mdi:format-list-numbered"
+      },
+      "error_history_2": {
+        "default": "mdi:format-list-numbered"
       }
     },
     "switch": {
@@ -58,11 +79,31 @@
           "off": "mdi:fan-off"
         }
       },
-      "register3": {
-        "default": "mdi:vibrate"
+      "vibration": {
+        "default": "mdi:vibrate",
+        "state": {
+          "off": "mdi:vibrate-off"
+        }
       },
-      "register2": {
-        "default": "mdi:thermometer-minus"
+      "display_while_cooling": {
+        "default": "mdi:monitor"
+      },
+      "display_fahrenheit": {
+        "default": "mdi:temperature-fahrenheit",
+        "state": {
+          "off": "mdi:temperature-celsius"
+        }
+      }
+    },
+    "binary_sensor": {
+      "heater_pump_fault": {
+        "default": "mdi:alert-circle-outline",
+        "state": {
+          "on": "mdi:alert-circle"
+        }
+      },
+      "service_mode": {
+        "default": "mdi:wrench-clock"
       }
     }
   }

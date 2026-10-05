@@ -29,15 +29,20 @@ from custom_components.volcano_hybrid.volcano import (
     CHAR_FIRMWARE,
     CHAR_HEAT_OFF,
     CHAR_HEAT_ON,
+    CHAR_HISTORY1,
+    CHAR_HISTORY2,
     CHAR_HOURS_OF_OPERATION,
     CHAR_MINUTES_OF_OPERATION,
     CHAR_REGISTER2,
     CHAR_REGISTER3,
+    CHAR_REGISTER4,
     CHAR_SERIAL_NUMBER,
     CHAR_STATUS_REGISTER,
     CHAR_TARGET_TEMP,
     MASK_FAN,
     MASK_HEATER,
+    REGISTER_CLEAR_FLAG,
+    WRITABLE_REGISTERS,
 )
 
 ADDRESS = "AA:BB:CC:DD:EE:FF"
@@ -52,6 +57,7 @@ RAW_TARGET_TEMP = bytes.fromhex("02080000")  # 205.0 C
 RAW_STATUS_IDLE = bytes.fromhex("00000000")
 RAW_STATUS_HEATING = bytes.fromhex("23000000")  # heater bit set
 RAW_STATUS_FAN_AND_HEAT = bytes.fromhex("2328")  # fan + heater, high byte 0x28
+RAW_HISTORY_EMPTY = b"0000000000000000"  # eight empty log slots
 
 
 def make_ble_device(address: str = ADDRESS, name: str = DEVICE_NAME) -> BLEDevice:
@@ -107,8 +113,13 @@ DEFAULT_READS: dict[str, bytes] = {
     CHAR_HOURS_OF_OPERATION: (2721).to_bytes(2, "little"),
     CHAR_MINUTES_OF_OPERATION: (14).to_bytes(2, "little"),
     CHAR_AUTO_OFF_SETTING: (1200).to_bytes(2, "little"),  # 20 minutes
-    CHAR_REGISTER3: b"\x01",
-    CHAR_REGISTER2: b"\x01",
+    # Celsius, display on while cooling, vibration on: every setting bit clear.
+    CHAR_REGISTER2: bytes.fromhex("00000000"),
+    CHAR_REGISTER3: bytes.fromhex("00000000"),
+    CHAR_REGISTER4: bytes.fromhex("00000000"),
+    # Register 5 is left out: the integration must cope with a device without it.
+    CHAR_HISTORY1: RAW_HISTORY_EMPTY,
+    CHAR_HISTORY2: RAW_HISTORY_EMPTY,
 }
 
 
@@ -137,6 +148,17 @@ class FakeBleakClient:
 
         if uuid in (CHAR_TARGET_TEMP, CHAR_BRIGHTNESS, CHAR_AUTO_OFF_SETTING):
             self.reads[uuid] = bytes(data)
+            return
+
+        if uuid in WRITABLE_REGISTERS:
+            # The set/clear word: the mask sets bits, mask | 0x10000 clears them.
+            word = int.from_bytes(data, "little")
+            mask = word & 0xFFFF
+            register = int.from_bytes(self.reads[uuid][:2], "little")
+            register = (
+                register & ~mask if word & REGISTER_CLEAR_FLAG else register | mask
+            )
+            self.reads[uuid] = register.to_bytes(4, "little")
             return
 
         status = int.from_bytes(self.reads[CHAR_STATUS_REGISTER][:2], "little")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -23,7 +24,7 @@ from homeassistant.helpers.typing import StateType
 
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
 from .entity import VolcanoEntity
-from .volcano import VolcanoState
+from .volcano import FAULT_CODES, VolcanoState
 
 # The coordinator owns every read, and writes are already serialised by the
 # single GATT lock in volcano.py, so Home Assistant does not need to throttle.
@@ -37,6 +38,60 @@ class VolcanoSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[VolcanoState], StateType]
     # Diagnostic sensors must stay readable while the device is unreachable.
     available_when_disconnected: bool = False
+    attributes_fn: Callable[[VolcanoState], dict[str, Any]] | None = None
+
+
+LAST_FAULT_NONE = "none"
+LAST_FAULT_UNRECOGNISED = "unrecognised"
+LAST_FAULT_OPTIONS = [
+    LAST_FAULT_NONE,
+    *(slug for slug, _ in FAULT_CODES.values()),
+    LAST_FAULT_UNRECOGNISED,
+]
+
+
+def _last_fault(state: VolcanoState) -> str | None:
+    """Name the newest fault in the device's error history."""
+    code = state.last_fault
+    if code is None:
+        return None
+    if code == 0:
+        return LAST_FAULT_NONE
+    if code in FAULT_CODES:
+        return FAULT_CODES[code][0]
+    return LAST_FAULT_UNRECOGNISED
+
+
+def _fault_log_attributes(state: VolcanoState) -> dict[str, Any]:
+    """Return the whole error history, decoded and raw."""
+    return {
+        "code": state.last_fault or None,
+        "log": [
+            {
+                "code": code,
+                "hex": f"0x{code:02X}",
+                "fault": FAULT_CODES.get(code, (None, "Unrecognised fault"))[1],
+            }
+            for code in state.fault_log or []
+        ],
+        "error_history_1": state.raw.get("error_history_1"),
+        "error_history_2": state.raw.get("error_history_2"),
+        # The spec takes this order from the firmware's design; it has not been
+        # confirmed on a device, so say so where the order is shown.
+        "order": "newest first (history 1, then history 2; unconfirmed)",
+    }
+
+
+def _raw_sensor(key: str) -> VolcanoSensorEntityDescription:
+    """Describe a sensor showing one raw wire value as hex."""
+    return VolcanoSensorEntityDescription(
+        key=key,
+        translation_key=key,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        available_when_disconnected=True,
+        value_fn=lambda state: state.raw.get(key),
+    )
 
 
 SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
@@ -127,6 +182,23 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         available_when_disconnected=True,
         value_fn=lambda state: state.auto_off_minutes,
     ),
+    VolcanoSensorEntityDescription(
+        key="last_fault",
+        translation_key="last_fault",
+        device_class=SensorDeviceClass.ENUM,
+        options=LAST_FAULT_OPTIONS,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        available_when_disconnected=True,
+        value_fn=_last_fault,
+        attributes_fn=_fault_log_attributes,
+    ),
+    # Status register 1 is the existing "raw_register" sensor above.
+    _raw_sensor("status_register_2"),
+    _raw_sensor("status_register_3"),
+    _raw_sensor("status_register_4"),
+    _raw_sensor("status_register_5"),
+    _raw_sensor("error_history_1"),
+    _raw_sensor("error_history_2"),
 )
 
 
@@ -171,8 +243,10 @@ class VolcanoSensor(VolcanoEntity, SensorEntity):
         return self.entity_description.value_fn(self.data)
 
     @property
-    def extra_state_attributes(self) -> dict[str, str | None] | None:
+    def extra_state_attributes(self) -> dict[str, Any] | None:
         """Expose the raw wire values on the debug sensor."""
+        if (attributes_fn := self.entity_description.attributes_fn) is not None:
+            return attributes_fn(self.data)
         if self.entity_description.key != "raw_register":
             return None
         return dict(self.data.raw)
