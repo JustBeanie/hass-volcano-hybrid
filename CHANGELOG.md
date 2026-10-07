@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.2] - 2026-10-06
+
+### Fixed
+
+- **A half-connected Volcano no longer needs a reload.** A link could come up with
+  only part of its Bluetooth service table: status updates kept arriving, but there
+  was no current temperature and every command (heat, fan, screen) failed with
+  "Characteristic ... was not found!". Because the status register still answered,
+  the existing self-heal never fired, and dropping and reconnecting reused the same
+  cached table. Now:
+  - every connect checks the characteristics every Volcano has, and rediscovers the
+    service table once if any are missing;
+  - a command that hits a missing characteristic rebuilds the link and retries once;
+  - a poll where status answers but neither temperature does is treated as a dead
+    link (new `stale_gatt` failure kind), recovered the same way as one that answers
+    nothing, and raises the same "unresponsive" repair if it persists.
+
 ## [3.3.1] - 2026-10-04
 
 ### Fixed

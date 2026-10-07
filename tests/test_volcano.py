@@ -16,6 +16,7 @@ from custom_components.volcano_hybrid.volcano import (
     CHAR_AUTO_OFF_SETTING,
     CHAR_BRIGHTNESS,
     CHAR_CURRENT_TEMP,
+    CHAR_FAN_ON,
     CHAR_HISTORY1,
     CHAR_HISTORY2,
     CHAR_REGISTER2,
@@ -650,3 +651,119 @@ async def test_status_register_1_is_never_written(
         with pytest.raises(ValueError):
             await device._write_register_bits(CHAR_STATUS_REGISTER, MASK_HEATER, True)
     assert not fake_client.writes
+
+
+async def test_a_partial_service_table_is_rediscovered_on_connect(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """A link missing the control service is rebuilt before anything uses it.
+
+    The 2026-10-06 outage: status pushes arrived, but no temperature and every
+    command failed "characteristic not found" until the entry was reloaded.
+    """
+    fake_client.missing = {CHAR_CURRENT_TEMP, CHAR_TARGET_TEMP, CHAR_FAN_ON}
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+
+    state = await device.async_update()
+
+    assert fake_client.caches_cleared == 1
+    assert mock_establish_connection.call_count == 2
+    assert (
+        mock_establish_connection.await_args_list[0].kwargs["use_services_cache"]
+        is True
+    )
+    assert (
+        mock_establish_connection.await_args_list[1].kwargs["use_services_cache"]
+        is False
+    )
+    assert state.current_temperature is None  # the idle sentinel, read fine
+    assert state.target_temperature == 205.0
+    await device.async_turn_fan_on()
+    assert state.fan_on is True
+
+
+async def test_a_service_table_that_stays_partial_is_reported(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """Rediscovery that does not help fails as STALE_GATT, not as contention."""
+    fake_client.missing = {CHAR_FAN_ON}
+    fake_client.missing_after_rediscovery = {CHAR_FAN_ON}
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+
+    with (
+        patch(
+            "custom_components.volcano_hybrid.volcano.clear_adapter_cache",
+            AsyncMock(return_value=True),
+        ) as clear_adapter,
+        pytest.raises(VolcanoConnectionError, match=CHAR_FAN_ON) as err,
+    ):
+        await device.async_update()
+
+    assert err.value.kind is ConnectionFailure.STALE_GATT
+    assert clear_adapter.await_count == 1
+    assert device._client is None
+    assert device.state.connected is False
+
+
+async def test_a_command_rebuilds_a_link_that_lost_its_characteristic(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """The button press succeeds instead of erroring until a reload."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+    before = mock_establish_connection.call_count
+
+    # The table goes stale under a live link; a rediscovery restores it.
+    fake_client.missing = {CHAR_FAN_ON}
+    with patch(
+        "custom_components.volcano_hybrid.volcano.clear_adapter_cache",
+        AsyncMock(return_value=True),
+    ):
+        await device.async_turn_fan_on()
+
+    assert fake_client.caches_cleared == 1
+    assert mock_establish_connection.call_count == before + 1
+    assert (CHAR_FAN_ON, bytes([0])) in fake_client.writes
+    assert device.state.fan_on is True
+
+
+async def test_an_ordinary_write_failure_is_not_retried(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """Only a missing characteristic earns a rebuilt link."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+
+    with (
+        patch.object(
+            fake_client, "write_gatt_char", side_effect=BleakError("nope")
+        ) as write,
+        pytest.raises(VolcanoConnectionError),
+    ):
+        await device.async_turn_fan_on()
+
+    assert write.await_count == 1
+    assert fake_client.caches_cleared == 0
+
+
+async def test_status_without_temperatures_is_a_stale_table(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """Status answering on its own no longer counts as a working link."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+
+    del fake_client.reads[CHAR_CURRENT_TEMP]
+    del fake_client.reads[CHAR_TARGET_TEMP]
+    with pytest.raises(VolcanoConnectionError, match="no temperature") as err:
+        await device.async_update()
+
+    assert err.value.kind is ConnectionFailure.STALE_GATT
+    assert device._client is None
+    assert device._no_read_failures == 1
+    assert fake_client.caches_cleared == 1
