@@ -186,7 +186,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
                 async_address_present(self.hass, self.address, connectable=True)
             ):
                 self._async_raise_issue(ISSUE_CONNECTION_REFUSED)
-        elif err.kind is ConnectionFailure.NO_READS:
+        elif err.kind in (ConnectionFailure.NO_READS, ConnectionFailure.STALE_GATT):
             self.consecutive_no_reads += 1
             if self.consecutive_no_reads == UNRESPONSIVE_THRESHOLD:
                 self._async_raise_issue(ISSUE_CONNECTION_UNRESPONSIVE)

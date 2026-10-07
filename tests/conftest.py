@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
-from bleak.exc import BleakError
+from bleak.exc import BleakCharacteristicNotFoundError, BleakError
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.const import CONF_ADDRESS
 import pytest
@@ -133,9 +133,24 @@ class FakeBleakClient:
         self.is_connected = True
         self.notify_callbacks: dict[str, object] = {}
         self.caches_cleared = 0
+        # Characteristics the resolved service table lacks, and what it lacks
+        # once the cache is cleared and GATT rediscovered.
+        self.missing: set[str] = set()
+        self.missing_after_rediscovery: set[str] = set()
+
+    @property
+    def services(self) -> FakeBleakClient:
+        """Stand in for the service collection; only lookups are needed."""
+        return self
+
+    def get_characteristic(self, uuid: str) -> object | None:
+        """Resolve a characteristic the way BleakGATTServiceCollection does."""
+        return None if uuid in self.missing else uuid
 
     async def read_gatt_char(self, uuid: str) -> bytes:
         """Return the canned value, or fail the way bleak does."""
+        if uuid in self.missing:
+            raise BleakCharacteristicNotFoundError(uuid)
         if uuid not in self.reads:
             raise BleakError(f"Characteristic {uuid} was not found")
         return self.reads[uuid]
@@ -144,6 +159,8 @@ class FakeBleakClient:
         self, uuid: str, data: bytes, response: bool = True
     ) -> None:
         """Record a write and reflect it back, the way the device would."""
+        if uuid in self.missing:
+            raise BleakCharacteristicNotFoundError(uuid)
         self.writes.append((uuid, bytes(data)))
 
         if uuid in (CHAR_TARGET_TEMP, CHAR_BRIGHTNESS, CHAR_AUTO_OFF_SETTING):
@@ -186,6 +203,7 @@ class FakeBleakClient:
     async def clear_cache(self) -> bool:
         """Record that the cached service table was thrown away."""
         self.caches_cleared += 1
+        self.missing = set(self.missing_after_rediscovery)
         return True
 
     async def disconnect(self) -> None:

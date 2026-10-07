@@ -158,8 +158,11 @@ async def test_no_repair_issue_when_the_device_is_simply_away(
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
 
 
+@pytest.mark.parametrize(
+    "kind", [ConnectionFailure.NO_READS, ConnectionFailure.STALE_GATT]
+)
 async def test_an_unresponsive_device_is_never_called_contention(
-    hass: HomeAssistant, loaded_entry: MockConfigEntry
+    hass: HomeAssistant, loaded_entry: MockConfigEntry, kind: ConnectionFailure
 ) -> None:
     """A device that accepted the connection cannot be one another app holds.
 
@@ -181,9 +184,7 @@ async def test_an_unresponsive_device_is_never_called_contention(
         patch.object(
             coordinator.device,
             "async_update",
-            side_effect=VolcanoConnectionError(
-                "answered no reads", ConnectionFailure.NO_READS
-            ),
+            side_effect=VolcanoConnectionError("answered no reads", kind),
         ),
     ):
         # Contention would already have been declared by now.

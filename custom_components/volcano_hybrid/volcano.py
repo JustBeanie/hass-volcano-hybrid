@@ -19,7 +19,7 @@ import time
 from typing import Any
 
 from bleak.backends.device import BLEDevice
-from bleak.exc import BleakError
+from bleak.exc import BleakCharacteristicNotFoundError, BleakError
 from bleak_retry_connector import (
     BleakClientWithServiceCache,
     BleakNotFoundError,
@@ -58,6 +58,23 @@ CHAR_REGISTER4 = "1010000f-5354-4f52-5a26-4249434b454c"
 CHAR_REGISTER5 = "10100010-5354-4f52-5a26-4249434b454c"
 CHAR_HISTORY1 = "10100015-5354-4f52-5a26-4249434b454c"
 CHAR_HISTORY2 = "10100016-5354-4f52-5a26-4249434b454c"
+
+# Every Volcano Hybrid has these. A link whose service table lacks any of them
+# resolved GATT only partly: on 2026-10-06 one came up with the status service
+# but not the control service, so status pushes kept arriving while every
+# temperature read and every command failed with "characteristic not found".
+REQUIRED_CHARACTERISTICS = frozenset(
+    {
+        CHAR_CURRENT_TEMP,
+        CHAR_TARGET_TEMP,
+        CHAR_STATUS_REGISTER,
+        CHAR_HEAT_ON,
+        CHAR_HEAT_OFF,
+        CHAR_FAN_ON,
+        CHAR_FAN_OFF,
+        CHAR_BRIGHTNESS,
+    }
+)
 
 # Bit masks, from the decoded firmware in magikh0e's VOLCANO_BLE_SPEC.md. Each
 # register is a 16-bit word; the device sends four bytes, the top two zero.
@@ -147,6 +164,10 @@ class ConnectionFailure(StrEnum):
     # Connected, but GATT is unusable -- a stale service table or a wedged
     # device. Nothing the user can fix by closing an app.
     NO_READS = "no_reads"
+    # Connected, but the service table is missing characteristics every
+    # Volcano has, even after rediscovering it. Recovered the same way as
+    # NO_READS; kept apart so the log says which one it was.
+    STALE_GATT = "stale_gatt"
     WRITE_FAILED = "write_failed"
 
 
@@ -330,6 +351,30 @@ def _decode_firmware(raw: bytes | None) -> str | None:
     return f"V{raw.hex()}"
 
 
+def _missing_characteristics(client: BleakClientWithServiceCache) -> list[str]:
+    """Return the required characteristics the client's service table lacks."""
+    try:
+        services = client.services
+    except BleakError:
+        # Service discovery never completed: nothing is resolvable.
+        return sorted(REQUIRED_CHARACTERISTICS)
+    return sorted(
+        uuid
+        for uuid in REQUIRED_CHARACTERISTICS
+        if services.get_characteristic(uuid) is None
+    )
+
+
+def _is_characteristic_not_found(err: BaseException | None) -> bool:
+    """Return whether bleak failed because the service table lacks the UUID.
+
+    Matched on the text too: an ESPHome proxy reports it as a plain BleakError.
+    """
+    return isinstance(err, BleakCharacteristicNotFoundError) or (
+        isinstance(err, BleakError) and "not found" in str(err).lower()
+    )
+
+
 class VolcanoHybrid:
     """Bluetooth LE client for a single Volcano Hybrid."""
 
@@ -413,23 +458,25 @@ class VolcanoHybrid:
             )
 
         _LOGGER.debug("%s: connecting via %s", self.address, ble_device)
-        try:
-            client = await establish_connection(
-                BleakClientWithServiceCache,
-                ble_device,
-                self.address,
-                self._handle_disconnect,
-                use_services_cache=True,
-                max_attempts=CONNECT_ATTEMPTS,
-                # Prefer whatever advertisement arrived most recently, falling
-                # back to the one we started with so retries always have a
-                # device to work from.
-                ble_device_callback=lambda: self._ble_device or ble_device,
+        client = await self._async_establish(ble_device, use_services_cache=True)
+
+        # A partly resolved service table is not fixed by reconnecting with the
+        # same cache -- the 2026-10-06 outage survived a drop and reconnect and
+        # only cleared on a reload. Rediscover once before giving up on it.
+        if missing := _missing_characteristics(client):
+            _LOGGER.debug(
+                "%s: service table lacks %s, rediscovering", self.address, missing
             )
-        except (BleakNotFoundError, BleakError, TimeoutError) as err:
-            raise VolcanoConnectionError(
-                f"Could not connect: {err}", ConnectionFailure.CONNECT_FAILED
-            ) from err
+            await self._async_drop_client(client)
+            client = await self._async_establish(ble_device, use_services_cache=False)
+            if missing := _missing_characteristics(client):
+                await self._async_drop_client(client)
+                await clear_adapter_cache(self.address)
+                raise VolcanoConnectionError(
+                    f"{self.address} connected but its service table lacks"
+                    f" {', '.join(missing)}",
+                    ConnectionFailure.STALE_GATT,
+                )
 
         self._client = client
         self._state.connected = True
@@ -444,6 +491,38 @@ class VolcanoHybrid:
             )
 
         return client
+
+    async def _async_establish(
+        self, ble_device: BLEDevice, *, use_services_cache: bool
+    ) -> BleakClientWithServiceCache:
+        """Open a link, raising CONNECT_FAILED if the device turns us away."""
+        try:
+            return await establish_connection(
+                BleakClientWithServiceCache,
+                ble_device,
+                self.address,
+                self._handle_disconnect,
+                use_services_cache=use_services_cache,
+                max_attempts=CONNECT_ATTEMPTS,
+                # Prefer whatever advertisement arrived most recently, falling
+                # back to the one we started with so retries always have a
+                # device to work from.
+                ble_device_callback=lambda: self._ble_device or ble_device,
+            )
+        except (BleakNotFoundError, BleakError, TimeoutError) as err:
+            raise VolcanoConnectionError(
+                f"Could not connect: {err}", ConnectionFailure.CONNECT_FAILED
+            ) from err
+
+    async def _async_drop_client(self, client: BleakClientWithServiceCache) -> None:
+        """Clear a client's cached service table and disconnect it."""
+        try:
+            # Clears the cached service table this client resolved against,
+            # local adapter or proxy, so the reconnect rediscovers GATT.
+            await client.clear_cache()
+            await client.disconnect()
+        except (BleakError, TimeoutError, EOFError) as err:
+            _LOGGER.debug("%s: resetting the link failed: %s", self.address, err)
 
     async def async_connect(self) -> None:
         """Connect to the device, raising VolcanoConnectionError on failure."""
@@ -470,13 +549,7 @@ class VolcanoHybrid:
         self._state.connected = False
 
         if client is not None:
-            try:
-                # Clears the cached service table this client resolved against,
-                # local adapter or proxy, so the reconnect rediscovers GATT.
-                await client.clear_cache()
-                await client.disconnect()
-            except (BleakError, TimeoutError, EOFError) as err:
-                _LOGGER.debug("%s: resetting the link failed: %s", self.address, err)
+            await self._async_drop_client(client)
 
         if reset_adapter_cache:
             # Swallows its own errors and returns False off a local BlueZ
@@ -521,7 +594,27 @@ class VolcanoHybrid:
             return None
 
     async def _write(self, uuid: str, data: bytes) -> None:
-        """Write a characteristic."""
+        """Write a characteristic, rebuilding a link that has lost it once.
+
+        A required characteristic going missing means the service table is
+        stale, not that the device lacks it, so the link is rebuilt and the
+        write tried again rather than failing the button press. Optional ones
+        (the auto-off setting) really are absent on some firmware and fail
+        straight through to their caller's fallback.
+        """
+        try:
+            await self._write_once(uuid, data)
+        except VolcanoConnectionError as err:
+            if uuid not in REQUIRED_CHARACTERISTICS or not (
+                _is_characteristic_not_found(err.__cause__)
+            ):
+                raise
+            _LOGGER.debug("%s: %s, rebuilding the link", self.address, err)
+            await self._async_reset_link(reset_adapter_cache=True)
+            await self._write_once(uuid, data)
+
+    async def _write_once(self, uuid: str, data: bytes) -> None:
+        """Write a characteristic on the current link."""
         client = await self._ensure_client()
         try:
             await client.write_gatt_char(uuid, data, response=True)
@@ -608,17 +701,27 @@ class VolcanoHybrid:
             # noticed. Reporting it as connected strands every entity on stale
             # values; failing here hands it to the coordinator, which already
             # knows how to log the outage once and recover from it.
-            if raw_current is None and raw_target is None and raw_status is None:
+            #
+            # Status answering on its own is no better: that is a half-resolved
+            # service table, and counting it a success kept a link up for five
+            # minutes with no temperature and every command failing.
+            if raw_current is None and raw_target is None:
                 self._no_read_failures += 1
                 await self._async_reset_link(
                     reset_adapter_cache=(
                         self._no_read_failures >= ADAPTER_CACHE_RESET_AFTER
                     )
                 )
+                if raw_status is None:
+                    raise VolcanoConnectionError(
+                        f"{self.address} accepted the connection but answered no"
+                        f" reads ({self._last_read_error})",
+                        ConnectionFailure.NO_READS,
+                    )
                 raise VolcanoConnectionError(
-                    f"{self.address} accepted the connection but answered no reads"
-                    f" ({self._last_read_error})",
-                    ConnectionFailure.NO_READS,
+                    f"{self.address} answered the status register but no"
+                    f" temperature reads ({self._last_read_error})",
+                    ConnectionFailure.STALE_GATT,
                 )
 
             self._no_read_failures = 0
