@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Coroutine
+import asyncio
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
@@ -43,6 +44,8 @@ from .const import (
     TRIGGER_TARGET_REACHED,
 )
 from .volcano import (
+    MASK_FAN,
+    MASK_HEATER,
     ConnectionFailure,
     VolcanoConnectionError,
     VolcanoHybrid,
@@ -64,6 +67,10 @@ CONTENTION_THRESHOLD = 3
 # dead. Raising it any earlier would ask the user to power-cycle a vaporizer
 # that the next poll was about to fix on its own.
 UNRESPONSIVE_THRESHOLD = 4
+
+# How far below the target the block may read and still count as reached for
+# a wait. The device holds within about a degree and reports in tenths.
+REACHED_TOLERANCE = 1.0
 
 # Link-health states beyond the ConnectionFailure kinds.
 HEALTH_CONNECTED = "connected"
@@ -486,6 +493,109 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         self._async_clear_issues()
         await self.device.async_disconnect()
         self.async_update_listeners()
+
+    # -- waits for actions -------------------------------------------------
+
+    async def _async_wait_for(
+        self,
+        settled: Callable[[VolcanoState], bool],
+        seconds: float,
+        timeout_key: str,
+        abort: Callable[[VolcanoState], str | None] = lambda _state: None,
+    ) -> None:
+        """Wait until ``settled`` holds on a reading taken after this call.
+
+        Checked on every poll and push from here on, starting with a refresh
+        so a value from before the wait can never satisfy it. ``abort`` names
+        the error to raise when a reading shows the wait can no longer end
+        well; ``timeout_key`` the one for running out of time.
+        """
+        done: asyncio.Future[None] = self.hass.loop.create_future()
+
+        @callback
+        def _check() -> None:
+            if done.done():
+                return
+            state = self.device.state
+            if settled(state):
+                done.set_result(None)
+            elif reason := abort(state):
+                done.set_exception(
+                    HomeAssistantError(
+                        translation_domain=DOMAIN, translation_key=reason
+                    )
+                )
+
+        remove = self.async_add_listener(_check)
+        try:
+            async with asyncio.timeout(seconds):
+                await self.async_refresh()
+                _check()
+                await done
+        except TimeoutError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key=timeout_key,
+                translation_placeholders={"seconds": str(round(seconds))},
+            ) from err
+        finally:
+            remove()
+
+    async def async_wait_until_reached(self, seconds: float) -> None:
+        """Wait for the device to report its current target reached.
+
+        Uses the device's own signal, plus the temperature: the bit is not
+        cleared by a small rise in the target, so on its own it can still be
+        set from the last target. Aborts if the heater goes off, the target is
+        changed by someone else, or the link drops -- none of those ends with
+        this target reached.
+        """
+        target = self.device.state.target_temperature
+
+        def _settled(state: VolcanoState) -> bool:
+            return bool(
+                state.heater_on
+                and state.target_reached
+                and state.current_temperature is not None
+                and target is not None
+                and state.current_temperature >= target - REACHED_TOLERANCE
+            )
+
+        def _abort(state: VolcanoState) -> str | None:
+            if not state.connected:
+                return "wait_disconnected"
+            if not state.heater_on:
+                return "wait_heater_off"
+            if state.target_temperature != target:
+                return "wait_target_changed"
+            return None
+
+        await self._async_wait_for(_settled, seconds, "wait_timeout", _abort)
+
+    async def async_wait_connected(self, seconds: float) -> None:
+        """Wait for a live link."""
+        await self._async_wait_for(
+            lambda state: state.connected, seconds, "connect_timeout"
+        )
+
+    async def async_release(self) -> None:
+        """Switch heat and air off, confirm it, then let go of the link.
+
+        Turning auto-connect off is what makes the release stick; otherwise
+        the next advertisement would reconnect. Read from the raw register,
+        not the state, which is optimistic for a few seconds after a command.
+        """
+        state = self.device.state
+        if state.heater_on:
+            await self.async_turn_heater_off()
+        if state.fan_on:
+            await self.async_turn_fan_off()
+        await self.async_refresh()
+        if (state.status1 or 0) & (MASK_HEATER | MASK_FAN):
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="release_unconfirmed"
+            )
+        await self.async_set_auto_connect(False)
 
     # -- commands ----------------------------------------------------------
 

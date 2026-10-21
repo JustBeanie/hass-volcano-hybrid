@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - Unreleased
+
+### Added
+
+- **Actions** for scripts, each failing loudly instead of letting a script carry
+  on past a step that did not happen:
+  - `set_temperature` with `wait_until_reached`: returns once the device reports
+    the target reached on a fresh reading. It stops with an error if the heater
+    goes off, the target is changed elsewhere, the link drops or the timeout
+    runs out.
+  - `connect`: turns auto-connect on and waits for the link.
+  - `disconnect`: switches heat and air off, confirms it on the device, then
+    turns auto-connect off and releases the link. If either is still on, the
+    link is kept and the action fails.
+  - The device can be left out when only one Volcano is set up. Read-only users
+    cannot call them.
+
 ## [4.1.0] - Unreleased
 
 ### Added

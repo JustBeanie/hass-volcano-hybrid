@@ -379,6 +379,31 @@ Each fires once per change, never for the state found at startup. *Reached* foll
 the device's own rule: lowering the target never clears it, so it fires again only
 after the target is raised by 3 °C or more or the heater is switched off and on.
 
+## Actions
+
+For scripts. Each takes an optional **device**, needed only when more than one
+Volcano is set up, and each stops the script with an error rather than carrying on
+past a step that did not happen.
+
+| Action | What it does |
+| --- | --- |
+| `storzandbickel_ble.set_temperature` | Sets the target. With `wait_until_reached: true` it returns only once the device reports the target reached on a reading taken after the change, and fails if the heater goes off, someone else changes the target, the connection drops or `timeout` (default 600 s) runs out. The heater must already be on. |
+| `storzandbickel_ble.connect` | Turns auto-connect on and, unless `wait: false`, waits up to `timeout` (default 60 s) for the link. |
+| `storzandbickel_ble.disconnect` | Switches heat and air off, confirms on the device that they are off, then turns auto-connect off and releases the link for the phone app. If the device still reports either on, the link is kept and the action fails. |
+
+```yaml
+- action: climate.turn_on
+  target:
+    entity_id: climate.volcano_hybrid
+- action: storzandbickel_ble.set_temperature
+  data:
+    temperature: 185
+    wait_until_reached: true
+- action: switch.turn_on
+  target:
+    entity_id: switch.volcano_hybrid_fan
+```
+
 ## Removal
 
 1. Go to **Settings → Devices & services → Storz & Bickel BLE**.
