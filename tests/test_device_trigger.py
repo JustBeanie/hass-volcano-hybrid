@@ -16,6 +16,10 @@ from pytest_homeassistant_custom_component.common import (
     async_mock_service,
 )
 
+from custom_components.storzandbickel_ble.ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+)
 from custom_components.storzandbickel_ble.const import (
     DOMAIN,
     EVENT_DEVICE,
@@ -26,8 +30,6 @@ from custom_components.storzandbickel_ble.volcano import (
     MASK_HEATER,
     MASK_HEATER_PUMP_FAULT,
     MASK_TARGET_REACHED,
-    ConnectionFailure,
-    VolcanoConnectionError,
 )
 
 from .conftest import FORMATTED_MAC, FakeBleakClient
@@ -191,7 +193,7 @@ async def test_lost_and_restored_fire_once_per_outage(
     """Repeated failures are one outage; the recovery says how long it was."""
     coordinator = loaded_entry.runtime_data
     failing = AsyncMock(
-        side_effect=VolcanoConnectionError("gone", ConnectionFailure.NOT_VISIBLE)
+        side_effect=DeviceConnectionError("gone", ConnectionFailure.NOT_VISIBLE)
     )
     with patch(UPDATE, failing):
         await coordinator.async_refresh()
@@ -216,7 +218,7 @@ async def test_no_lost_trigger_for_a_device_never_connected(
     """A vaporizer unplugged at startup has lost nothing."""
     config_entry.add_to_hass(hass)
     failing = AsyncMock(
-        side_effect=VolcanoConnectionError("gone", ConnectionFailure.CONNECT_FAILED)
+        side_effect=DeviceConnectionError("gone", ConnectionFailure.CONNECT_FAILED)
     )
     with patch(UPDATE, failing):
         assert not await hass.config_entries.async_setup(config_entry.entry_id)

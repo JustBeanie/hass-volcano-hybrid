@@ -1,4 +1,4 @@
-"""Diagnostics for the Volcano Hybrid integration."""
+"""Diagnostics for the Storz & Bickel BLE integration."""
 
 from __future__ import annotations
 
@@ -13,14 +13,14 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant
 
-from .coordinator import VolcanoConfigEntry
+from .coordinator import StorzBickelConfigEntry
 
 # Hardware identifiers. Diagnostics get pasted into public issues.
 TO_REDACT = {CONF_ADDRESS, "address", "serial_number", "source", "connected_via"}
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: VolcanoConfigEntry
+    hass: HomeAssistant, entry: StorzBickelConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     coordinator = entry.runtime_data

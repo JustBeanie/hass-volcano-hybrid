@@ -17,8 +17,8 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
-from .entity import VolcanoEntity
+from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
+from .entity import StorzBickelEntity
 from .families import Family
 from .firmware import (
     FIRMWARE_UPDATE_URL,
@@ -41,7 +41,7 @@ FIRMWARE = UpdateEntityDescription(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: VolcanoConfigEntry,
+    entry: StorzBickelConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the firmware update entity."""
@@ -50,13 +50,13 @@ async def async_setup_entry(
         async_add_entities([VolcanoFirmwareUpdate(entry.runtime_data)])
 
 
-class VolcanoFirmwareUpdate(VolcanoEntity, UpdateEntity):
+class VolcanoFirmwareUpdate(StorzBickelEntity, UpdateEntity):
     """Whether the vaporizer runs the newest known firmware."""
 
     entity_description = FIRMWARE
     _attr_release_url = FIRMWARE_UPDATE_URL
 
-    def __init__(self, coordinator: VolcanoDataUpdateCoordinator) -> None:
+    def __init__(self, coordinator: StorzBickelCoordinator) -> None:
         """Initialise the update entity."""
         super().__init__(coordinator, FIRMWARE.key)
 

@@ -88,7 +88,7 @@ def _clean_options(user_input: dict[str, Any]) -> dict[str, Any]:
     return options
 
 
-class VolcanoOptionsFlow(OptionsFlow):
+class StorzBickelOptionsFlow(OptionsFlow):
     """Let the startup behaviour be changed without re-adding the device."""
 
     async def async_step_init(
@@ -117,8 +117,8 @@ class VolcanoOptionsFlow(OptionsFlow):
         )
 
 
-class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Volcano Hybrid."""
+class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for a Storz & Bickel device."""
 
     VERSION = 1
 
@@ -337,7 +337,7 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Re-test the stored address.
 
-        A Volcano's identity is a fixed MAC, so there is nothing here to point
+        A device's identity is a fixed MAC, so there is nothing here to point
         somewhere else. What is useful is confirming the vaporizer is reachable
         right now, which is otherwise only observable by watching the log.
         """
@@ -363,9 +363,9 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(entry: ConfigEntry) -> VolcanoOptionsFlow:
+    def async_get_options_flow(entry: ConfigEntry) -> StorzBickelOptionsFlow:
         """Return the options flow."""
-        return VolcanoOptionsFlow()
+        return StorzBickelOptionsFlow()
 
     async def _async_test_connection(self, address: str) -> str | None:
         """Prove we can talk to the device; return an error key on failure."""

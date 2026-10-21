@@ -1,4 +1,4 @@
-"""Climate platform for the Volcano Hybrid integration."""
+"""Climate platform for the Storz & Bickel BLE integration."""
 
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import MAX_TEMP, MIN_TEMP, TEMP_STEP
-from .coordinator import VolcanoConfigEntry
-from .entity import VolcanoEntity
+from .coordinator import StorzBickelConfigEntry
+from .entity import StorzBickelEntity
 from .families import Family
 
 # The coordinator owns every read, and writes are already serialised by the
@@ -31,15 +31,15 @@ PARALLEL_UPDATES = 0
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: VolcanoConfigEntry,
+    entry: StorzBickelConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Volcano Hybrid climate entity."""
-    async_add_entities([VolcanoClimate(entry.runtime_data)])
+    """Set up the climate entity."""
+    async_add_entities([StorzBickelClimate(entry.runtime_data)])
 
 
-class VolcanoClimate(VolcanoEntity, ClimateEntity):
-    """The Volcano Hybrid as a climate entity."""
+class StorzBickelClimate(StorzBickelEntity, ClimateEntity):
+    """The device's heater (and the Volcano's air pump) as a climate entity."""
 
     _controls_device = True
 

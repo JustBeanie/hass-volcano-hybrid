@@ -1,4 +1,4 @@
-"""Number platform for the Volcano Hybrid integration."""
+"""Number platform for the Storz & Bickel BLE integration."""
 
 from __future__ import annotations
 
@@ -27,8 +27,8 @@ from .const import (
     MIN_TEMP,
     TEMP_STEP,
 )
-from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
-from .entity import VolcanoEntity, always
+from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
+from .entity import StorzBickelEntity, always
 from .families import ALL_FAMILIES, PORTABLE, QVAP, VOLCANO_ONLY, Family
 
 
@@ -43,19 +43,19 @@ PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
-class VolcanoNumberEntityDescription(NumberEntityDescription):
-    """Describes a Volcano Hybrid number."""
+class StorzBickelNumberEntityDescription(NumberEntityDescription):
+    """Describes a number."""
 
     value_fn: Callable[[Any], float | None]
-    set_fn: Callable[[VolcanoDataUpdateCoordinator, float], Awaitable[None]]
+    set_fn: Callable[[StorzBickelCoordinator, float], Awaitable[None]]
     # Which device families have this entity, and whether a given device of
     # them can use it right now.
     families: frozenset[Family] = VOLCANO_ONLY
     available_fn: Callable[[Any], bool] = always
 
 
-NUMBERS: tuple[VolcanoNumberEntityDescription, ...] = (
-    VolcanoNumberEntityDescription(
+NUMBERS: tuple[StorzBickelNumberEntityDescription, ...] = (
+    StorzBickelNumberEntityDescription(
         key="target_temperature",
         translation_key="target_temperature",
         families=ALL_FAMILIES,
@@ -67,7 +67,7 @@ NUMBERS: tuple[VolcanoNumberEntityDescription, ...] = (
         value_fn=lambda state: state.target_temperature,
         set_fn=lambda coordinator, value: coordinator.async_set_temperature(value),
     ),
-    VolcanoNumberEntityDescription(
+    StorzBickelNumberEntityDescription(
         key="auto_off_time",
         translation_key="auto_off_time",
         entity_category=EntityCategory.CONFIG,
@@ -82,7 +82,7 @@ NUMBERS: tuple[VolcanoNumberEntityDescription, ...] = (
         ),
     ),
     # -- portables (experimental) --
-    VolcanoNumberEntityDescription(
+    StorzBickelNumberEntityDescription(
         key="boost_temperature",
         translation_key="boost_temperature",
         device_class=NumberDeviceClass.TEMPERATURE_DELTA,
@@ -98,7 +98,7 @@ NUMBERS: tuple[VolcanoNumberEntityDescription, ...] = (
             coordinator.family_device.async_set_boost(value)
         ),
     ),
-    VolcanoNumberEntityDescription(
+    StorzBickelNumberEntityDescription(
         key="superboost_temperature",
         translation_key="superboost_temperature",
         device_class=NumberDeviceClass.TEMPERATURE_DELTA,
@@ -113,7 +113,7 @@ NUMBERS: tuple[VolcanoNumberEntityDescription, ...] = (
             coordinator.family_device.async_set_superboost(value)
         ),
     ),
-    VolcanoNumberEntityDescription(
+    StorzBickelNumberEntityDescription(
         key="led_brightness",
         translation_key="led_brightness",
         native_unit_of_measurement=PERCENTAGE,
@@ -127,7 +127,7 @@ NUMBERS: tuple[VolcanoNumberEntityDescription, ...] = (
             coordinator.family_device.async_set_led_brightness(int(value))
         ),
     ),
-    VolcanoNumberEntityDescription(
+    StorzBickelNumberEntityDescription(
         key="display_brightness",
         translation_key="display_brightness",
         native_min_value=1,
@@ -145,29 +145,29 @@ NUMBERS: tuple[VolcanoNumberEntityDescription, ...] = (
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: VolcanoConfigEntry,
+    entry: StorzBickelConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Volcano Hybrid numbers."""
+    """Set up the numbers."""
     coordinator = entry.runtime_data
     async_add_entities(
-        VolcanoNumber(coordinator, description)
+        StorzBickelNumber(coordinator, description)
         for description in NUMBERS
         if coordinator.family in description.families
     )
 
 
-class VolcanoNumber(VolcanoEntity, NumberEntity):
-    """A Volcano Hybrid number."""
+class StorzBickelNumber(StorzBickelEntity, NumberEntity):
+    """A number."""
 
     _controls_device = True
 
-    entity_description: VolcanoNumberEntityDescription
+    entity_description: StorzBickelNumberEntityDescription
 
     def __init__(
         self,
-        coordinator: VolcanoDataUpdateCoordinator,
-        description: VolcanoNumberEntityDescription,
+        coordinator: StorzBickelCoordinator,
+        description: StorzBickelNumberEntityDescription,
     ) -> None:
         """Initialise the number."""
         super().__init__(coordinator, description.key)

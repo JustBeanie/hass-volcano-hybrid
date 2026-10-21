@@ -1,4 +1,4 @@
-"""DataUpdateCoordinator for the Volcano Hybrid integration."""
+"""DataUpdateCoordinator for the Storz & Bickel BLE integration."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ from .volcano import VolcanoHybrid
 
 _LOGGER = logging.getLogger(__name__)
 
-type VolcanoConfigEntry = ConfigEntry[VolcanoDataUpdateCoordinator]
+type StorzBickelConfigEntry = ConfigEntry[StorzBickelCoordinator]
 
 # The vaporizer accepts one BLE connection at a time. This many consecutive
 # refusals while it is still advertising means something else holds the link.
@@ -88,19 +88,19 @@ class LinkHealth:
     recoveries: int = 0
 
 
-class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[Any]):
+class StorzBickelCoordinator(DataUpdateCoordinator[Any]):
     """Coordinate polling and commands for one Storz & Bickel device.
 
     The data is the device family's own state dataclass, which always
     extends ``DeviceState``.
     """
 
-    config_entry: VolcanoConfigEntry
+    config_entry: StorzBickelConfigEntry
 
     def __init__(
         self,
         hass: HomeAssistant,
-        entry: VolcanoConfigEntry,
+        entry: StorzBickelConfigEntry,
         device: StorzBickelDevice,
         family: Family = Family.VOLCANO_HYBRID,
     ) -> None:

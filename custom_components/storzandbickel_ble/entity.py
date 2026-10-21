@@ -1,4 +1,4 @@
-"""Base entity for the Volcano Hybrid integration."""
+"""Base entity for the Storz & Bickel BLE integration."""
 
 from __future__ import annotations
 
@@ -12,11 +12,11 @@ from homeassistant.helpers.device_registry import (
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER, MODEL
-from .coordinator import VolcanoDataUpdateCoordinator
+from .coordinator import StorzBickelCoordinator
 
 
-class VolcanoEntity(CoordinatorEntity[VolcanoDataUpdateCoordinator]):
-    """Common base for every Volcano Hybrid entity."""
+class StorzBickelEntity(CoordinatorEntity[StorzBickelCoordinator]):
+    """Common base for every Storz & Bickel entity."""
 
     _attr_has_entity_name = True
     # True for entities that send commands. With auto-connect off they stay
@@ -24,7 +24,7 @@ class VolcanoEntity(CoordinatorEntity[VolcanoDataUpdateCoordinator]):
     # read-only entities would only show stale values, so they do not.
     _controls_device = False
 
-    def __init__(self, coordinator: VolcanoDataUpdateCoordinator, key: str) -> None:
+    def __init__(self, coordinator: StorzBickelCoordinator, key: str) -> None:
         """Initialise the entity and attach it to the device."""
         super().__init__(coordinator)
         formatted_mac = format_mac(coordinator.address)

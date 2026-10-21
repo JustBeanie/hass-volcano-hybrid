@@ -11,14 +11,14 @@ from homeassistant.data_entry_flow import FlowResultType
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.storzandbickel_ble.ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+)
 from custom_components.storzandbickel_ble.const import (
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
     DOMAIN,
-)
-from custom_components.storzandbickel_ble.volcano import (
-    ConnectionFailure,
-    VolcanoConnectionError,
 )
 
 from .conftest import (
@@ -109,7 +109,7 @@ async def test_bluetooth_confirm_handles_a_failed_connection(
 
     with patch(
         "custom_components.storzandbickel_ble.ble_device.StorzBickelDevice.async_connect",
-        side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
+        side_effect=DeviceConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
 
@@ -201,7 +201,7 @@ async def test_user_flow_handles_a_failed_connection(
 
     with patch(
         "custom_components.storzandbickel_ble.ble_device.StorzBickelDevice.async_connect",
-        side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
+        side_effect=DeviceConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_ADDRESS: ADDRESS}

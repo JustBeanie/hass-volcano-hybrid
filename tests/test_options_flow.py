@@ -9,6 +9,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.storzandbickel_ble.ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+)
 from custom_components.storzandbickel_ble.const import (
     CONF_AUTO_CONNECT_DELAY,
     CONF_DELAYED_RECONNECT_DELAY,
@@ -20,8 +24,6 @@ from custom_components.storzandbickel_ble.const import (
 )
 from custom_components.storzandbickel_ble.volcano import (
     CHAR_TARGET_TEMP,
-    ConnectionFailure,
-    VolcanoConnectionError,
 )
 
 from .conftest import SERVICE_INFO, FakeBleakClient
@@ -104,7 +106,7 @@ async def test_reconfigure_reports_an_unreachable_device(
     result = await config_entry.start_reconfigure_flow(hass)
     with patch(
         "custom_components.storzandbickel_ble.ble_device.StorzBickelDevice.async_connect",
-        side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
+        side_effect=DeviceConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
 

@@ -12,15 +12,15 @@ from homeassistant.data_entry_flow import FlowResultType
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.storzandbickel_ble.ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+)
 from custom_components.storzandbickel_ble.config_flow import MANUAL_ENTRY
 from custom_components.storzandbickel_ble.const import (
     CONF_AUTO_CONNECT,
     CONF_AUTO_CONNECT_DELAY,
     DOMAIN,
-)
-from custom_components.storzandbickel_ble.volcano import (
-    ConnectionFailure,
-    VolcanoConnectionError,
 )
 
 from .conftest import ADDRESS, FORMATTED_MAC
@@ -90,7 +90,7 @@ async def test_a_visible_device_that_refuses_is_not_added(
     result = await _manual(hass)
     with patch(
         "custom_components.storzandbickel_ble.ble_device.StorzBickelDevice.async_connect",
-        side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
+        side_effect=DeviceConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_ADDRESS: ADDRESS}

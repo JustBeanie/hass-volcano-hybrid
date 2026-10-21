@@ -17,6 +17,10 @@ from homeassistant.helpers import device_registry as dr
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.storzandbickel_ble.ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+)
 from custom_components.storzandbickel_ble.const import CONF_AUTO_CONNECT, DOMAIN
 from custom_components.storzandbickel_ble.volcano import (
     CHAR_CURRENT_TEMP,
@@ -27,8 +31,6 @@ from custom_components.storzandbickel_ble.volcano import (
     MASK_FAN,
     MASK_HEATER,
     MASK_TARGET_REACHED,
-    ConnectionFailure,
-    VolcanoConnectionError,
 )
 
 from .conftest import ADDRESS, FORMATTED_MAC, FakeBleakClient
@@ -223,7 +225,7 @@ async def test_a_dropped_link_ends_the_wait(
     """A lost connection stops the script rather than leaving it hanging."""
     _status(fake_client, MASK_HEATER)
     failing = AsyncMock(
-        side_effect=VolcanoConnectionError("gone", ConnectionFailure.NO_READS)
+        side_effect=DeviceConnectionError("gone", ConnectionFailure.NO_READS)
     )
 
     async def _drop(*_args: object) -> None:
@@ -263,7 +265,7 @@ async def test_connect_times_out_on_an_absent_device(
     coordinator = loaded_entry.runtime_data
     await coordinator.async_set_auto_connect(False)
     failing = AsyncMock(
-        side_effect=VolcanoConnectionError("away", ConnectionFailure.NOT_VISIBLE)
+        side_effect=DeviceConnectionError("away", ConnectionFailure.NOT_VISIBLE)
     )
 
     with patch(UPDATE, failing), pytest.raises(HomeAssistantError) as err:

@@ -14,8 +14,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util.color import brightness_to_value, value_to_brightness
 
 from .const import DEFAULT_BRIGHTNESS
-from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
-from .entity import VolcanoEntity
+from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
+from .entity import StorzBickelEntity
 from .families import Family
 
 # The device takes 0-100; Home Assistant lights are 0-255.
@@ -29,7 +29,7 @@ PARALLEL_UPDATES = 0
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: VolcanoConfigEntry,
+    entry: StorzBickelConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the Volcano Hybrid screen light."""
@@ -38,7 +38,7 @@ async def async_setup_entry(
         async_add_entities([VolcanoScreenLight(entry.runtime_data)])
 
 
-class VolcanoScreenLight(VolcanoEntity, LightEntity):
+class VolcanoScreenLight(StorzBickelEntity, LightEntity):
     """The Volcano Hybrid screen backlight."""
 
     _controls_device = True
@@ -47,7 +47,7 @@ class VolcanoScreenLight(VolcanoEntity, LightEntity):
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
 
-    def __init__(self, coordinator: VolcanoDataUpdateCoordinator) -> None:
+    def __init__(self, coordinator: StorzBickelCoordinator) -> None:
         """Initialise the light."""
         super().__init__(coordinator, "screen")
 

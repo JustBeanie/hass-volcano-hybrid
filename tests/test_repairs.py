@@ -9,16 +9,16 @@ from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.storzandbickel_ble.ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+)
 from custom_components.storzandbickel_ble.const import (
     DOMAIN,
     ISSUE_CONNECTION_REFUSED,
     ISSUE_CONNECTION_UNRESPONSIVE,
 )
 from custom_components.storzandbickel_ble.repairs import async_create_fix_flow
-from custom_components.storzandbickel_ble.volcano import (
-    ConnectionFailure,
-    VolcanoConnectionError,
-)
 
 from .conftest import FakeBleakClient
 
@@ -79,7 +79,7 @@ async def test_repair_round_trip(
         patch.object(
             coordinator.device,
             "async_update",
-            side_effect=VolcanoConnectionError(
+            side_effect=DeviceConnectionError(
                 "refused", ConnectionFailure.CONNECT_FAILED
             ),
         ),

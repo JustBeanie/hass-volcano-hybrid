@@ -1,4 +1,4 @@
-"""Sensor platform for the Volcano Hybrid integration."""
+"""Sensor platform for the Storz & Bickel BLE integration."""
 
 from __future__ import annotations
 
@@ -23,16 +23,22 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
+from .ble_device import (
+    ConnectionFailure,
+)
 from .coordinator import (
     HEALTH_AUTO_CONNECT_OFF,
     HEALTH_CONNECTED,
-    VolcanoConfigEntry,
-    VolcanoDataUpdateCoordinator,
+    StorzBickelConfigEntry,
+    StorzBickelCoordinator,
 )
-from .entity import VolcanoEntity, always
+from .entity import StorzBickelEntity, always
 from .families import ALL_FAMILIES, PORTABLE, QVAP, VOLCANO_ONLY, Family
 from .qvap import HEATER_MODES
-from .volcano import FAULT_CODES, ConnectionFailure, VolcanoState
+from .volcano import (
+    FAULT_CODES,
+    VolcanoState,
+)
 
 # The coordinator owns every read, and writes are already serialised by the
 # single GATT lock in volcano.py, so Home Assistant does not need to throttle.
@@ -40,8 +46,8 @@ PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
-class VolcanoSensorEntityDescription(SensorEntityDescription):
-    """Describes a Volcano Hybrid sensor."""
+class StorzBickelSensorEntityDescription(SensorEntityDescription):
+    """Describes a sensor."""
 
     value_fn: Callable[[Any], StateType]
     # Diagnostic sensors must stay readable while the device is unreachable.
@@ -100,9 +106,9 @@ def _fault_log_attributes(state: VolcanoState) -> dict[str, Any]:
     }
 
 
-def _raw_sensor(key: str) -> VolcanoSensorEntityDescription:
+def _raw_sensor(key: str) -> StorzBickelSensorEntityDescription:
     """Describe a sensor showing one raw wire value as hex."""
-    return VolcanoSensorEntityDescription(
+    return StorzBickelSensorEntityDescription(
         key=key,
         translation_key=key,
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -112,8 +118,8 @@ def _raw_sensor(key: str) -> VolcanoSensorEntityDescription:
     )
 
 
-SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
-    VolcanoSensorEntityDescription(
+SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
+    StorzBickelSensorEntityDescription(
         key="temperature",
         translation_key="temperature",
         families=ALL_FAMILIES,
@@ -122,7 +128,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         value_fn=lambda state: state.current_temperature,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="connection_status",
         translation_key="connection_status",
         families=ALL_FAMILIES,
@@ -131,7 +137,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         available_when_disconnected=True,
         value_fn=lambda state: "Connected" if state.connected else "Disconnected",
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="raw_register",
         translation_key="raw_register",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -139,21 +145,21 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         available_when_disconnected=True,
         value_fn=lambda state: state.raw.get("status_register"),
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="heater_status",
         translation_key="heater_status",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value_fn=lambda state: "On" if state.heater_on else "Off",
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="fan_status",
         translation_key="fan_status",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value_fn=lambda state: "On" if state.fan_on else "Off",
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="brightness_value",
         translation_key="brightness_value",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -161,7 +167,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda state: state.brightness,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="serial_number",
         translation_key="serial_number",
         families=ALL_FAMILIES,
@@ -169,14 +175,14 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         available_when_disconnected=True,
         value_fn=lambda state: state.serial_number,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="ble_firmware",
         translation_key="ble_firmware",
         entity_category=EntityCategory.DIAGNOSTIC,
         available_when_disconnected=True,
         value_fn=lambda state: state.ble_firmware_version,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="firmware_version",
         translation_key="firmware_version",
         families=ALL_FAMILIES,
@@ -184,7 +190,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         available_when_disconnected=True,
         value_fn=lambda state: state.firmware_version,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="hours_operation",
         translation_key="hours_operation",
         families=frozenset({Family.VOLCANO_HYBRID, Family.CRAFTY}),
@@ -195,7 +201,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         available_when_disconnected=True,
         value_fn=lambda state: state.hours_of_operation,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="auto_off_time",
         translation_key="auto_off_time",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -205,7 +211,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         available_when_disconnected=True,
         value_fn=lambda state: state.auto_off_minutes,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="last_fault",
         translation_key="last_fault",
         device_class=SensorDeviceClass.ENUM,
@@ -215,7 +221,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         value_fn=_last_fault,
         attributes_fn=_fault_log_attributes,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="rssi",
         translation_key="rssi",
         families=ALL_FAMILIES,
@@ -227,7 +233,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         available_when_disconnected=True,
         value_fn=lambda state: state.rssi,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="connected_via",
         translation_key="connected_via",
         families=ALL_FAMILIES,
@@ -235,7 +241,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         entity_registry_enabled_default=False,
         value_fn=lambda state: state.connected_via,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="mains_voltage",
         translation_key="mains_voltage",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -251,7 +257,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
     _raw_sensor("error_history_1"),
     _raw_sensor("error_history_2"),
     # -- portables (experimental) --
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="battery",
         translation_key="battery",
         device_class=SensorDeviceClass.BATTERY,
@@ -260,7 +266,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         families=PORTABLE,
         value_fn=lambda state: state.battery,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="auto_off_countdown",
         translation_key="auto_off_countdown",
         device_class=SensorDeviceClass.DURATION,
@@ -268,7 +274,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         families=PORTABLE,
         value_fn=lambda state: state.auto_off_countdown,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="heater_mode",
         translation_key="heater_mode",
         device_class=SensorDeviceClass.ENUM,
@@ -276,7 +282,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         families=QVAP,
         value_fn=lambda state: state.heater_mode,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="heater_runtime",
         translation_key="heater_runtime",
         device_class=SensorDeviceClass.DURATION,
@@ -287,7 +293,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         families=QVAP,
         value_fn=lambda state: state.heater_minutes,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="charging_time",
         translation_key="charging_time",
         device_class=SensorDeviceClass.DURATION,
@@ -298,7 +304,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         families=QVAP,
         value_fn=lambda state: state.charge_minutes,
     ),
-    VolcanoSensorEntityDescription(
+    StorzBickelSensorEntityDescription(
         key="colour",
         translation_key="colour",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -311,16 +317,16 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: VolcanoConfigEntry,
+    entry: StorzBickelConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Volcano Hybrid sensors."""
+    """Set up the sensors."""
     coordinator = entry.runtime_data
     async_add_entities(
         [
-            VolcanoLinkHealthSensor(coordinator),
+            StorzBickelLinkHealthSensor(coordinator),
             *(
-                VolcanoSensor(coordinator, description)
+                StorzBickelSensor(coordinator, description)
                 for description in SENSORS
                 if coordinator.family in description.families
             ),
@@ -328,7 +334,7 @@ async def async_setup_entry(
     )
 
 
-class VolcanoLinkHealthSensor(VolcanoEntity, SensorEntity):
+class StorzBickelLinkHealthSensor(StorzBickelEntity, SensorEntity):
     """What the Bluetooth link is doing, and what it has recovered from.
 
     The link heals itself without telling anyone; this is where that shows.
@@ -340,7 +346,7 @@ class VolcanoLinkHealthSensor(VolcanoEntity, SensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_options = LINK_HEALTH_OPTIONS
 
-    def __init__(self, coordinator: VolcanoDataUpdateCoordinator) -> None:
+    def __init__(self, coordinator: StorzBickelCoordinator) -> None:
         """Initialise the sensor."""
         super().__init__(coordinator, "link_health")
 
@@ -370,15 +376,15 @@ class VolcanoLinkHealthSensor(VolcanoEntity, SensorEntity):
         }
 
 
-class VolcanoSensor(VolcanoEntity, SensorEntity):
-    """A Volcano Hybrid sensor."""
+class StorzBickelSensor(StorzBickelEntity, SensorEntity):
+    """A sensor."""
 
-    entity_description: VolcanoSensorEntityDescription
+    entity_description: StorzBickelSensorEntityDescription
 
     def __init__(
         self,
-        coordinator: VolcanoDataUpdateCoordinator,
-        description: VolcanoSensorEntityDescription,
+        coordinator: StorzBickelCoordinator,
+        description: StorzBickelSensorEntityDescription,
     ) -> None:
         """Initialise the sensor."""
         super().__init__(coordinator, description.key)

@@ -1,4 +1,4 @@
-"""Switch platform for the Volcano Hybrid integration."""
+"""Switch platform for the Storz & Bickel BLE integration."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
-from .entity import VolcanoEntity, always
+from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
+from .entity import StorzBickelEntity, always
 from .families import ALL_FAMILIES, PORTABLE, QVAP, VOLCANO_ONLY, Family
 
 # The coordinator owns every read, and writes are already serialised by the
@@ -21,11 +21,11 @@ PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
-class VolcanoSwitchEntityDescription(SwitchEntityDescription):
-    """Describes a Volcano Hybrid switch."""
+class StorzBickelSwitchEntityDescription(SwitchEntityDescription):
+    """Describes a switch."""
 
     is_on_fn: Callable[[Any], bool | None]
-    set_fn: Callable[[VolcanoDataUpdateCoordinator, bool], Awaitable[None]]
+    set_fn: Callable[[StorzBickelCoordinator, bool], Awaitable[None]]
     # Which device families have this entity, and whether a given device of
     # them can use it right now.
     families: frozenset[Family] = VOLCANO_ONLY
@@ -39,9 +39,9 @@ def _controllable(state: Any) -> bool:
 
 def _portable_setting(
     key: str, families: frozenset[Family], method: str
-) -> VolcanoSwitchEntityDescription:
+) -> StorzBickelSwitchEntityDescription:
     """Describe a portable's on/off setting, read from the state field ``key``."""
-    return VolcanoSwitchEntityDescription(
+    return StorzBickelSwitchEntityDescription(
         key=key,
         translation_key=key,
         entity_category=EntityCategory.CONFIG,
@@ -54,8 +54,8 @@ def _portable_setting(
     )
 
 
-SWITCHES: tuple[VolcanoSwitchEntityDescription, ...] = (
-    VolcanoSwitchEntityDescription(
+SWITCHES: tuple[StorzBickelSwitchEntityDescription, ...] = (
+    StorzBickelSwitchEntityDescription(
         key="heater",
         translation_key="heater",
         families=ALL_FAMILIES,
@@ -67,7 +67,7 @@ SWITCHES: tuple[VolcanoSwitchEntityDescription, ...] = (
             else coordinator.async_turn_heater_off()
         ),
     ),
-    VolcanoSwitchEntityDescription(
+    StorzBickelSwitchEntityDescription(
         key="fan",
         translation_key="fan",
         is_on_fn=lambda state: state.fan_on,
@@ -77,7 +77,7 @@ SWITCHES: tuple[VolcanoSwitchEntityDescription, ...] = (
     ),
     # The keys stay "register3" / "register2" from before these were decoded, so
     # existing unique_ids and entity_ids survive the rename.
-    VolcanoSwitchEntityDescription(
+    StorzBickelSwitchEntityDescription(
         key="register3",
         translation_key="vibration",
         entity_category=EntityCategory.CONFIG,
@@ -85,7 +85,7 @@ SWITCHES: tuple[VolcanoSwitchEntityDescription, ...] = (
         is_on_fn=lambda state: state.vibration,
         set_fn=lambda coordinator, on: coordinator.async_set_vibration(on),
     ),
-    VolcanoSwitchEntityDescription(
+    StorzBickelSwitchEntityDescription(
         key="register2",
         translation_key="display_while_cooling",
         entity_category=EntityCategory.CONFIG,
@@ -93,7 +93,7 @@ SWITCHES: tuple[VolcanoSwitchEntityDescription, ...] = (
         is_on_fn=lambda state: state.display_while_cooling,
         set_fn=lambda coordinator, on: coordinator.async_set_display_while_cooling(on),
     ),
-    VolcanoSwitchEntityDescription(
+    StorzBickelSwitchEntityDescription(
         key="display_fahrenheit",
         translation_key="display_fahrenheit",
         families=frozenset({Family.VOLCANO_HYBRID}) | QVAP,
@@ -103,7 +103,7 @@ SWITCHES: tuple[VolcanoSwitchEntityDescription, ...] = (
         set_fn=lambda coordinator, on: coordinator.async_set_display_fahrenheit(on),
     ),
     # -- portables (experimental) --
-    VolcanoSwitchEntityDescription(
+    StorzBickelSwitchEntityDescription(
         key="vibration",
         translation_key="vibration",
         entity_category=EntityCategory.CONFIG,
@@ -132,16 +132,16 @@ SWITCHES: tuple[VolcanoSwitchEntityDescription, ...] = (
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: VolcanoConfigEntry,
+    entry: StorzBickelConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Volcano Hybrid switches."""
+    """Set up the switches."""
     coordinator = entry.runtime_data
     async_add_entities(
         [
-            VolcanoAutoConnectSwitch(coordinator),
+            StorzBickelAutoConnectSwitch(coordinator),
             *(
-                VolcanoSwitch(coordinator, description)
+                StorzBickelSwitch(coordinator, description)
                 for description in SWITCHES
                 if coordinator.family in description.families
             ),
@@ -149,7 +149,7 @@ async def async_setup_entry(
     )
 
 
-class VolcanoAutoConnectSwitch(VolcanoEntity, SwitchEntity):
+class StorzBickelAutoConnectSwitch(StorzBickelEntity, SwitchEntity):
     """Whether Home Assistant connects to the vaporizer on its own.
 
     Off hands the single Bluetooth connection back, so the Storz & Bickel app
@@ -160,7 +160,7 @@ class VolcanoAutoConnectSwitch(VolcanoEntity, SwitchEntity):
     _attr_translation_key = "auto_connect"
     _attr_entity_category = EntityCategory.CONFIG
 
-    def __init__(self, coordinator: VolcanoDataUpdateCoordinator) -> None:
+    def __init__(self, coordinator: StorzBickelCoordinator) -> None:
         """Initialise the switch."""
         super().__init__(coordinator, "auto_connect")
 
@@ -185,17 +185,17 @@ class VolcanoAutoConnectSwitch(VolcanoEntity, SwitchEntity):
         self.async_write_ha_state()
 
 
-class VolcanoSwitch(VolcanoEntity, SwitchEntity):
-    """A Volcano Hybrid switch."""
+class StorzBickelSwitch(StorzBickelEntity, SwitchEntity):
+    """A switch."""
 
     _controls_device = True
 
-    entity_description: VolcanoSwitchEntityDescription
+    entity_description: StorzBickelSwitchEntityDescription
 
     def __init__(
         self,
-        coordinator: VolcanoDataUpdateCoordinator,
-        description: VolcanoSwitchEntityDescription,
+        coordinator: StorzBickelCoordinator,
+        description: StorzBickelSwitchEntityDescription,
     ) -> None:
         """Initialise the switch."""
         super().__init__(coordinator, description.key)

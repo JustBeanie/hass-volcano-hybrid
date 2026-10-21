@@ -28,7 +28,7 @@ from .const import (
     DOMAIN,
     MANUFACTURER_ID,
 )
-from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
+from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
 from .families import Family, create_device
 from .migration import async_adopt_legacy, async_import_legacy_entries
 from .services import async_setup_services
@@ -52,7 +52,7 @@ PLATFORMS: list[Platform] = [
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Watch for a Volcano coming back while an entry is stuck retrying setup.
+    """Watch for a device coming back while an entry is stuck retrying setup.
 
     Setup needs the vaporiser to be reachable, so unplugging it and plugging it
     back in around a restart leaves the entry in ``SETUP_RETRY`` waiting out an
@@ -90,8 +90,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> bool:
-    """Set up Volcano Hybrid from a config entry."""
+async def async_setup_entry(hass: HomeAssistant, entry: StorzBickelConfigEntry) -> bool:
+    """Set up a Storz & Bickel device from a config entry."""
     address: str = entry.data[CONF_ADDRESS]
 
     # Before anything can fail or register an entity: adoption has to land on
@@ -116,7 +116,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> b
     # The first refresh below connects through _ensure_client, so connecting
     # here as well was a second round trip and a second, differently worded
     # failure path for the same problem.
-    coordinator = VolcanoDataUpdateCoordinator(hass, entry, device, family)
+    coordinator = StorzBickelCoordinator(hass, entry, device, family)
     if device.sleeps:
         # Set up with whatever is known; the device connects when it wakes.
         coordinator.data = device.state
@@ -150,7 +150,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> b
     return True
 
 
-def _reload_relevant(entry: VolcanoConfigEntry) -> dict[str, Any]:
+def _reload_relevant(entry: StorzBickelConfigEntry) -> dict[str, Any]:
     """Return the options whose change needs a reload to take effect.
 
     Auto-connect is applied live by its switch; reloading for it would drop
@@ -160,7 +160,7 @@ def _reload_relevant(entry: VolcanoConfigEntry) -> dict[str, Any]:
 
 
 async def _async_options_updated(
-    hass: HomeAssistant, entry: VolcanoConfigEntry
+    hass: HomeAssistant, entry: StorzBickelConfigEntry
 ) -> None:
     """Reload so changed startup behaviour takes effect immediately."""
     if entry.runtime_data.reload_options == _reload_relevant(entry):
@@ -168,7 +168,9 @@ async def _async_options_updated(
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> bool:
+async def async_unload_entry(
+    hass: HomeAssistant, entry: StorzBickelConfigEntry
+) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:

@@ -1,4 +1,4 @@
-"""Repair flows for the Volcano Hybrid integration."""
+"""Repair flows for the Storz & Bickel BLE integration."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ async def async_create_fix_flow(
     issue_id: str,
     data: dict[str, str | int | float | None] | None,
 ) -> RepairsFlow:
-    """Create the fix flow for a Volcano Hybrid issue."""
+    """Create the fix flow for one of this integration's issues."""
     known = (ISSUE_CONNECTION_REFUSED, ISSUE_CONNECTION_UNRESPONSIVE)
     if data and issue_id.startswith(known):
         entry_id = data["entry_id"]

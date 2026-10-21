@@ -23,11 +23,9 @@ from .ble_device import (
     DeviceState,
     StorzBickelDevice,
     _bit,
-    _ble_device_source,
     _decode_firmware,
     _decode_int,
     _decode_string,
-    _missing_characteristics,
 )
 from .const import (
     DEVICE_MIN_AUTO_OFF_MINUTES,
@@ -36,21 +34,6 @@ from .const import (
     MIN_AUTO_OFF_MINUTES,
     MIN_TEMP,
 )
-
-# Kept under the names the rest of the integration and its tests have always
-# used for them.
-VolcanoConnectionError = DeviceConnectionError
-__all__ = [
-    "ADAPTER_CACHE_RESET_AFTER",
-    "DEVICE_INFO_INTERVAL",
-    "ConnectionFailure",
-    "VolcanoConnectionError",
-    "_ble_device_source",
-    "_decode_firmware",
-    "_decode_int",
-    "_decode_string",
-    "_missing_characteristics",
-]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -423,12 +406,12 @@ class VolcanoHybrid(StorzBickelDevice):
                     )
                 )
                 if raw_status is None:
-                    raise VolcanoConnectionError(
+                    raise DeviceConnectionError(
                         f"{self.address} accepted the connection but answered no"
                         f" reads ({self._last_read_error})",
                         ConnectionFailure.NO_READS,
                     )
-                raise VolcanoConnectionError(
+                raise DeviceConnectionError(
                     f"{self.address} answered the status register but no"
                     f" temperature reads ({self._last_read_error})",
                     ConnectionFailure.STALE_GATT,
@@ -591,7 +574,7 @@ class VolcanoHybrid(StorzBickelDevice):
         async with self._lock:
             try:
                 await self._write(CHAR_AUTO_OFF_SETTING, payload)
-            except VolcanoConnectionError:
+            except DeviceConnectionError:
                 await self._write(CHAR_AUTO_OFF_REMAINING, payload)
         self._state.auto_off_minutes = value
 
