@@ -5,23 +5,22 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 from homeassistant.config_entries import SOURCE_BLUETOOTH, ConfigEntryState
-from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.volcano_hybrid.const import (
+from custom_components.storzandbickel_ble.const import (
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
     DOMAIN,
 )
-from custom_components.volcano_hybrid.volcano import (
+from custom_components.storzandbickel_ble.volcano import (
     CHAR_TARGET_TEMP,
     ConnectionFailure,
     VolcanoConnectionError,
 )
 
-from .conftest import ADDRESS, SERVICE_INFO, FakeBleakClient
+from .conftest import SERVICE_INFO, FakeBleakClient
 
 
 async def test_options_flow_updates_and_reloads(
@@ -98,31 +97,13 @@ async def test_reconfigure_reports_an_unreachable_device(
 
     result = await config_entry.start_reconfigure_flow(hass)
     with patch(
-        "custom_components.volcano_hybrid.config_flow.VolcanoHybrid.async_connect",
+        "custom_components.storzandbickel_ble.config_flow.VolcanoHybrid.async_connect",
         side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
-
-
-async def test_migration_v2_to_v3_moves_settings_to_options(
-    hass: HomeAssistant, mock_bluetooth: AsyncMock, v2_config_entry: MockConfigEntry
-) -> None:
-    """The behaviour settings move out of data without touching anything else."""
-    v2_config_entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(v2_config_entry.entry_id)
-    await hass.async_block_till_done()
-
-    assert v2_config_entry.version == 3
-    assert v2_config_entry.data == {CONF_ADDRESS: ADDRESS}
-    assert v2_config_entry.options == {
-        CONF_FAN_ON_CONNECT: True,
-        CONF_INITIAL_TEMP: 180,
-    }
-    # Entities are unaffected by the move.
-    assert hass.states.get("climate.s_b_volcano_h") is not None
 
 
 async def test_rediscovery_reloads_a_retrying_entry(
@@ -136,7 +117,7 @@ async def test_rediscovery_reloads_a_retrying_entry(
     config_entry.add_to_hass(hass)
 
     with patch(
-        "custom_components.volcano_hybrid.async_ble_device_from_address",
+        "custom_components.storzandbickel_ble.async_ble_device_from_address",
         return_value=None,
     ):
         assert not await hass.config_entries.async_setup(config_entry.entry_id)
@@ -151,26 +132,3 @@ async def test_rediscovery_reloads_a_retrying_entry(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
     assert config_entry.state is ConfigEntryState.LOADED
-
-
-async def test_migration_drops_an_unset_initial_temperature(
-    hass: HomeAssistant, mock_bluetooth: AsyncMock
-) -> None:
-    """A v1-era explicit None does not become a populated-but-empty option."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        title="S&B VOLCANO H",
-        version=2,
-        unique_id="aa:bb:cc:dd:ee:ff",
-        data={
-            CONF_ADDRESS: ADDRESS,
-            CONF_INITIAL_TEMP: None,
-            CONF_FAN_ON_CONNECT: False,
-        },
-    )
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-
-    assert entry.version == 3
-    assert entry.options == {CONF_FAN_ON_CONNECT: False}

@@ -11,12 +11,12 @@ from homeassistant.data_entry_flow import FlowResultType
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.volcano_hybrid.const import (
+from custom_components.storzandbickel_ble.const import (
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
     DOMAIN,
 )
-from custom_components.volcano_hybrid.volcano import (
+from custom_components.storzandbickel_ble.volcano import (
     ConnectionFailure,
     VolcanoConnectionError,
 )
@@ -57,7 +57,7 @@ async def test_bluetooth_discovery_creates_entry(
         CONF_FAN_ON_CONNECT: True,
     }
     assert result["result"].unique_id == FORMATTED_MAC
-    assert result["result"].version == 3
+    assert result["result"].version == 1
 
 
 async def test_bluetooth_discovery_without_options(
@@ -108,7 +108,7 @@ async def test_bluetooth_confirm_handles_a_failed_connection(
     )
 
     with patch(
-        "custom_components.volcano_hybrid.config_flow.VolcanoHybrid.async_connect",
+        "custom_components.storzandbickel_ble.config_flow.VolcanoHybrid.async_connect",
         side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
@@ -131,7 +131,7 @@ async def test_bluetooth_confirm_handles_a_device_out_of_range(
     )
 
     with patch(
-        "custom_components.volcano_hybrid.config_flow.async_ble_device_from_address",
+        "custom_components.storzandbickel_ble.config_flow.async_ble_device_from_address",
         return_value=None,
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
@@ -166,7 +166,7 @@ async def test_user_flow_without_devices_aborts(
 ) -> None:
     """With nothing in range the flow says so instead of showing an empty list."""
     with patch(
-        "custom_components.volcano_hybrid.config_flow.async_discovered_service_info",
+        "custom_components.storzandbickel_ble.config_flow.async_discovered_service_info",
         return_value=[NOT_VOLCANO_SERVICE_INFO],
     ):
         result = await hass.config_entries.flow.async_init(
@@ -200,7 +200,7 @@ async def test_user_flow_handles_a_failed_connection(
     )
 
     with patch(
-        "custom_components.volcano_hybrid.config_flow.VolcanoHybrid.async_connect",
+        "custom_components.storzandbickel_ble.config_flow.VolcanoHybrid.async_connect",
         side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -243,7 +243,7 @@ async def test_user_flow_aborts_on_duplicate(
 )
 def test_is_volcano(name: str, expected: bool) -> None:
     """The name check is case-insensitive and rejects everything else."""
-    from custom_components.volcano_hybrid.config_flow import _is_volcano
+    from custom_components.storzandbickel_ble.config_flow import _is_volcano
 
     from .conftest import make_service_info
 

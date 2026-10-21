@@ -1,4 +1,4 @@
-"""Config flow for the Volcano Hybrid integration."""
+"""Config flow for the Storz & Bickel BLE integration."""
 
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ class VolcanoOptionsFlow(OptionsFlow):
 class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Volcano Hybrid."""
 
-    VERSION = 3
+    VERSION = 1
 
     def __init__(self) -> None:
         """Initialise the flow."""
@@ -141,6 +141,24 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="bluetooth_confirm",
             description_placeholders={"name": discovery_info.name},
+        )
+
+    # -- adoption of a pre-rename entry -------------------------------------
+
+    async def async_step_import(self, import_data: dict[str, Any]) -> ConfigFlowResult:
+        """Create the entry an old-domain entry is adopted into.
+
+        Started by migration.py. The device and entity rows move across when
+        this entry sets up; here only the entry itself is made, carrying the
+        old title and startup options.
+        """
+        address: str = import_data[CONF_ADDRESS]
+        await self.async_set_unique_id(format_mac(address))
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(
+            title=import_data["title"],
+            data={CONF_ADDRESS: address},
+            options=import_data["options"],
         )
 
     # -- manual setup ------------------------------------------------------

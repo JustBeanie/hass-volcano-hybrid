@@ -9,13 +9,13 @@ from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.volcano_hybrid.const import (
+from custom_components.storzandbickel_ble.const import (
     DOMAIN,
     ISSUE_CONNECTION_REFUSED,
     ISSUE_CONNECTION_UNRESPONSIVE,
 )
-from custom_components.volcano_hybrid.repairs import async_create_fix_flow
-from custom_components.volcano_hybrid.volcano import (
+from custom_components.storzandbickel_ble.repairs import async_create_fix_flow
+from custom_components.storzandbickel_ble.volcano import (
     ConnectionFailure,
     VolcanoConnectionError,
 )
@@ -73,7 +73,7 @@ async def test_repair_round_trip(
 
     with (
         patch(
-            "custom_components.volcano_hybrid.coordinator.async_address_present",
+            "custom_components.storzandbickel_ble.coordinator.async_address_present",
             return_value=True,
         ),
         patch.object(

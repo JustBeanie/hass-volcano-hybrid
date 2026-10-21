@@ -1,4 +1,4 @@
-# Volcano Hybrid for Home Assistant
+# Storz & Bickel BLE for Home Assistant
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 [![Quality scale](https://img.shields.io/badge/quality%20scale-platinum-E5E4E2.svg)](https://developers.home-assistant.io/docs/core/integration-quality-scale/)
@@ -68,7 +68,7 @@ Bickel phone app is connected, Home Assistant cannot connect, and vice versa.
 2. Open the three-dot menu in the top right and choose **Custom repositories**.
 3. Add `https://github.com/JustBeanie/hass-volcano-hybrid` with category
    **Integration**, then select **Add**.
-4. Search HACS for **Volcano Hybrid** and select **Download**.
+4. Search HACS for **Storz & Bickel BLE** and select **Download**.
 5. Restart Home Assistant.
 
 See the [release history](CHANGELOG.md) for changes between versions.
@@ -77,14 +77,32 @@ See the [release history](CHANGELOG.md) for changes between versions.
 
 1. Download the latest release from the
    [releases page](https://github.com/JustBeanie/hass-volcano-hybrid/releases).
-2. Copy the `custom_components/volcano_hybrid` folder into your Home Assistant
+2. Copy the `custom_components/storzandbickel_ble` folder into your Home Assistant
    configuration directory, so you end up with
-   `<config>/custom_components/volcano_hybrid/manifest.json`.
+   `<config>/custom_components/storzandbickel_ble/manifest.json`.
 3. Restart Home Assistant.
 
+## Upgrading from 3.x
+
+Up to 3.x this integration's domain was `volcano_hybrid`. Another integration
+uses that domain too, so 4.0 renamed it to `storzandbickel_ble`. Nothing needs
+redoing by hand:
+
+1. Update in HACS as usual and restart Home Assistant.
+2. On startup the integration finds the old entry and moves its device and every
+   entity across. **Entity IDs stay exactly as they were**, along with areas,
+   labels, aliases, voice exposure and disabled entities, so automations,
+   scripts and dashboards keep working. The old entry is then removed.
+
+If HACS left the old `custom_components/volcano_hybrid` folder behind, nothing is
+moved while it is there, because both copies would fight over the vaporizer's
+single Bluetooth connection. A repair under **Settings → System → Repairs** says
+so. Delete that folder and restart, and the move happens then.
+
+Entries made by the *other* `volcano_hybrid` integration are never touched.
 ## Setup
 
-[![Add the Volcano Hybrid integration to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=volcano_hybrid)
+[![Add the Storz & Bickel BLE integration to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=storzandbickel_ble)
 
 Switch the vaporizer on and make sure the Storz & Bickel app is not connected to it.
 
@@ -95,7 +113,7 @@ appears under **Settings → Devices & services** as a discovered device — sel
 If it does not appear, you can add it manually:
 
 1. Go to **Settings → Devices & services**.
-2. Select **Add integration** and search for **Volcano Hybrid**.
+2. Select **Add integration** and search for **Storz & Bickel BLE**.
 3. Pick your vaporizer from the list of devices Home Assistant can currently see.
 
 Either route ends on an optional startup step. Both settings can be changed later —
@@ -103,7 +121,7 @@ see below.
 
 ## Configuration options
 
-**Settings → Devices & services → Volcano Hybrid → Configure.** Changing either one
+**Settings → Devices & services → Storz & Bickel BLE → Configure.** Changing either one
 reloads the integration so it takes effect immediately.
 
 | Option | Default | Meaning |
@@ -315,12 +333,12 @@ Assistant's standard ones against the entities above.
 
 ## Removal
 
-1. Go to **Settings → Devices & services → Volcano Hybrid**.
+1. Go to **Settings → Devices & services → Storz & Bickel BLE**.
 2. Open the three-dot menu next to the integration entry and select **Delete**.
    This removes the device and all of its entities.
-3. If you installed via HACS, open HACS → **Volcano Hybrid** → three-dot menu →
+3. If you installed via HACS, open HACS → **Storz & Bickel BLE** → three-dot menu →
    **Remove**. For a manual install, delete
-   `<config>/custom_components/volcano_hybrid`.
+   `<config>/custom_components/storzandbickel_ble`.
 4. Restart Home Assistant.
 
 ## Troubleshooting
@@ -341,7 +359,7 @@ Assistant host, range is whatever that host can hear. Adding an ESPHome
 Bluetooth proxy in the same room fixes this; the integration automatically
 reconnects through whichever adapter or proxy last heard the device.
 
-**Download diagnostics.** Settings → Devices & services → Volcano Hybrid → the
+**Download diagnostics.** Settings → Devices & services → Storz & Bickel BLE → the
 three-dot menu → *Download diagnostics*. This includes the raw bytes read from each
 characteristic, which is what actually identifies a decoding problem — every bug
 fixed in v2.0.0 was diagnosed from those rather than from entity states. The MAC,
@@ -352,7 +370,7 @@ serial number and scanner source are redacted, so it is safe to attach to an iss
 ```yaml
 logger:
   logs:
-    custom_components.volcano_hybrid: debug
+    custom_components.storzandbickel_ble: debug
 ```
 
 If these checks do not solve the problem, [open an issue](https://github.com/JustBeanie/hass-volcano-hybrid/issues/new/choose)

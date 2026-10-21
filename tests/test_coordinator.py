@@ -13,15 +13,15 @@ from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.volcano_hybrid.const import (
+from custom_components.storzandbickel_ble.const import (
     ACTIVE_INTERVAL,
     DOMAIN,
     IDLE_INTERVAL,
     ISSUE_CONNECTION_REFUSED,
     ISSUE_CONNECTION_UNRESPONSIVE,
 )
-from custom_components.volcano_hybrid.coordinator import UNRESPONSIVE_THRESHOLD
-from custom_components.volcano_hybrid.volcano import (
+from custom_components.storzandbickel_ble.coordinator import UNRESPONSIVE_THRESHOLD
+from custom_components.storzandbickel_ble.volcano import (
     CHAR_STATUS_REGISTER,
     ConnectionFailure,
     VolcanoConnectionError,
@@ -76,7 +76,9 @@ async def test_unavailable_is_logged_once_and_recovery_once(
     caplog.clear()
 
     with (
-        caplog.at_level(logging.INFO, "custom_components.volcano_hybrid.coordinator"),
+        caplog.at_level(
+            logging.INFO, "custom_components.storzandbickel_ble.coordinator"
+        ),
         patch.object(
             coordinator.device,
             "async_update",
@@ -91,7 +93,9 @@ async def test_unavailable_is_logged_once_and_recovery_once(
         await coordinator.async_refresh()
         assert caplog.text.count("Lost connection to the Volcano Hybrid") == 1
 
-    with caplog.at_level(logging.INFO, "custom_components.volcano_hybrid.coordinator"):
+    with caplog.at_level(
+        logging.INFO, "custom_components.storzandbickel_ble.coordinator"
+    ):
         await coordinator.async_refresh()
         await coordinator.async_refresh()
 
@@ -109,7 +113,7 @@ async def test_contention_raises_a_repair_issue(
 
     with (
         patch(
-            "custom_components.volcano_hybrid.coordinator.async_address_present",
+            "custom_components.storzandbickel_ble.coordinator.async_address_present",
             return_value=True,
         ),
         patch.object(
@@ -143,7 +147,7 @@ async def test_no_repair_issue_when_the_device_is_simply_away(
 
     with (
         patch(
-            "custom_components.volcano_hybrid.coordinator.async_address_present",
+            "custom_components.storzandbickel_ble.coordinator.async_address_present",
             return_value=False,
         ),
         patch.object(
@@ -178,7 +182,7 @@ async def test_an_unresponsive_device_is_never_called_contention(
 
     with (
         patch(
-            "custom_components.volcano_hybrid.coordinator.async_address_present",
+            "custom_components.storzandbickel_ble.coordinator.async_address_present",
             return_value=True,
         ),
         patch.object(
@@ -222,7 +226,7 @@ async def test_contention_can_be_raised_more_than_once(
     async def _episode() -> None:
         with (
             patch(
-                "custom_components.volcano_hybrid.coordinator.async_address_present",
+                "custom_components.storzandbickel_ble.coordinator.async_address_present",
                 return_value=True,
             ),
             patch.object(
@@ -265,7 +269,7 @@ async def test_an_absent_device_is_not_reconnected_to(
     before = mock_establish_connection.call_count
 
     with patch(
-        "custom_components.volcano_hybrid.coordinator.async_ble_device_from_address",
+        "custom_components.storzandbickel_ble.coordinator.async_ble_device_from_address",
         return_value=None,
     ):
         await coordinator.async_refresh()
@@ -282,7 +286,7 @@ async def test_a_live_link_is_kept_even_with_no_advertisement(
     coordinator = loaded_entry.runtime_data
 
     with patch(
-        "custom_components.volcano_hybrid.coordinator.async_ble_device_from_address",
+        "custom_components.storzandbickel_ble.coordinator.async_ble_device_from_address",
         return_value=None,
     ):
         await coordinator.async_refresh()

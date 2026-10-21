@@ -3,7 +3,7 @@
 ## Runtime branding
 
 Home Assistant 2026.3 and newer loads the integration's runtime branding from
-[`custom_components/volcano_hybrid/brand/`](../custom_components/volcano_hybrid/brand/).
+[`custom_components/storzandbickel_ble/brand/`](../custom_components/storzandbickel_ble/brand/).
 Those files are the approved Volcano Hybrid HA × S&B artwork and are included
 with the integration itself.
 
@@ -13,7 +13,7 @@ pull request to the Home Assistant brands repository.
 For the [`brands`](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/brands/)
 quality-scale rule, these need to be submitted as a pull request to
 [home-assistant/brands](https://github.com/home-assistant/brands) under
-`custom_integrations/volcano_hybrid/`. They do nothing sitting in this repository.
+`custom_integrations/storzandbickel_ble/`. They do nothing sitting in this repository.
 
 ## Status: not yet submitted
 

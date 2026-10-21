@@ -8,7 +8,7 @@ addopts = "--strict-markers"
 # equivalent, so this config plus the CI job is the stand-in.
 [tool.mypy]
 python_version = "3.13"
-files = ["custom_components/volcano_hybrid"]
+files = ["custom_components/storzandbickel_ble"]
 strict = true
 disallow_any_generics = true
 warn_return_any = true

@@ -30,7 +30,12 @@ from homeassistant.helpers import entity_registry as er
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.volcano_hybrid.volcano import (
+from custom_components.storzandbickel_ble.sensor import (
+    LAST_FAULT_NONE,
+    LAST_FAULT_UNRECOGNISED,
+    _last_fault,
+)
+from custom_components.storzandbickel_ble.volcano import (
     CHAR_AUTO_OFF_SETTING,
     CHAR_BRIGHTNESS,
     CHAR_CURRENT_TEMP,
@@ -43,6 +48,7 @@ from custom_components.volcano_hybrid.volcano import (
     CHAR_REGISTER3,
     CHAR_STATUS_REGISTER,
     CHAR_TARGET_TEMP,
+    VolcanoState,
 )
 
 from .conftest import RAW_CURRENT_TEMP_HOT, FakeBleakClient
@@ -224,6 +230,7 @@ async def test_switches_drive_the_device(
     for entity_id in (
         "switch.s_b_volcano_h_vibration",
         "switch.s_b_volcano_h_display_while_cooling",
+        "switch.s_b_volcano_h_display_fahrenheit",
     ):
         registry.async_update_entity(entity_id, disabled_by=None)
     await hass.config_entries.async_reload(loaded_entry.entry_id)
@@ -234,6 +241,7 @@ async def test_switches_drive_the_device(
         ("switch.s_b_volcano_h_fan", SERVICE_TURN_ON),
         ("switch.s_b_volcano_h_vibration", SERVICE_TURN_OFF),
         ("switch.s_b_volcano_h_display_while_cooling", SERVICE_TURN_OFF),
+        ("switch.s_b_volcano_h_display_fahrenheit", SERVICE_TURN_ON),
     ):
         await hass.services.async_call(
             "switch", service, {ATTR_ENTITY_ID: entity_id}, blocking=True
@@ -248,6 +256,9 @@ async def test_switches_drive_the_device(
     assert (CHAR_REGISTER3, (0x0400).to_bytes(4, "little")) in fake_client.writes
     assert (CHAR_REGISTER2, (0x1000).to_bytes(4, "little")) in fake_client.writes
     assert hass.states.get("switch.s_b_volcano_h_display_while_cooling").state == "off"
+    # Fahrenheit is a plain bit: "on" sets it.
+    assert (CHAR_REGISTER2, (0x0200).to_bytes(4, "little")) in fake_client.writes
+    assert hass.states.get("switch.s_b_volcano_h_display_fahrenheit").state == "on"
 
 
 async def test_numbers_write_to_the_device(
@@ -388,7 +399,7 @@ async def test_renamed_switches_keep_their_entity_ids(
     for number in (2, 3):
         registry.async_get_or_create(
             "switch",
-            "volcano_hybrid",
+            "storzandbickel_ble",
             f"aa:bb:cc:dd:ee:ff_register{number}",
             suggested_object_id=f"s_b_volcano_h_register_{number}",
             config_entry=config_entry,
@@ -399,7 +410,35 @@ async def test_renamed_switches_keep_their_entity_ids(
     for number in (2, 3):
         assert (
             registry.async_get_entity_id(
-                "switch", "volcano_hybrid", f"aa:bb:cc:dd:ee:ff_register{number}"
+                "switch", "storzandbickel_ble", f"aa:bb:cc:dd:ee:ff_register{number}"
             )
             == f"switch.s_b_volcano_h_register_{number}"
         )
+
+
+async def test_light_brightness_is_none_without_a_reading(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """The brightness property never invents a level the device did not report."""
+    coordinator = loaded_entry.runtime_data
+    coordinator.data.brightness = None
+
+    light = hass.data["entity_components"][LIGHT_DOMAIN].get_entity(SCREEN)
+
+    assert light.brightness is None
+
+
+@pytest.mark.parametrize(
+    ("history", "expected"),
+    [
+        (None, None),
+        ("0000000000000000", LAST_FAULT_NONE),
+        ("6100000000000000", "heater_pump_timing_fault"),
+        ("9900000000000000", LAST_FAULT_UNRECOGNISED),
+    ],
+)
+def test_last_fault_names_the_newest_code(
+    history: str | None, expected: str | None
+) -> None:
+    """Unknown codes are flagged, not guessed; an unread log is unknown."""
+    assert _last_fault(VolcanoState(history1=history)) == expected

@@ -2,9 +2,10 @@
 # Assistant version the suite runs against; bump it to test newer cores.
 pytest-homeassistant-custom-component==0.13.316
 pytest-cov
+diff-cover
 bleak-retry-connector>=3.6.0
 
-# Pulled in by the bluetooth integration, which volcano_hybrid depends on.
+# Pulled in by the bluetooth integration, which storzandbickel_ble depends on.
 aiousbwatcher
 bluetooth-adapters
 bluetooth-auto-recovery

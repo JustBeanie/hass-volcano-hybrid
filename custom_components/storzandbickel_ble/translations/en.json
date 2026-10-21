@@ -82,6 +82,10 @@
           }
         }
       }
+    },
+    "legacy_integration_installed": {
+      "title": "Remove the old Volcano Hybrid folder",
+      "description": "This integration was renamed from `{legacy_domain}` to Storz & Bickel BLE, and the old copy is still installed at `custom_components/{legacy_domain}`. Both would compete for the vaporizer's single Bluetooth connection, so your existing device has not been moved across yet.\n\nDelete the `custom_components/{legacy_domain}` folder and restart Home Assistant. The device and every entity then move across with their entity IDs unchanged."
     }
   },
   "entity": {

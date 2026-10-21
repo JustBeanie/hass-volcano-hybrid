@@ -1,6 +1,6 @@
 {
-  "domain": "volcano_hybrid",
-  "name": "Volcano Hybrid",
+  "domain": "storzandbickel_ble",
+  "name": "Storz & Bickel BLE",
   "bluetooth": [
     {
       "manufacturer_id": 1736,
@@ -31,5 +31,5 @@
   "requirements": [
     "bleak-retry-connector>=3.6.0"
   ],
-  "version": "3.3.2"
+  "version": "4.0.0"
 }

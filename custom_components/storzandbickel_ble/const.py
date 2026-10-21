@@ -1,10 +1,14 @@
-"""Constants for the Volcano Hybrid integration."""
+"""Constants for the Storz & Bickel BLE integration."""
 
 from __future__ import annotations
 
 from datetime import timedelta
 
-DOMAIN = "volcano_hybrid"
+DOMAIN = "storzandbickel_ble"
+
+# The domain this integration used up to 3.x. Entries left under it are adopted
+# on startup so every existing entity_id survives the rename.
+LEGACY_DOMAIN = "volcano_hybrid"
 
 DEFAULT_NAME = "Volcano Hybrid"
 MANUFACTURER = "Storz & Bickel"
@@ -25,6 +29,8 @@ CONF_FAN_ON_CONNECT = "fan_on_connect"
 # in and then answered nothing, which no phone app can cause.
 ISSUE_CONNECTION_REFUSED = "connection_refused"
 ISSUE_CONNECTION_UNRESPONSIVE = "connection_unresponsive"
+# The pre-rename integration is still installed alongside this one.
+ISSUE_LEGACY_INSTALLED = "legacy_integration_installed"
 
 # Device limits.
 MIN_TEMP = 40

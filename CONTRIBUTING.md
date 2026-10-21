@@ -12,7 +12,7 @@ Thanks for considering a contribution.
   ```yaml
   logger:
     logs:
-      custom_components.volcano_hybrid: debug
+      custom_components.storzandbickel_ble: debug
   ```
 
 - For anything the device reports incorrectly, enable the **Status register 1**
@@ -74,5 +74,5 @@ requirement and CI enforces it.
 ## Quality scale
 
 The integration targets [Platinum](https://developers.home-assistant.io/docs/core/integration-quality-scale/).
-`custom_components/volcano_hybrid/quality_scale.yaml` records the status of every
+`custom_components/storzandbickel_ble/quality_scale.yaml` records the status of every
 rule; keep it honest if you change something it covers.

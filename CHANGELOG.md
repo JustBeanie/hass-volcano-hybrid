@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - Unreleased
+
+### Changed
+
+- **The integration is now "Storz & Bickel BLE", domain `storzandbickel_ble`.**
+  Another HACS integration also uses `volcano_hybrid`, and two integrations
+  cannot share a domain. Your existing setup is moved across automatically on the
+  first restart after updating: the device and every entity keep their entity
+  IDs, areas, labels, aliases, voice exposure and disabled state, so automations,
+  scripts and dashboards keep working without edits. See
+  [Upgrading from 3.x](README.md#upgrading-from-3x).
+- Entries made by the other `volcano_hybrid` integration are recognised and left
+  alone.
+
+### Added
+
+- A repair, "Remove the old Volcano Hybrid folder", raised if the pre-rename
+  copy is still installed. Nothing is moved while it is there, because both
+  copies would compete for the vaporizer's one Bluetooth connection.
+- CI now requires every changed line to be covered by tests (`diff-cover`), on
+  top of the package-wide 95% gate.
 ## [3.3.2] - 2026-10-06
 
 ### Fixed

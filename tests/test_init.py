@@ -9,15 +9,14 @@ from homeassistant.components.bluetooth import BluetoothChange
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.volcano_hybrid.const import (
+from custom_components.storzandbickel_ble.const import (
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
     DOMAIN,
 )
-from custom_components.volcano_hybrid.volcano import (
+from custom_components.storzandbickel_ble.volcano import (
     CHAR_FAN_ON,
     CHAR_TARGET_TEMP,
     ConnectionFailure,
@@ -87,7 +86,7 @@ async def test_setup_retries_when_out_of_range(
     config_entry.add_to_hass(hass)
 
     with patch(
-        "custom_components.volcano_hybrid.async_ble_device_from_address",
+        "custom_components.storzandbickel_ble.async_ble_device_from_address",
         return_value=None,
     ):
         assert not await hass.config_entries.async_setup(config_entry.entry_id)
@@ -107,7 +106,7 @@ async def test_setup_retries_when_connection_fails(
     config_entry.add_to_hass(hass)
 
     with patch(
-        "custom_components.volcano_hybrid.VolcanoHybrid.async_update",
+        "custom_components.storzandbickel_ble.VolcanoHybrid.async_update",
         side_effect=VolcanoConnectionError("nope", ConnectionFailure.CONNECT_FAILED),
     ):
         assert not await hass.config_entries.async_setup(config_entry.entry_id)
@@ -132,7 +131,7 @@ async def test_an_advertisement_rescues_an_entry_stuck_in_setup_retry(
     config_entry.add_to_hass(hass)
 
     with patch(
-        "custom_components.volcano_hybrid.async_ble_device_from_address",
+        "custom_components.storzandbickel_ble.async_ble_device_from_address",
         return_value=None,
     ):
         assert not await hass.config_entries.async_setup(config_entry.entry_id)
@@ -158,7 +157,7 @@ async def test_an_advertisement_for_another_device_is_ignored(
     config_entry.add_to_hass(hass)
 
     with patch(
-        "custom_components.volcano_hybrid.async_ble_device_from_address",
+        "custom_components.storzandbickel_ble.async_ble_device_from_address",
         return_value=None,
     ):
         assert not await hass.config_entries.async_setup(config_entry.entry_id)
@@ -180,7 +179,7 @@ async def test_startup_options_are_applied_once(
     entry = MockConfigEntry(
         domain=DOMAIN,
         title=DEVICE_NAME,
-        version=3,
+        version=1,
         unique_id=FORMATTED_MAC,
         data={CONF_ADDRESS: ADDRESS},
         options={CONF_FAN_ON_CONNECT: True, CONF_INITIAL_TEMP: 180},
@@ -198,96 +197,6 @@ async def test_startup_options_are_applied_once(
     await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
     assert len(fake_client.writes) == before + 2
-
-
-async def test_migration_preserves_entity_ids(
-    hass: HomeAssistant,
-    mock_bluetooth: AsyncMock,
-    legacy_config_entry: MockConfigEntry,
-) -> None:
-    """A v1 entry migrates in place, keeping every entity_id intact.
-
-    This is what stops the migration from renaming entities to _2 and breaking
-    the automations, scripts and dashboards that reference them.
-    """
-    entry = legacy_config_entry
-    entry.add_to_hass(hass)
-
-    device_registry = dr.async_get(hass)
-    entity_registry = er.async_get(hass)
-
-    device = device_registry.async_get_or_create(
-        config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, entry.entry_id)},
-        name=DEVICE_NAME,
-    )
-    legacy_entities = {
-        "climate": ("climate", f"{entry.entry_id}_climate", "s_b_volcano_h"),
-        "heater": ("switch", f"{entry.entry_id}_heater", "s_b_volcano_h_heater"),
-        "temperature": (
-            "sensor",
-            f"{entry.entry_id}_temperature",
-            "s_b_volcano_h_temperature",
-        ),
-    }
-    for domain, unique_id, object_id in legacy_entities.values():
-        entity_registry.async_get_or_create(
-            domain,
-            DOMAIN,
-            unique_id,
-            suggested_object_id=object_id,
-            config_entry=entry,
-            device_id=device.id,
-        )
-
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-
-    assert entry.version == 3
-    assert entry.unique_id == FORMATTED_MAC
-    assert entry.data[CONF_ADDRESS] == ADDRESS
-
-    # Same device row, new identifier.
-    migrated_device = device_registry.async_get(device.id)
-    assert migrated_device is not None
-    assert migrated_device.identifiers == {(DOMAIN, FORMATTED_MAC)}
-
-    # Same entity_ids, new unique_ids.
-    for domain, _old_unique_id, object_id in legacy_entities.values():
-        entity_id = f"{domain}.{object_id}"
-        entry_row = entity_registry.async_get(entity_id)
-        assert entry_row is not None, f"{entity_id} was renamed by the migration"
-        assert entry_row.unique_id.startswith(f"{FORMATTED_MAC}_")
-
-    assert hass.states.get("climate.s_b_volcano_h") is not None
-    assert hass.states.get("switch.s_b_volcano_h_heater") is not None
-    assert hass.states.get("sensor.s_b_volcano_h_temperature") is not None
-
-
-async def test_migration_from_a_future_version_is_refused(
-    hass: HomeAssistant, mock_bluetooth: AsyncMock
-) -> None:
-    """A newer entry than this code understands does not get downgraded."""
-    entry = MockConfigEntry(
-        domain=DOMAIN, version=4, unique_id=FORMATTED_MAC, data={CONF_ADDRESS: ADDRESS}
-    )
-    entry.add_to_hass(hass)
-
-    assert not await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.MIGRATION_ERROR
-
-
-async def test_migration_without_an_address_fails(
-    hass: HomeAssistant, mock_bluetooth: AsyncMock
-) -> None:
-    """A corrupt v1 entry fails migration instead of setting up half-configured."""
-    entry = MockConfigEntry(domain=DOMAIN, version=1, data={"name": DEVICE_NAME})
-    entry.add_to_hass(hass)
-
-    assert not await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.MIGRATION_ERROR
 
 
 async def test_entities_go_unavailable_when_the_device_drops(
@@ -311,7 +220,7 @@ async def test_entities_go_unavailable_when_the_device_drops(
 
 async def test_platforms_are_all_declared() -> None:
     """Every platform module the integration ships is forwarded."""
-    from custom_components.volcano_hybrid import PLATFORMS
+    from custom_components.storzandbickel_ble import PLATFORMS
 
     assert set(PLATFORMS) == {
         Platform.BINARY_SENSOR,
