@@ -106,7 +106,7 @@ async def test_setup_retries_when_connection_fails(
     config_entry.add_to_hass(hass)
 
     with patch(
-        "custom_components.storzandbickel_ble.VolcanoHybrid.async_update",
+        "custom_components.storzandbickel_ble.volcano.VolcanoHybrid.async_update",
         side_effect=VolcanoConnectionError("nope", ConnectionFailure.CONNECT_FAILED),
     ):
         assert not await hass.config_entries.async_setup(config_entry.entry_id)

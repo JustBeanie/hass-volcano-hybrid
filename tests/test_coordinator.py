@@ -88,10 +88,10 @@ async def test_unavailable_is_logged_once_and_recovery_once(
         for _ in range(4):
             await coordinator.async_refresh()
 
-        assert caplog.text.count("Lost connection to the Volcano Hybrid") == 1
+        assert caplog.text.count("Lost connection to S&B VOLCANO H") == 1
 
         await coordinator.async_refresh()
-        assert caplog.text.count("Lost connection to the Volcano Hybrid") == 1
+        assert caplog.text.count("Lost connection to S&B VOLCANO H") == 1
 
     with caplog.at_level(
         logging.INFO, "custom_components.storzandbickel_ble.coordinator"
@@ -99,7 +99,7 @@ async def test_unavailable_is_logged_once_and_recovery_once(
         await coordinator.async_refresh()
         await coordinator.async_refresh()
 
-    assert caplog.text.count("Reconnected to the Volcano Hybrid") == 1
+    assert caplog.text.count("Reconnected to S&B VOLCANO H") == 1
     assert hass.states.get(CLIMATE).state != "unavailable"
 
 

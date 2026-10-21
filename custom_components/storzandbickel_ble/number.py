@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Any
 
 from homeassistant.components.number import (
     NumberDeviceClass,
     NumberEntity,
     NumberEntityDescription,
 )
-from homeassistant.const import EntityCategory, UnitOfTemperature, UnitOfTime
+from homeassistant.const import (
+    PERCENTAGE,
+    EntityCategory,
+    UnitOfTemperature,
+    UnitOfTime,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -22,8 +28,14 @@ from .const import (
     TEMP_STEP,
 )
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
-from .entity import VolcanoEntity
-from .volcano import VolcanoState
+from .entity import VolcanoEntity, always
+from .families import ALL_FAMILIES, PORTABLE, QVAP, VOLCANO_ONLY, Family
+
+
+def _controllable(state: Any) -> bool:
+    """Return whether the device accepts commands (old Crafty firmware does not)."""
+    return bool(getattr(state, "controllable", True))
+
 
 # The coordinator owns every read, and writes are already serialised by the
 # single GATT lock in volcano.py, so Home Assistant does not need to throttle.
@@ -34,14 +46,19 @@ PARALLEL_UPDATES = 0
 class VolcanoNumberEntityDescription(NumberEntityDescription):
     """Describes a Volcano Hybrid number."""
 
-    value_fn: Callable[[VolcanoState], float | None]
+    value_fn: Callable[[Any], float | None]
     set_fn: Callable[[VolcanoDataUpdateCoordinator, float], Awaitable[None]]
+    # Which device families have this entity, and whether a given device of
+    # them can use it right now.
+    families: frozenset[Family] = VOLCANO_ONLY
+    available_fn: Callable[[Any], bool] = always
 
 
 NUMBERS: tuple[VolcanoNumberEntityDescription, ...] = (
     VolcanoNumberEntityDescription(
         key="target_temperature",
         translation_key="target_temperature",
+        families=ALL_FAMILIES,
         device_class=NumberDeviceClass.TEMPERATURE,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         native_min_value=MIN_TEMP,
@@ -64,6 +81,65 @@ NUMBERS: tuple[VolcanoNumberEntityDescription, ...] = (
             int(value)
         ),
     ),
+    # -- portables (experimental) --
+    VolcanoNumberEntityDescription(
+        key="boost_temperature",
+        translation_key="boost_temperature",
+        device_class=NumberDeviceClass.TEMPERATURE_DELTA,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=1,
+        native_max_value=99,
+        native_step=1,
+        entity_category=EntityCategory.CONFIG,
+        families=PORTABLE,
+        available_fn=_controllable,
+        value_fn=lambda state: state.boost_offset,
+        set_fn=lambda coordinator, value: coordinator.async_command(
+            coordinator.family_device.async_set_boost(value)
+        ),
+    ),
+    VolcanoNumberEntityDescription(
+        key="superboost_temperature",
+        translation_key="superboost_temperature",
+        device_class=NumberDeviceClass.TEMPERATURE_DELTA,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=1,
+        native_max_value=99,
+        native_step=1,
+        entity_category=EntityCategory.CONFIG,
+        families=QVAP,
+        value_fn=lambda state: state.superboost_offset,
+        set_fn=lambda coordinator, value: coordinator.async_command(
+            coordinator.family_device.async_set_superboost(value)
+        ),
+    ),
+    VolcanoNumberEntityDescription(
+        key="led_brightness",
+        translation_key="led_brightness",
+        native_unit_of_measurement=PERCENTAGE,
+        native_min_value=0,
+        native_max_value=100,
+        native_step=10,
+        entity_category=EntityCategory.CONFIG,
+        families=frozenset({Family.CRAFTY}),
+        value_fn=lambda state: state.led_brightness,
+        set_fn=lambda coordinator, value: coordinator.async_command(
+            coordinator.family_device.async_set_led_brightness(int(value))
+        ),
+    ),
+    VolcanoNumberEntityDescription(
+        key="display_brightness",
+        translation_key="display_brightness",
+        native_min_value=1,
+        native_max_value=9,
+        native_step=1,
+        entity_category=EntityCategory.CONFIG,
+        families=QVAP,
+        value_fn=lambda state: state.brightness,
+        set_fn=lambda coordinator, value: coordinator.async_command(
+            coordinator.family_device.async_set_brightness(int(value))
+        ),
+    ),
 )
 
 
@@ -75,7 +151,9 @@ async def async_setup_entry(
     """Set up the Volcano Hybrid numbers."""
     coordinator = entry.runtime_data
     async_add_entities(
-        VolcanoNumber(coordinator, description) for description in NUMBERS
+        VolcanoNumber(coordinator, description)
+        for description in NUMBERS
+        if coordinator.family in description.families
     )
 
 
@@ -94,6 +172,13 @@ class VolcanoNumber(VolcanoEntity, NumberEntity):
         """Initialise the number."""
         super().__init__(coordinator, description.key)
         self.entity_description = description
+
+    @property
+    def native_max_value(self) -> float:
+        """Return the maximum, which for the target depends on the device."""
+        if self.entity_description.key == "target_temperature":
+            return float(self.coordinator.device.max_temp)
+        return super().native_max_value
 
     @property
     def native_value(self) -> float | None:

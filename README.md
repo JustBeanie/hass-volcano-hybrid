@@ -12,7 +12,7 @@
 </p>
 
 Control a **Storz & Bickel Volcano Hybrid** vaporizer from Home Assistant over
-Bluetooth LE.
+Bluetooth LE, with experimental support for the **Crafty**, **Venty** and **Veazy**.
 
 The Volcano Hybrid is a desktop convection vaporizer with a Bluetooth radio
 built into the base. This integration talks to that radio directly on your own
@@ -48,12 +48,56 @@ they can be used in automations, scripts and dashboards like anything else.
 
 | Device | Supported | Notes |
 | --- | --- | --- |
-| Volcano Hybrid | Yes | The Bluetooth model this integration is built for |
+| Volcano Hybrid | Yes | The device this integration is built and tested on |
+| Crafty, Crafty+ | **Experimental** | Below firmware V02.51 a Crafty can only be watched, not controlled |
+| Venty | **Experimental** | |
+| Veazy | **Experimental** | |
 | Volcano Classic | No | No Bluetooth radio — nothing to talk to |
-| Venty, Crafty, Mighty | No | Different Bluetooth protocols; untested here |
+| Mighty | No | Not decoded |
 
-Developed against firmware `V01.03.00.00` with BLE firmware `V01.00.00.00`. Other
-firmware revisions are expected to work — the protocol has been stable. 
+The Volcano Hybrid was developed against firmware `V01.03.00.00` with BLE firmware
+`V01.00.00.00`; the protocol has been stable.
+
+The **experimental** devices are implemented from Storz & Bickel's own web app, by
+way of the protocol descriptions in
+[SavageNL's integration](https://github.com/SavageNL/home-assistant-volcano-hybrid),
+and **have not been run on real hardware** by this project. If you own one, please
+open an issue with the diagnostics download attached, whether it works or not —
+that is how they stop being experimental.
+
+They also behave differently from the Volcano in one way that matters: they are
+battery devices that switch Bluetooth off when idle. Their entities show as
+unavailable while the device sleeps and come back when it wakes, without errors or
+repairs. The Crafty's **Automatic Bluetooth shutdown** and the Veazy's **Permanent
+Bluetooth** switches change that, at the cost of battery life.
+
+### Entities on the portable devices
+
+Every device gets the climate entity, the heater switch, the target-temperature
+number, Ready, Link health, Auto-connect, the reconnect buttons, the temperature,
+serial number, firmware, signal-strength and connected-via sensors, and the device
+triggers. On top of that:
+
+| | Crafty | Venty | Veazy |
+| --- | --- | --- | --- |
+| Battery, auto-off countdown | ✓ | ✓ | ✓ |
+| Boost temperature | ✓ | ✓ | ✓ |
+| Superboost temperature | | ✓ | ✓ |
+| Boost / superboost active | ✓ | Heater mode sensor | Heater mode sensor |
+| Vibration | ✓ | ✓ | ✓ |
+| Brightness | LED, 0–100 % | Display, 1–9 | Display, 1–9 |
+| Find device (button) | Crafty+ only | ✓ | ✓ |
+| Error, needs factory reset | ✓ | | |
+| Charge LED, automatic Bluetooth shutdown | ✓ | | |
+| Charging, bootloader mode | | ✓ | ✓ |
+| Display °F, charge optimisation, charge limit, boost on display, boost never times out | | ✓ | ✓ |
+| Total heating and charging time | Heating (hours) | ✓ | ✓ |
+| Permanent Bluetooth, colour | | | ✓ |
+
+A Venty or Veazy sitting in its **bootloader** (after an interrupted update) is
+reported but never controlled. This integration does not install firmware on any
+device.
+
 ## Requirements
 
 - Home Assistant 2025.2 or newer
@@ -114,7 +158,7 @@ Entries made by the *other* `volcano_hybrid` integration are never touched.
 
 [![Add the Storz & Bickel BLE integration to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=storzandbickel_ble)
 
-Switch the vaporizer on and make sure the Storz & Bickel app is not connected to it.
+Switch the vaporizer on and make sure the Storz & Bickel app is not connected to it. A portable device has to be awake: switch it on or press a button so it advertises.
 
 Home Assistant discovers the Volcano Hybrid by itself. Within a minute or so it
 appears under **Settings → Devices & services** as a discovered device — select

@@ -24,13 +24,14 @@ from .const import (
     CONF_AUTO_CONNECT,
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
+    CONF_MODEL,
     DOMAIN,
     MANUFACTURER_ID,
 )
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
+from .families import Family, create_device
 from .migration import async_adopt_legacy, async_import_legacy_entries
 from .services import async_setup_services
-from .volcano import VolcanoHybrid
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,24 +98,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> b
     # an entry with no entities of its own yet.
     await async_adopt_legacy(hass, entry)
 
+    family = Family(entry.data.get(CONF_MODEL, Family.VOLCANO_HYBRID))
+    device = create_device(family, address)
+
     ble_device = async_ble_device_from_address(hass, address, connectable=True)
-    # With auto-connect off nobody expects a link, so an absent vaporizer is
-    # not a reason to hold setup back.
-    if ble_device is None and entry.options.get(CONF_AUTO_CONNECT, True):
+    # With auto-connect off nobody expects a link, and a portable that is
+    # asleep is doing what it should, so neither holds setup back.
+    expects_link = entry.options.get(CONF_AUTO_CONNECT, True) and not device.sleeps
+    if ble_device is None and expects_link:
         raise ConfigEntryNotReady(
             translation_domain=DOMAIN,
             translation_key="not_in_range",
             translation_placeholders={"address": address},
         )
-
-    device = VolcanoHybrid(address)
     device.set_ble_device(ble_device)
 
     # The first refresh below connects through _ensure_client, so connecting
     # here as well was a second round trip and a second, differently worded
     # failure path for the same problem.
-    coordinator = VolcanoDataUpdateCoordinator(hass, entry, device)
-    await coordinator.async_config_entry_first_refresh()
+    coordinator = VolcanoDataUpdateCoordinator(hass, entry, device, family)
+    if device.sleeps:
+        # Set up with whatever is known; the device connects when it wakes.
+        coordinator.data = device.state
+        await coordinator.async_refresh()
+    else:
+        await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
 
     # Follow the device around the mesh: whichever adapter or ESPHome proxy

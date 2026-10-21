@@ -39,7 +39,7 @@ LINK_HEALTH = "sensor.s_b_volcano_h_link_health"
 RECONNECT = "button.s_b_volcano_h_reconnect"
 DELAYED_RECONNECT = "button.s_b_volcano_h_reconnect_after_delay"
 FAN = "switch.s_b_volcano_h_fan"
-UPDATE = "custom_components.storzandbickel_ble.VolcanoHybrid.async_update"
+UPDATE = "custom_components.storzandbickel_ble.volcano.VolcanoHybrid.async_update"
 PRESENT = "custom_components.storzandbickel_ble.coordinator.async_address_present"
 
 

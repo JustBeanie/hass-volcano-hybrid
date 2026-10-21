@@ -325,7 +325,7 @@ async def test_a_persistently_dead_link_clears_the_adapter_cache(
     with (
         patch.object(fake_client, "read_gatt_char", side_effect=BleakError("gone")),
         patch(
-            "custom_components.storzandbickel_ble.volcano.clear_adapter_cache",
+            "custom_components.storzandbickel_ble.ble_device.clear_adapter_cache",
             AsyncMock(return_value=True),
         ) as clear_adapter,
     ):
@@ -697,7 +697,7 @@ async def test_a_service_table_that_stays_partial_is_reported(
 
     with (
         patch(
-            "custom_components.storzandbickel_ble.volcano.clear_adapter_cache",
+            "custom_components.storzandbickel_ble.ble_device.clear_adapter_cache",
             AsyncMock(return_value=True),
         ) as clear_adapter,
         pytest.raises(VolcanoConnectionError, match=CHAR_FAN_ON) as err,
@@ -722,7 +722,7 @@ async def test_a_command_rebuilds_a_link_that_lost_its_characteristic(
     # The table goes stale under a live link; a rediscovery restores it.
     fake_client.missing = {CHAR_FAN_ON}
     with patch(
-        "custom_components.storzandbickel_ble.volcano.clear_adapter_cache",
+        "custom_components.storzandbickel_ble.ble_device.clear_adapter_cache",
         AsyncMock(return_value=True),
     ):
         await device.async_turn_fan_on()
@@ -785,7 +785,7 @@ def test_an_unresolved_service_table_lacks_everything() -> None:
         def services(self) -> None:
             raise BleakError("Service Discovery has not been performed yet")
 
-    assert _missing_characteristics(_Unresolved()) == sorted(  # type: ignore[arg-type]
+    assert _missing_characteristics(_Unresolved(), REQUIRED_CHARACTERISTICS) == sorted(  # type: ignore[arg-type]
         REQUIRED_CHARACTERISTICS
     )
 

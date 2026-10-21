@@ -32,7 +32,7 @@ from custom_components.storzandbickel_ble.volcano import (
 
 from .conftest import FORMATTED_MAC, FakeBleakClient
 
-UPDATE = "custom_components.storzandbickel_ble.VolcanoHybrid.async_update"
+UPDATE = "custom_components.storzandbickel_ble.volcano.VolcanoHybrid.async_update"
 
 
 def _device_id(hass: HomeAssistant) -> str:

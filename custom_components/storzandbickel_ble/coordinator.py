@@ -25,8 +25,13 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
+from .ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+    DeviceState,
+    StorzBickelDevice,
+)
 from .const import (
-    ACTIVE_INTERVAL,
     CONF_AUTO_CONNECT,
     CONF_AUTO_CONNECT_DELAY,
     CONF_DELAYED_RECONNECT_DELAY,
@@ -34,7 +39,6 @@ from .const import (
     DEFAULT_DELAYED_RECONNECT_DELAY,
     DOMAIN,
     EVENT_DEVICE,
-    IDLE_INTERVAL,
     ISSUE_CONNECTION_REFUSED,
     ISSUE_CONNECTION_UNRESPONSIVE,
     ON_DEMAND_GRACE,
@@ -43,14 +47,8 @@ from .const import (
     TRIGGER_FAULT_RAISED,
     TRIGGER_TARGET_REACHED,
 )
-from .volcano import (
-    MASK_FAN,
-    MASK_HEATER,
-    ConnectionFailure,
-    VolcanoConnectionError,
-    VolcanoHybrid,
-    VolcanoState,
-)
+from .families import Family
+from .volcano import VolcanoHybrid
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,8 +88,12 @@ class LinkHealth:
     recoveries: int = 0
 
 
-class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
-    """Coordinate polling and commands for one Volcano Hybrid."""
+class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[Any]):
+    """Coordinate polling and commands for one Storz & Bickel device.
+
+    The data is the device family's own state dataclass, which always
+    extends ``DeviceState``.
+    """
 
     config_entry: VolcanoConfigEntry
 
@@ -99,7 +101,8 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         self,
         hass: HomeAssistant,
         entry: VolcanoConfigEntry,
-        device: VolcanoHybrid,
+        device: StorzBickelDevice,
+        family: Family = Family.VOLCANO_HYBRID,
     ) -> None:
         """Initialise the coordinator."""
         super().__init__(
@@ -107,9 +110,10 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
             _LOGGER,
             config_entry=entry,
             name=entry.title,
-            update_interval=ACTIVE_INTERVAL,
+            update_interval=device.active_interval,
         )
         self.device = device
+        self.family = family
         self.address = device.address
         self._was_available = True
         # Lost/restored triggers only make sense for a link that existed; a
@@ -189,7 +193,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
     # -- pushes and advertisements ----------------------------------------
 
     @callback
-    def _handle_push_update(self, _state: VolcanoState) -> None:
+    def _handle_push_update(self, _state: DeviceState) -> None:
         """Handle a state update pushed from the device.
 
         Never routed through async_set_updated_data. That call resets the
@@ -199,7 +203,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         status-bit change, "target reached" flickering around the setpoint
         stretched the 10 s cadence to 15 s and more. It would also have
         recorded a dropped link as a successful update. The coordinator's data
-        is the same VolcanoState object the device mutates, so notifying the
+        is the same DeviceState object the device mutates, so notifying the
         listeners is all a push needs.
         """
         self.async_update_listeners()
@@ -285,7 +289,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
 
     # -- polling -----------------------------------------------------------
 
-    async def _async_update_data(self) -> VolcanoState:
+    async def _async_update_data(self) -> Any:
         """Fetch the current device state."""
         # Assigned unconditionally: None means nothing can hear the device, and
         # recording that lets the connect attempt fail immediately instead of
@@ -307,13 +311,15 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
 
         try:
             state = await self.device.async_update()
-        except VolcanoConnectionError as err:
+        except DeviceConnectionError as err:
             self._handle_update_failure(err)
             raise UpdateFailed(str(err)) from err
 
         self._handle_update_success()
         self._async_set_interval(
-            ACTIVE_INTERVAL if state.heater_on or state.fan_on else IDLE_INTERVAL
+            self.device.active_interval
+            if state.heater_on or state.fan_on
+            else self.device.idle_interval
         )
         self._async_fire_edges()
         return state
@@ -325,7 +331,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
             self.update_interval = interval
 
     @callback
-    def _handle_update_failure(self, err: VolcanoConnectionError) -> None:
+    def _handle_update_failure(self, err: DeviceConnectionError) -> None:
         """Log the outage once and raise the repair that fits the failure."""
         self.consecutive_failures += 1
         health = self.link_health
@@ -336,15 +342,20 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         if self._was_available:
             self._was_available = False
             self._outage_started = time.monotonic()
-            _LOGGER.warning(
-                "Lost connection to the Volcano Hybrid at %s: %s", self.address, err
+            _LOGGER.log(
+                logging.INFO if self.device.sleeps else logging.WARNING,
+                "Lost connection to %s at %s: %s",
+                self.config_entry.title,
+                self.address,
+                err,
             )
             if self._ever_connected:
                 self._async_fire(TRIGGER_CONNECTION_LOST, kind=str(err.kind))
 
         # Asked for by a command or button, not by Home Assistant itself: the
-        # user has said they are managing the link, so no repairs.
-        if not self.auto_connect:
+        # user has said they are managing the link, so no repairs. And a
+        # portable that has gone to sleep is doing what it is meant to.
+        if not self.auto_connect or self.device.sleeps:
             return
 
         if err.kind is ConnectionFailure.CONNECT_FAILED:
@@ -395,7 +406,9 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         self.link_health.current_failure = None
         if not self._was_available:
             self._was_available = True
-            _LOGGER.info("Reconnected to the Volcano Hybrid at %s", self.address)
+            _LOGGER.info(
+                "Reconnected to %s at %s", self.config_entry.title, self.address
+            )
             if self._ever_connected and self._outage_started is not None:
                 outage = round(time.monotonic() - self._outage_started, 1)
                 self.link_health.recoveries += 1
@@ -422,7 +435,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
                 )
             self._last_target_reached = reached
 
-        if include_fault and state.status1 is not None:
+        if include_fault and state.fault_known:
             fault = state.any_fault
             if self._last_any_fault is False and fault:
                 self._async_fire(TRIGGER_FAULT_RAISED, last_fault=state.last_fault)
@@ -498,10 +511,10 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
 
     async def _async_wait_for(
         self,
-        settled: Callable[[VolcanoState], bool],
+        settled: Callable[[DeviceState], bool],
         seconds: float,
         timeout_key: str,
-        abort: Callable[[VolcanoState], str | None] = lambda _state: None,
+        abort: Callable[[DeviceState], str | None] = lambda _state: None,
     ) -> None:
         """Wait until ``settled`` holds on a reading taken after this call.
 
@@ -552,7 +565,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         """
         target = self.device.state.target_temperature
 
-        def _settled(state: VolcanoState) -> bool:
+        def _settled(state: DeviceState) -> bool:
             return bool(
                 state.heater_on
                 and state.target_reached
@@ -561,7 +574,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
                 and state.current_temperature >= target - REACHED_TOLERANCE
             )
 
-        def _abort(state: VolcanoState) -> str | None:
+        def _abort(state: DeviceState) -> str | None:
             if not state.connected:
                 return "wait_disconnected"
             if not state.heater_on:
@@ -591,7 +604,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         if state.fan_on:
             await self.async_turn_fan_off()
         await self.async_refresh()
-        if (state.status1 or 0) & (MASK_HEATER | MASK_FAN):
+        if state.heat_or_air_reported_on:
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="release_unconfirmed"
             )
@@ -599,12 +612,23 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
 
     # -- commands ----------------------------------------------------------
 
-    async def _async_command(self, coro: Coroutine[Any, Any, None]) -> None:
+    @property
+    def family_device(self) -> Any:
+        """Return the device, for commands only some families have."""
+        return self.device
+
+    @property
+    def _volcano(self) -> VolcanoHybrid:
+        """Return the device, for the commands only a Volcano has."""
+        assert isinstance(self.device, VolcanoHybrid)
+        return self.device
+
+    async def async_command(self, coro: Coroutine[Any, Any, None]) -> None:
         """Run a device command, then refresh."""
         self._demanded_at = time.monotonic()
         try:
             await coro
-        except VolcanoConnectionError as err:
+        except DeviceConnectionError as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="command_failed",
@@ -613,7 +637,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         # Any command means someone is using the device, so drop back to the
         # fast cadence before publishing -- otherwise turning the heater on from
         # an idle state would leave the climate card a minute behind the ramp.
-        self._async_set_interval(ACTIVE_INTERVAL)
+        self._async_set_interval(self.device.active_interval)
         # Publish the optimistic result straight away. The refresh below is
         # debounced, so without this the UI snaps back to the previous state
         # for up to a full poll interval after every button press.
@@ -622,40 +646,40 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
 
     async def async_turn_heater_on(self) -> None:
         """Turn the heater on."""
-        await self._async_command(self.device.async_turn_heater_on())
+        await self.async_command(self.device.async_turn_heater_on())
 
     async def async_turn_heater_off(self) -> None:
         """Turn the heater off."""
-        await self._async_command(self.device.async_turn_heater_off())
+        await self.async_command(self.device.async_turn_heater_off())
 
     async def async_turn_fan_on(self) -> None:
         """Turn the fan on."""
-        await self._async_command(self.device.async_turn_fan_on())
+        await self.async_command(self.device.async_turn_fan_on())
 
     async def async_turn_fan_off(self) -> None:
         """Turn the fan off."""
-        await self._async_command(self.device.async_turn_fan_off())
+        await self.async_command(self.device.async_turn_fan_off())
 
     async def async_set_temperature(self, celsius: float) -> None:
         """Set the target temperature."""
-        await self._async_command(self.device.async_set_target_temperature(celsius))
+        await self.async_command(self.device.async_set_target_temperature(celsius))
 
     async def async_set_brightness(self, percent: int) -> None:
         """Set the screen brightness."""
-        await self._async_command(self.device.async_set_brightness(percent))
+        await self.async_command(self.device.async_set_brightness(percent))
 
     async def async_set_auto_off_minutes(self, minutes: int) -> None:
         """Set the auto-off delay."""
-        await self._async_command(self.device.async_set_auto_off_minutes(minutes))
+        await self.async_command(self._volcano.async_set_auto_off_minutes(minutes))
 
     async def async_set_vibration(self, enabled: bool) -> None:
         """Enable or disable vibration."""
-        await self._async_command(self.device.async_set_vibration(enabled))
+        await self.async_command(self.device.async_set_vibration(enabled))
 
     async def async_set_display_while_cooling(self, enabled: bool) -> None:
         """Keep the display on while cooling, or not."""
-        await self._async_command(self.device.async_set_display_while_cooling(enabled))
+        await self.async_command(self._volcano.async_set_display_while_cooling(enabled))
 
     async def async_set_display_fahrenheit(self, enabled: bool) -> None:
         """Show Fahrenheit or Celsius on the device."""
-        await self._async_command(self.device.async_set_display_fahrenheit(enabled))
+        await self.async_command(self.device.async_set_display_fahrenheit(enabled))

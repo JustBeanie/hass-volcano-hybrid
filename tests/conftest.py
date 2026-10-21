@@ -260,7 +260,7 @@ def mock_establish_connection(
         return fake_client
 
     with patch(
-        "custom_components.storzandbickel_ble.volcano.establish_connection",
+        "custom_components.storzandbickel_ble.ble_device.establish_connection",
         AsyncMock(side_effect=_establish),
     ) as mock:
         yield mock

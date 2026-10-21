@@ -16,8 +16,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
-from .entity import VolcanoEntity
-from .volcano import VolcanoState
+from .entity import VolcanoEntity, always
+from .families import ALL_FAMILIES, QVAP, VOLCANO_ONLY, Family
 
 # The coordinator owns every read, and writes are already serialised by the
 # single GATT lock in volcano.py, so Home Assistant does not need to throttle.
@@ -28,8 +28,12 @@ PARALLEL_UPDATES = 0
 class VolcanoBinarySensorEntityDescription(BinarySensorEntityDescription):
     """Describes a Volcano Hybrid status-register binary sensor."""
 
-    is_on_fn: Callable[[VolcanoState], bool | None]
-    attributes_fn: Callable[[VolcanoState], dict[str, Any]] | None = None
+    is_on_fn: Callable[[Any], bool | None]
+    attributes_fn: Callable[[Any], dict[str, Any]] | None = None
+    # Which device families have this entity, and whether a given device of
+    # them can use it right now.
+    families: frozenset[Family] = VOLCANO_ONLY
+    available_fn: Callable[[Any], bool] = always
 
 
 BINARY_SENSORS: tuple[VolcanoBinarySensorEntityDescription, ...] = (
@@ -39,6 +43,7 @@ BINARY_SENSORS: tuple[VolcanoBinarySensorEntityDescription, ...] = (
         # ready. Only while heating: the bit can outlive the heater.
         key="ready",
         translation_key="ready",
+        families=ALL_FAMILIES,
         is_on_fn=lambda state: (
             None
             if state.target_reached is None
@@ -62,6 +67,50 @@ BINARY_SENSORS: tuple[VolcanoBinarySensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         is_on_fn=lambda state: state.service_mode,
     ),
+    # -- portables (experimental) --
+    VolcanoBinarySensorEntityDescription(
+        key="boost",
+        translation_key="boost",
+        families=frozenset({Family.CRAFTY}),
+        is_on_fn=lambda state: state.boost,
+    ),
+    VolcanoBinarySensorEntityDescription(
+        key="superboost",
+        translation_key="superboost",
+        families=frozenset({Family.CRAFTY}),
+        is_on_fn=lambda state: state.superboost,
+    ),
+    VolcanoBinarySensorEntityDescription(
+        key="error",
+        translation_key="error",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        families=frozenset({Family.CRAFTY}),
+        is_on_fn=lambda state: state.any_fault if state.fault_known else None,
+    ),
+    VolcanoBinarySensorEntityDescription(
+        key="needs_factory_reset",
+        translation_key="needs_factory_reset",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        families=frozenset({Family.CRAFTY}),
+        is_on_fn=lambda state: state.needs_factory_reset,
+    ),
+    VolcanoBinarySensorEntityDescription(
+        key="charging",
+        translation_key="charging",
+        device_class=BinarySensorDeviceClass.BATTERY_CHARGING,
+        families=QVAP,
+        is_on_fn=lambda state: state.charging,
+    ),
+    VolcanoBinarySensorEntityDescription(
+        # A device sitting in its bootloader takes no commands; this says why.
+        key="bootloader",
+        translation_key="bootloader",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        families=QVAP,
+        is_on_fn=lambda state: state.bootloader,
+    ),
 )
 
 
@@ -78,6 +127,7 @@ async def async_setup_entry(
             *(
                 VolcanoBinarySensor(coordinator, description)
                 for description in BINARY_SENSORS
+                if coordinator.family in description.families
             ),
         ]
     )
@@ -102,7 +152,7 @@ class VolcanoConnectivitySensor(VolcanoEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool:
         """Return whether the device is connected."""
-        return self.coordinator.data.connected
+        return bool(self.coordinator.data.connected)
 
 
 class VolcanoBinarySensor(VolcanoEntity, BinarySensorEntity):

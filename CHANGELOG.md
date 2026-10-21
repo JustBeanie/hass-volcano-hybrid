@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.0] - Unreleased
+
+### Added
+
+- **Experimental support for the Crafty / Crafty+, Venty and Veazy.** Implemented
+  from Storz & Bickel's web app by way of SavageNL's protocol descriptions; not
+  run on hardware by this project, so please report how it goes with the
+  diagnostics attached. Each device is recognised from its advertisement, or can
+  be added by address with its type chosen.
+  - They share the Volcano's self-healing Bluetooth link, link-health sensor,
+    auto-connect switch, reconnect buttons, device triggers and actions.
+  - They sleep to save battery: being out of reach is normal for them, so setup
+    does not wait for one and no connection repairs are raised.
+  - Their own entities: battery, auto-off countdown, boost (and on the Venty and
+    Veazy superboost) temperature, brightness, vibration, find device, and the
+    charging and display settings each device has. See the README.
+  - A Crafty below firmware V02.51 is watch-only: its controls show as
+    unavailable. A Venty or Veazy in its bootloader is never controlled.
+
+### Changed
+
+- The Bluetooth link code is shared by every device family (`ble_device.py`).
+  The Volcano's behaviour is unchanged; its whole test suite runs against the
+  shared code.
+
 ## [4.2.0] - Unreleased
 
 ### Added

@@ -22,6 +22,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import MAX_TEMP, MIN_TEMP, TEMP_STEP
 from .coordinator import VolcanoConfigEntry
 from .entity import VolcanoEntity
+from .families import Family
 
 # The coordinator owns every read, and writes are already serialised by the
 # single GATT lock in volcano.py, so Home Assistant does not need to throttle.
@@ -51,7 +52,7 @@ class VolcanoClimate(VolcanoEntity, ClimateEntity):
         | ClimateEntityFeature.FAN_MODE
     )
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
-    _attr_fan_modes = [FAN_OFF, FAN_ON]
+    _attr_fan_modes: list[str] | None = [FAN_OFF, FAN_ON]
     _attr_min_temp = MIN_TEMP
     _attr_max_temp = MAX_TEMP
     _attr_target_temperature_step = TEMP_STEP
@@ -59,16 +60,23 @@ class VolcanoClimate(VolcanoEntity, ClimateEntity):
     def __init__(self, coordinator: Any) -> None:
         """Initialise the climate entity."""
         super().__init__(coordinator, "climate")
+        self._attr_max_temp = coordinator.device.max_temp
+        # Only the Volcano has an air pump; the portables have no fan.
+        if coordinator.family is not Family.VOLCANO_HYBRID:
+            self._attr_supported_features &= ~ClimateEntityFeature.FAN_MODE
+            self._attr_fan_modes = None
 
     @property
     def current_temperature(self) -> float | None:
         """Return the current temperature."""
-        return self.data.current_temperature
+        value: float | None = self.data.current_temperature
+        return value
 
     @property
     def target_temperature(self) -> float | None:
         """Return the target temperature."""
-        return self.data.target_temperature
+        value: float | None = self.data.target_temperature
+        return value
 
     @property
     def hvac_mode(self) -> HVACMode:

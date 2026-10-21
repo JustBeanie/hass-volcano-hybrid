@@ -1,32 +1,34 @@
-"""Low-level BLE control for the Storz & Bickel Volcano Hybrid.
+"""The Volcano Hybrid's protocol: what to read, and how to decode it.
 
-All GATT traffic is serialised through a single lock held at exactly one level:
-the public coroutines acquire it, the private ``_read``/``_write`` helpers assume
-it is already held. Nothing below the lock may re-enter a public coroutine --
-``asyncio.Lock`` is not reentrant, and doing so is what deadlocked the previous
-implementation.
+The Bluetooth link itself -- connecting, rebuilding a dead link, the GATT lock
+-- is shared with the other families in ``ble_device.py``. What is here is the
+Volcano's own: one characteristic per value, temperatures in tenths, and the
+five status registers decoded from the firmware.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from enum import StrEnum
+from dataclasses import dataclass
 import logging
 import struct
 import time
-from typing import Any
+from typing import Any, ClassVar
 
-from bleak.backends.device import BLEDevice
-from bleak.exc import BleakCharacteristicNotFoundError, BleakError
-from bleak_retry_connector import (
-    BleakClientWithServiceCache,
-    BleakNotFoundError,
-    clear_cache as clear_adapter_cache,
-    establish_connection,
+from .ble_device import (
+    ADAPTER_CACHE_RESET_AFTER,
+    DEVICE_INFO_INTERVAL,
+    ConnectionFailure,
+    DeviceConnectionError,
+    DeviceState,
+    StorzBickelDevice,
+    _bit,
+    _ble_device_source,
+    _decode_firmware,
+    _decode_int,
+    _decode_string,
+    _missing_characteristics,
 )
-
 from .const import (
     DEVICE_MIN_AUTO_OFF_MINUTES,
     MAX_AUTO_OFF_MINUTES,
@@ -34,6 +36,21 @@ from .const import (
     MIN_AUTO_OFF_MINUTES,
     MIN_TEMP,
 )
+
+# Kept under the names the rest of the integration and its tests have always
+# used for them.
+VolcanoConnectionError = DeviceConnectionError
+__all__ = [
+    "ADAPTER_CACHE_RESET_AFTER",
+    "DEVICE_INFO_INTERVAL",
+    "ConnectionFailure",
+    "VolcanoConnectionError",
+    "_ble_device_source",
+    "_decode_firmware",
+    "_decode_int",
+    "_decode_string",
+    "_missing_characteristics",
+]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -148,67 +165,12 @@ OPTIMISTIC_WINDOW = 3.0
 # repeating it could start the device after the user meant it to stay off.
 OFF_CONFIRM_DELAY = 1.0
 
-# Device information changes rarely; re-read it on this cadence only.
-DEVICE_INFO_INTERVAL = 600.0
-
-# The coordinator retries on its own schedule, so a poll that cannot reach the
-# device should give up quickly rather than work through a long retry ladder
-# while holding the GATT lock -- every command queues behind that lock.
-CONNECT_ATTEMPTS = 2
-
-# Dropping the client and reconnecting is enough to clear most unresponsive
-# links. This many in a row means the cached GATT table on the adapter itself is
-# suspect, so the next reset clears that too.
-ADAPTER_CACHE_RESET_AFTER = 3
-
-
-class ConnectionFailure(StrEnum):
-    """Why the device could not be reached.
-
-    The shapes are not interchangeable and the coordinator acts on the
-    difference. A vaporiser that accepts a connection and then answers nothing
-    was reported as a *refused* connection for a while, which sent users looking
-    for a phone app holding a link that Home Assistant itself held.
-    """
-
-    # Nothing can currently hear the device: no adapter, no proxy.
-    NOT_VISIBLE = "not_visible"
-    # Turned away at the connect stage. The only shape that points at another
-    # client holding the single connection the device allows.
-    CONNECT_FAILED = "connect_failed"
-    # Connected, but GATT is unusable -- a stale service table or a wedged
-    # device. Nothing the user can fix by closing an app.
-    NO_READS = "no_reads"
-    # Connected, but the service table is missing characteristics every
-    # Volcano has, even after rediscovering it. Recovered the same way as
-    # NO_READS; kept apart so the log says which one it was.
-    STALE_GATT = "stale_gatt"
-    WRITE_FAILED = "write_failed"
-
-
-class VolcanoConnectionError(Exception):
-    """Raised when the device cannot be reached."""
-
-    def __init__(self, message: str, kind: ConnectionFailure) -> None:
-        """Record what kind of failure this was.
-
-        ``kind`` is deliberately required rather than defaulted: guessing it is
-        the exact bug this class exists to prevent.
-        """
-        super().__init__(message)
-        self.kind = kind
-
 
 @dataclass
-class VolcanoState:
-    """Snapshot of the device state."""
+class VolcanoState(DeviceState):
+    """Snapshot of a Volcano Hybrid's state."""
 
-    current_temperature: float | None = None
-    target_temperature: float | None = None
-    heater_on: bool = False
-    fan_on: bool = False
     brightness: int | None = None
-    connected: bool = False
     # Low 16 bits of each status register; None if the device does not have it.
     status1: int | None = None
     status2: int | None = None
@@ -218,20 +180,11 @@ class VolcanoState:
     # Error history logs, as the text the device sent.
     history1: str | None = None
     history2: str | None = None
-    serial_number: str | None = None
     ble_firmware_version: str | None = None
-    firmware_version: str | None = None
     mains_voltage: str | None = None
-    model: str | None = None
     hours_of_operation: int | None = None
     minutes_of_operation: int | None = None
     auto_off_minutes: int | None = None
-    # Signal strength of the last advertisement, and the adapter or proxy the
-    # current link goes through. The vaporizer stops advertising once
-    # connected, so the RSSI is the one it was connected on.
-    rssi: int | None = None
-    connected_via: str | None = None
-    raw: dict[str, str | None] = field(default_factory=dict)
 
     @property
     def target_reached(self) -> bool | None:
@@ -259,6 +212,16 @@ class VolcanoState:
         if self.status2 is None:
             return []
         return [name for mask, name in R2_ERROR_FLAGS.items() if self.status2 & mask]
+
+    @property
+    def fault_known(self) -> bool:
+        """Return whether status register 1 has been read."""
+        return self.status1 is not None
+
+    @property
+    def heat_or_air_reported_on(self) -> bool:
+        """Return whether register 1 itself still shows heater or fan on."""
+        return bool((self.status1 or 0) & (MASK_HEATER | MASK_FAN))
 
     @property
     def any_fault(self) -> bool:
@@ -311,22 +274,6 @@ class VolcanoState:
         return log[0] if log else 0
 
 
-def _ble_device_source(ble_device: BLEDevice) -> str | None:
-    """Return the adapter or proxy a BLEDevice was heard through.
-
-    Home Assistant's Bluetooth stack records it as ``details["source"]`` for
-    local adapters and ESPHome proxies alike; anything else has no source.
-    """
-    details = ble_device.details
-    source = details.get("source") if isinstance(details, dict) else None
-    return source if isinstance(source, str) else None
-
-
-def _bit(value: int | None, mask: int) -> bool | None:
-    """Return whether ``mask`` is set in ``value``, None if it is unknown."""
-    return None if value is None else bool(value & mask)
-
-
 def _decode_register(raw: bytes | None) -> int | None:
     """Decode a status register to its 16-bit word."""
     if not raw or len(raw) < 2:
@@ -347,14 +294,6 @@ def _decode_history(text: str | None) -> list[int] | None:
     return [code for code in codes if code]
 
 
-def _decode_int(raw: bytes | None, *, signed: bool = False) -> int | None:
-    """Decode a little-endian integer of whatever width the device sent."""
-    if not raw:
-        return None
-    width = 4 if len(raw) >= 4 else 2 if len(raw) >= 2 else 1
-    return int.from_bytes(raw[:width], "little", signed=signed)
-
-
 def _decode_temperature(raw: bytes | None) -> float | None:
     """Decode a temperature characteristic.
 
@@ -369,310 +308,32 @@ def _decode_temperature(raw: bytes | None) -> float | None:
     return value / 10
 
 
-def _decode_string(raw: bytes | None) -> str | None:
-    """Decode a text characteristic, tolerating padding and bad bytes."""
-    if not raw:
-        return None
-    text = raw.decode("utf-8", errors="replace").replace("\x00", "").strip()
-    return text or None
-
-
-def _decode_firmware(raw: bytes | None) -> str | None:
-    """Decode a firmware version, which may be text or packed bytes."""
-    if not raw:
-        return None
-    text = _decode_string(raw)
-    if text and (text.startswith("V") or "." in text):
-        return text
-    if len(raw) >= 3:
-        return f"V{raw[0]:02d}.{raw[1]:02d}.{raw[2]}"
-    return f"V{raw.hex()}"
-
-
-def _missing_characteristics(client: BleakClientWithServiceCache) -> list[str]:
-    """Return the required characteristics the client's service table lacks."""
-    try:
-        services = client.services
-    except BleakError:
-        # Service discovery never completed: nothing is resolvable.
-        return sorted(REQUIRED_CHARACTERISTICS)
-    return sorted(
-        uuid
-        for uuid in REQUIRED_CHARACTERISTICS
-        if services.get_characteristic(uuid) is None
-    )
-
-
-def _is_characteristic_not_found(err: BaseException | None) -> bool:
-    """Return whether bleak failed because the service table lacks the UUID.
-
-    Matched on the text too: an ESPHome proxy reports it as a plain BleakError.
-    """
-    return isinstance(err, BleakCharacteristicNotFoundError) or (
-        isinstance(err, BleakError) and "not found" in str(err).lower()
-    )
-
-
-class VolcanoHybrid:
+class VolcanoHybrid(StorzBickelDevice):
     """Bluetooth LE client for a single Volcano Hybrid."""
+
+    required_characteristics: ClassVar[frozenset[str]] = REQUIRED_CHARACTERISTICS
+    notify_characteristics: ClassVar[tuple[str, ...]] = (CHAR_STATUS_REGISTER,)
 
     def __init__(self, address: str) -> None:
         """Initialise the client for ``address``."""
-        self.address = address
-        self._ble_device: BLEDevice | None = None
-        self._client: BleakClientWithServiceCache | None = None
-        self._lock = asyncio.Lock()
-        self._state = VolcanoState()
-        self._callbacks: list[Callable[[VolcanoState], None]] = []
+        super().__init__(address, VolcanoState())
+        self._state: VolcanoState
         self._optimistic: dict[str, bool] = {}
         self._optimistic_until = 0.0
         self._device_info_read_at: float | None = None
-        self._static_info_read = False
-        self._notifications_started = False
-        self._last_read_error: str | None = None
         self._no_read_failures = 0
         self._fault_seen = False
-        # How often the link has been torn down and rebuilt, and how many of
-        # those also cleared the adapter's cache. Shown on the link-health
-        # sensor so the self-healing can be seen working.
-        self.link_resets = 0
-        self.adapter_cache_resets = 0
-
-    # -- plumbing ----------------------------------------------------------
 
     @property
     def state(self) -> VolcanoState:
         """Return the last known state."""
         return self._state
 
-    @property
-    def connected(self) -> bool:
-        """Return whether a live GATT connection exists."""
-        return self._client is not None and self._client.is_connected
-
-    def set_ble_device(self, ble_device: BLEDevice | None) -> None:
-        """Update the BLEDevice, so reconnects use the closest adapter/proxy.
-
-        ``None`` means no adapter or proxy can currently hear the device, and
-        must be recorded rather than ignored: holding on to the last known
-        BLEDevice sends every later poll into a full connection attempt for a
-        vaporiser that is unplugged, which is both slow and pointless.
-        """
-        self._ble_device = ble_device
-
-    def register_callback(
-        self, callback: Callable[[VolcanoState], None]
-    ) -> Callable[[], None]:
-        """Register a listener for pushed state updates."""
-        self._callbacks.append(callback)
-
-        def _unregister() -> None:
-            if callback in self._callbacks:
-                self._callbacks.remove(callback)
-
-        return _unregister
-
-    def _notify_listeners(self) -> None:
-        for callback in self._callbacks:
-            callback(self._state)
-
-    def _handle_disconnect(self, _client: BleakClientWithServiceCache) -> None:
-        """Handle the device dropping the link."""
-        _LOGGER.debug("%s: disconnected", self.address)
-        self._client = None
-        self._notifications_started = False
-        # Serial number and firmware are read once per connection, so a new link
-        # has to read them again -- the device may have been swapped.
-        self._static_info_read = False
-        self._state.connected = False
-        self._state.connected_via = None
-        self._notify_listeners()
-
-    # -- connection --------------------------------------------------------
-
-    async def _ensure_client(self) -> BleakClientWithServiceCache:
-        """Return a live client, connecting if needed. Assumes the lock is held."""
-        if self._client is not None and self._client.is_connected:
-            return self._client
-
-        if (ble_device := self._ble_device) is None:
-            raise VolcanoConnectionError(
-                f"{self.address} is not currently visible to any Bluetooth adapter",
-                ConnectionFailure.NOT_VISIBLE,
-            )
-
-        _LOGGER.debug("%s: connecting via %s", self.address, ble_device)
-        client = await self._async_establish(ble_device, use_services_cache=True)
-
-        # A partly resolved service table is not fixed by reconnecting with the
-        # same cache -- the 2026-10-06 outage survived a drop and reconnect and
-        # only cleared on a reload. Rediscover once before giving up on it.
-        if missing := _missing_characteristics(client):
-            _LOGGER.debug(
-                "%s: service table lacks %s, rediscovering", self.address, missing
-            )
-            await self._async_drop_client(client)
-            client = await self._async_establish(ble_device, use_services_cache=False)
-            if missing := _missing_characteristics(client):
-                await self._async_drop_client(client)
-                await clear_adapter_cache(self.address)
-                raise VolcanoConnectionError(
-                    f"{self.address} connected but its service table lacks"
-                    f" {', '.join(missing)}",
-                    ConnectionFailure.STALE_GATT,
-                )
-
-        self._client = client
-        self._state.connected = True
-        self._state.connected_via = _ble_device_source(ble_device)
-
-        try:
-            await client.start_notify(CHAR_STATUS_REGISTER, self._notification_handler)
-            self._notifications_started = True
-        except (BleakError, TimeoutError) as err:
-            # Notifications are an optimisation; polling still works without them.
-            _LOGGER.debug(
-                "%s: could not subscribe to status register: %s", self.address, err
-            )
-
-        return client
-
-    async def _async_establish(
-        self, ble_device: BLEDevice, *, use_services_cache: bool
-    ) -> BleakClientWithServiceCache:
-        """Open a link, raising CONNECT_FAILED if the device turns us away."""
-        try:
-            return await establish_connection(
-                BleakClientWithServiceCache,
-                ble_device,
-                self.address,
-                self._handle_disconnect,
-                use_services_cache=use_services_cache,
-                max_attempts=CONNECT_ATTEMPTS,
-                # Prefer whatever advertisement arrived most recently, falling
-                # back to the one we started with so retries always have a
-                # device to work from.
-                ble_device_callback=lambda: self._ble_device or ble_device,
-            )
-        except (BleakNotFoundError, BleakError, TimeoutError) as err:
-            raise VolcanoConnectionError(
-                f"Could not connect: {err}", ConnectionFailure.CONNECT_FAILED
-            ) from err
-
-    async def _async_drop_client(self, client: BleakClientWithServiceCache) -> None:
-        """Clear a client's cached service table and disconnect it."""
-        try:
-            # Clears the cached service table this client resolved against,
-            # local adapter or proxy, so the reconnect rediscovers GATT.
-            await client.clear_cache()
-            await client.disconnect()
-        except (BleakError, TimeoutError, EOFError) as err:
-            _LOGGER.debug("%s: resetting the link failed: %s", self.address, err)
-
-    async def async_connect(self) -> None:
-        """Connect to the device, raising VolcanoConnectionError on failure."""
-        async with self._lock:
-            await self._ensure_client()
-
-    async def _async_reset_link(self, *, reset_adapter_cache: bool) -> None:
-        """Throw the link away so the next attempt rebuilds it from scratch.
-
-        Assumes the lock is held, which is why it cannot simply call
-        ``async_disconnect`` -- that acquires the same non-reentrant lock and
-        would deadlock the poll it is being called from.
-
-        Without this, a client that bleak still considers connected but that
-        answers no reads was handed straight back by ``_ensure_client`` on every
-        later poll, so the integration could not recover on its own and needed
-        the config entry reloading by hand.
-        """
-        client = self._client
-        self._client = None
-        self._notifications_started = False
-        # A new link has to read these again; they are only valid per-connection.
-        self._static_info_read = False
-        self._state.connected = False
-        self._state.connected_via = None
-        self.link_resets += 1
-
-        if client is not None:
-            await self._async_drop_client(client)
-
-        if reset_adapter_cache:
-            self.adapter_cache_resets += 1
-            # Swallows its own errors and returns False off a local BlueZ
-            # adapter, where the client-level clear above is the one that counts.
-            cleared = await clear_adapter_cache(self.address)
-            _LOGGER.debug("%s: adapter cache cleared: %s", self.address, cleared)
-
-    async def async_disconnect(self) -> None:
-        """Disconnect from the device."""
-        async with self._lock:
-            client = self._client
-            self._client = None
-            if client is None:
-                return
-            if self._notifications_started:
-                try:
-                    await client.stop_notify(CHAR_STATUS_REGISTER)
-                except (BleakError, TimeoutError, EOFError) as err:
-                    _LOGGER.debug("%s: stop_notify failed: %s", self.address, err)
-                self._notifications_started = False
-            try:
-                await client.disconnect()
-            except (BleakError, TimeoutError, EOFError) as err:
-                _LOGGER.debug("%s: disconnect failed: %s", self.address, err)
-            self._state.connected = False
-            self._state.connected_via = None
-
-    # -- GATT primitives (lock must already be held) -----------------------
-
-    async def _read(self, uuid: str) -> bytes | None:
-        """Read a characteristic, returning None if it is unavailable."""
-        client = await self._ensure_client()
-        try:
-            return bytes(await client.read_gatt_char(uuid))
-        except (BleakError, TimeoutError) as err:
-            # Kept so a link that answers nothing can report why. Losing this to
-            # a debug line meant an outage was only ever recorded as "answered
-            # no reads", with no way to tell a stale service table (bleak says
-            # the characteristic was not found) from a device that has stopped
-            # responding (a timeout) after the fact.
-            self._last_read_error = f"{uuid}: {err}"
-            _LOGGER.debug("%s: read %s failed: %s", self.address, uuid, err)
-            return None
-
-    async def _write(self, uuid: str, data: bytes) -> None:
-        """Write a characteristic, rebuilding a link that has lost it once.
-
-        A required characteristic going missing means the service table is
-        stale, not that the device lacks it, so the link is rebuilt and the
-        write tried again rather than failing the button press. Optional ones
-        (the auto-off setting) really are absent on some firmware and fail
-        straight through to their caller's fallback.
-        """
-        try:
-            await self._write_once(uuid, data)
-        except VolcanoConnectionError as err:
-            if uuid not in REQUIRED_CHARACTERISTICS or not (
-                _is_characteristic_not_found(err.__cause__)
-            ):
-                raise
-            _LOGGER.debug("%s: %s, rebuilding the link", self.address, err)
-            await self._async_reset_link(reset_adapter_cache=True)
-            await self._write_once(uuid, data)
-
-    async def _write_once(self, uuid: str, data: bytes) -> None:
-        """Write a characteristic on the current link."""
-        client = await self._ensure_client()
-        try:
-            await client.write_gatt_char(uuid, data, response=True)
-        except (BleakError, TimeoutError) as err:
-            raise VolcanoConnectionError(
-                f"Write to {uuid} failed: {err}", ConnectionFailure.WRITE_FAILED
-            ) from err
-
     # -- notifications -----------------------------------------------------
+
+    def _handle_notification(self, uuid: str, data: bytes) -> None:
+        """Route a notification; the status register is the only one."""
+        self._notification_handler(None, bytearray(data))
 
     def _notification_handler(self, _sender: Any, data: bytearray) -> None:
         """Handle a status register notification."""

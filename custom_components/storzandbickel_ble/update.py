@@ -19,6 +19,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
 from .entity import VolcanoEntity
+from .families import Family
 from .firmware import (
     FIRMWARE_UPDATE_URL,
     format_firmware_version,
@@ -44,7 +45,9 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the firmware update entity."""
-    async_add_entities([VolcanoFirmwareUpdate(entry.runtime_data)])
+    # Only the Volcano has this.
+    if entry.runtime_data.family is Family.VOLCANO_HYBRID:
+        async_add_entities([VolcanoFirmwareUpdate(entry.runtime_data)])
 
 
 class VolcanoFirmwareUpdate(VolcanoEntity, UpdateEntity):
