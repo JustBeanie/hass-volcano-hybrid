@@ -53,7 +53,7 @@ they can be used in automations, scripts and dashboards like anything else.
 | Venty | **Experimental** | |
 | Veazy | **Experimental** | |
 | Volcano Classic | No | No Bluetooth radio — nothing to talk to |
-| Mighty | No | Not decoded |
+| Mighty, Mighty+ | No | Storz & Bickel's own app does not connect to it, and no Bluetooth protocol for it is known |
 
 The Volcano Hybrid was developed against firmware `V01.03.00.00` with BLE firmware
 `V01.00.00.00`; the protocol has been stable.
