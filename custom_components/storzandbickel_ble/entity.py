@@ -18,6 +18,10 @@ class VolcanoEntity(CoordinatorEntity[VolcanoDataUpdateCoordinator]):
     """Common base for every Volcano Hybrid entity."""
 
     _attr_has_entity_name = True
+    # True for entities that send commands. With auto-connect off they stay
+    # usable while disconnected, because using them is what opens the link;
+    # read-only entities would only show stale values, so they do not.
+    _controls_device = False
 
     def __init__(self, coordinator: VolcanoDataUpdateCoordinator, key: str) -> None:
         """Initialise the entity and attach it to the device."""
@@ -29,6 +33,8 @@ class VolcanoEntity(CoordinatorEntity[VolcanoDataUpdateCoordinator]):
             connections={(CONNECTION_BLUETOOTH, coordinator.address)},
             manufacturer=MANUFACTURER,
             model=MODEL,
+            # The device's own name for its model class, e.g. "HYBRID".
+            model_id=coordinator.data.model,
             name=coordinator.config_entry.title,
             serial_number=coordinator.data.serial_number,
             sw_version=coordinator.data.firmware_version,
@@ -41,5 +47,9 @@ class VolcanoEntity(CoordinatorEntity[VolcanoDataUpdateCoordinator]):
 
     @property
     def available(self) -> bool:
-        """Return whether the device is reachable."""
-        return super().available and self.coordinator.data.connected
+        """Return whether the device is reachable, or can be reached on demand."""
+        if not super().available:
+            return False
+        if self.coordinator.data.connected:
+            return True
+        return self._controls_device and not self.coordinator.auto_connect

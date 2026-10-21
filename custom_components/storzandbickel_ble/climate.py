@@ -40,6 +40,8 @@ async def async_setup_entry(
 class VolcanoClimate(VolcanoEntity, ClimateEntity):
     """The Volcano Hybrid as a climate entity."""
 
+    _controls_device = True
+
     _attr_name = None
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = (
@@ -78,6 +80,11 @@ class VolcanoClimate(VolcanoEntity, ClimateEntity):
         """Return what the device is actually doing."""
         if not self.data.heater_on:
             return HVACAction.OFF
+        # The device's own signal, when it has reported one: comparing
+        # temperatures says "heating" every time the block dips a degree while
+        # holding, which the device itself does not count as losing target.
+        if (reached := self.data.target_reached) is not None:
+            return HVACAction.IDLE if reached else HVACAction.HEATING
         current = self.data.current_temperature
         target = self.data.target_temperature
         if current is not None and target is not None and current < target:

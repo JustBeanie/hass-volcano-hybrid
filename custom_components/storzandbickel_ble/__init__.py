@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.bluetooth import (
     BluetoothCallbackMatcher,
@@ -19,7 +20,13 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_FAN_ON_CONNECT, CONF_INITIAL_TEMP, DOMAIN, MANUFACTURER_ID
+from .const import (
+    CONF_AUTO_CONNECT,
+    CONF_FAN_ON_CONNECT,
+    CONF_INITIAL_TEMP,
+    DOMAIN,
+    MANUFACTURER_ID,
+)
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
 from .migration import async_adopt_legacy, async_import_legacy_entries
 from .volcano import VolcanoHybrid
@@ -32,11 +39,13 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.CLIMATE,
     Platform.LIGHT,
     Platform.NUMBER,
     Platform.SENSOR,
     Platform.SWITCH,
+    Platform.UPDATE,
 ]
 
 
@@ -86,7 +95,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> b
     await async_adopt_legacy(hass, entry)
 
     ble_device = async_ble_device_from_address(hass, address, connectable=True)
-    if ble_device is None:
+    # With auto-connect off nobody expects a link, so an absent vaporizer is
+    # not a reason to hold setup back.
+    if ble_device is None and entry.options.get(CONF_AUTO_CONNECT, True):
         raise ConfigEntryNotReady(
             translation_domain=DOMAIN,
             translation_key="not_in_range",
@@ -114,6 +125,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> b
         )
     )
 
+    coordinator.reload_options = _reload_relevant(entry)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
     # Applied once per entry setup rather than per BLE reconnect: a dropped
@@ -127,10 +139,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> b
     return True
 
 
+def _reload_relevant(entry: VolcanoConfigEntry) -> dict[str, Any]:
+    """Return the options whose change needs a reload to take effect.
+
+    Auto-connect is applied live by its switch; reloading for it would drop
+    and rebuild every entity just to flip one flag.
+    """
+    return {k: v for k, v in entry.options.items() if k != CONF_AUTO_CONNECT}
+
+
 async def _async_options_updated(
     hass: HomeAssistant, entry: VolcanoConfigEntry
 ) -> None:
     """Reload so changed startup behaviour takes effect immediately."""
+    if entry.runtime_data.reload_options == _reload_relevant(entry):
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 

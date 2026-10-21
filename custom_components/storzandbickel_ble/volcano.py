@@ -28,6 +28,7 @@ from bleak_retry_connector import (
 )
 
 from .const import (
+    DEVICE_MIN_AUTO_OFF_MINUTES,
     MAX_AUTO_OFF_MINUTES,
     MAX_TEMP,
     MIN_AUTO_OFF_MINUTES,
@@ -50,6 +51,10 @@ CHAR_AUTO_OFF_SETTING = "1011000d-5354-4f52-5a26-4249434b454c"
 CHAR_SERIAL_NUMBER = "10100008-5354-4f52-5a26-4249434b454c"
 CHAR_BLE_FIRMWARE = "10100004-5354-4f52-5a26-4249434b454c"
 CHAR_FIRMWARE = "10100003-5354-4f52-5a26-4249434b454c"
+# ASCII, read only: the mains the unit was built for ("230VAC") and its own name
+# for its model class ("HYBRID"). Both advertise write; nothing ever writes them.
+CHAR_MAINS_VOLTAGE = "10100006-5354-4f52-5a26-4249434b454c"
+CHAR_MODEL = "10100007-5354-4f52-5a26-4249434b454c"
 CHAR_HOURS_OF_OPERATION = "10110015-5354-4f52-5a26-4249434b454c"
 CHAR_MINUTES_OF_OPERATION = "10110016-5354-4f52-5a26-4249434b454c"
 CHAR_REGISTER2 = "1010000d-5354-4f52-5a26-4249434b454c"
@@ -86,6 +91,10 @@ MASK_HEATER_FAULT = 0x0008  # fault 60: stops the heater only
 MASK_HEATER_PUMP_FAULT = 0x0010  # fault 61: stops the heater and the pump
 MASK_PUMP_INTERLOCK = 0x4000
 MASK_R1_ERR = 0x4018
+# Set the moment the block reaches the target; cleared only by raising the
+# target 3 C or more, never by lowering it. Confirmed live. It is the same
+# signal that drives the device's own vibration alert.
+MASK_TARGET_REACHED = 0x0400
 # Status register 2 (PRJSTAT2): regulation faults and display settings.
 MASK_SERVICE_MODE = 0x0040  # burn-in: heats itself to 230 C for ten minutes
 MASK_FAHRENHEIT = 0x0200
@@ -132,6 +141,12 @@ TEMP_INVALID_BELOW = 0.0
 # How long an explicit heater/fan command is trusted over the status register.
 # BLE notifications lag the write by a beat; without this the UI snaps back.
 OPTIMISTIC_WINDOW = 3.0
+
+# Heater-off and fan-off are re-sent once if the status register still shows
+# them on this long after the first write. An "off" that is lost leaves the
+# device running, so it is worth one retry; an "on" is never retried, because
+# repeating it could start the device after the user meant it to stay off.
+OFF_CONFIRM_DELAY = 1.0
 
 # Device information changes rarely; re-read it on this cadence only.
 DEVICE_INFO_INTERVAL = 600.0
@@ -206,10 +221,22 @@ class VolcanoState:
     serial_number: str | None = None
     ble_firmware_version: str | None = None
     firmware_version: str | None = None
+    mains_voltage: str | None = None
+    model: str | None = None
     hours_of_operation: int | None = None
     minutes_of_operation: int | None = None
     auto_off_minutes: int | None = None
+    # Signal strength of the last advertisement, and the adapter or proxy the
+    # current link goes through. The vaporizer stops advertising once
+    # connected, so the RSSI is the one it was connected on.
+    rssi: int | None = None
+    connected_via: str | None = None
     raw: dict[str, str | None] = field(default_factory=dict)
+
+    @property
+    def target_reached(self) -> bool | None:
+        """Return whether the device reports it has reached the target."""
+        return _bit(self.status1, MASK_TARGET_REACHED)
 
     @property
     def heater_pump_fault(self) -> bool | None:
@@ -282,6 +309,17 @@ class VolcanoState:
         if log is None:
             return None
         return log[0] if log else 0
+
+
+def _ble_device_source(ble_device: BLEDevice) -> str | None:
+    """Return the adapter or proxy a BLEDevice was heard through.
+
+    Home Assistant's Bluetooth stack records it as ``details["source"]`` for
+    local adapters and ESPHome proxies alike; anything else has no source.
+    """
+    details = ble_device.details
+    source = details.get("source") if isinstance(details, dict) else None
+    return source if isinstance(source, str) else None
 
 
 def _bit(value: int | None, mask: int) -> bool | None:
@@ -394,6 +432,11 @@ class VolcanoHybrid:
         self._last_read_error: str | None = None
         self._no_read_failures = 0
         self._fault_seen = False
+        # How often the link has been torn down and rebuilt, and how many of
+        # those also cleared the adapter's cache. Shown on the link-health
+        # sensor so the self-healing can be seen working.
+        self.link_resets = 0
+        self.adapter_cache_resets = 0
 
     # -- plumbing ----------------------------------------------------------
 
@@ -442,6 +485,7 @@ class VolcanoHybrid:
         # has to read them again -- the device may have been swapped.
         self._static_info_read = False
         self._state.connected = False
+        self._state.connected_via = None
         self._notify_listeners()
 
     # -- connection --------------------------------------------------------
@@ -480,6 +524,7 @@ class VolcanoHybrid:
 
         self._client = client
         self._state.connected = True
+        self._state.connected_via = _ble_device_source(ble_device)
 
         try:
             await client.start_notify(CHAR_STATUS_REGISTER, self._notification_handler)
@@ -547,11 +592,14 @@ class VolcanoHybrid:
         # A new link has to read these again; they are only valid per-connection.
         self._static_info_read = False
         self._state.connected = False
+        self._state.connected_via = None
+        self.link_resets += 1
 
         if client is not None:
             await self._async_drop_client(client)
 
         if reset_adapter_cache:
+            self.adapter_cache_resets += 1
             # Swallows its own errors and returns False off a local BlueZ
             # adapter, where the client-level clear above is the one that counts.
             cleared = await clear_adapter_cache(self.address)
@@ -575,6 +623,7 @@ class VolcanoHybrid:
             except (BleakError, TimeoutError, EOFError) as err:
                 _LOGGER.debug("%s: disconnect failed: %s", self.address, err)
             self._state.connected = False
+            self._state.connected_via = None
 
     # -- GATT primitives (lock must already be held) -----------------------
 
@@ -768,6 +817,13 @@ class VolcanoHybrid:
                 _decode_firmware(await self._read(CHAR_FIRMWARE))
                 or self._state.firmware_version
             )
+            self._state.mains_voltage = (
+                _decode_string(await self._read(CHAR_MAINS_VOLTAGE))
+                or self._state.mains_voltage
+            )
+            self._state.model = (
+                _decode_string(await self._read(CHAR_MODEL)) or self._state.model
+            )
             self._static_info_read = True
 
         hours = _decode_int(await self._read(CHAR_HOURS_OF_OPERATION))
@@ -785,7 +841,9 @@ class VolcanoHybrid:
         if seconds is not None:
             # The device stores the auto-off delay in seconds.
             minutes_value = seconds // 60
-            if MIN_AUTO_OFF_MINUTES <= minutes_value <= MAX_AUTO_OFF_MINUTES:
+            # The device's own floor, not the one offered for setting: a delay
+            # set below that elsewhere is real and must still be shown.
+            if DEVICE_MIN_AUTO_OFF_MINUTES <= minutes_value <= MAX_AUTO_OFF_MINUTES:
                 self._state.auto_off_minutes = minutes_value
 
         self._apply_register(3, await self._read(CHAR_REGISTER3))
@@ -816,10 +874,11 @@ class VolcanoHybrid:
         self._set_optimistic(heater_on=True)
 
     async def async_turn_heater_off(self) -> None:
-        """Turn the heater off."""
+        """Turn the heater off, re-sending once if it does not take."""
         async with self._lock:
             await self._write(CHAR_HEAT_OFF, bytes([0]))
         self._set_optimistic(heater_on=False)
+        await self._async_confirm_off(CHAR_HEAT_OFF, MASK_HEATER)
 
     async def async_turn_fan_on(self) -> None:
         """Turn the fan on."""
@@ -828,10 +887,27 @@ class VolcanoHybrid:
         self._set_optimistic(fan_on=True)
 
     async def async_turn_fan_off(self) -> None:
-        """Turn the fan off."""
+        """Turn the fan off, re-sending once if it does not take."""
         async with self._lock:
             await self._write(CHAR_FAN_OFF, bytes([0]))
         self._set_optimistic(fan_on=False)
+        await self._async_confirm_off(CHAR_FAN_OFF, MASK_FAN)
+
+    async def _async_confirm_off(self, uuid: str, mask: int) -> None:
+        """Re-send an off command once if the device still reports it on.
+
+        Read straight from the register rather than the state: the state is
+        optimistic for a few seconds after a command, which is exactly the
+        window this is checking. The lock is not held across the wait, so
+        other commands are not queued behind it.
+        """
+        await asyncio.sleep(OFF_CONFIRM_DELAY)
+        async with self._lock:
+            value = _decode_register(await self._read(CHAR_STATUS_REGISTER))
+            if value is None or not value & mask:
+                return
+            _LOGGER.debug("%s: still on after %s, sending again", self.address, uuid)
+            await self._write(uuid, bytes([0]))
 
     async def async_set_target_temperature(self, celsius: float) -> None:
         """Set the target temperature in degrees Celsius."""

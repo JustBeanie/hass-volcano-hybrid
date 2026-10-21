@@ -10,10 +10,12 @@ from bleak.backends.scanner import AdvertisementData
 from bleak.exc import BleakCharacteristicNotFoundError, BleakError
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.const import CONF_ADDRESS
+from homeassistant.core import HomeAssistant
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.storzandbickel_ble.const import (
+    CONF_AUTO_CONNECT_DELAY,
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
     CONF_MAC_ADDRESS,
@@ -218,6 +220,24 @@ def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     return
 
 
+@pytest.fixture(autouse=True)
+def no_off_confirm_wait() -> Generator[None]:
+    """Check an off command straight away instead of a second later."""
+    with patch("custom_components.storzandbickel_ble.volcano.OFF_CONFIRM_DELAY", 0):
+        yield
+
+
+@pytest.fixture
+async def loaded_entry(
+    hass: HomeAssistant, mock_bluetooth: MagicMock, config_entry: MockConfigEntry
+) -> MockConfigEntry:
+    """Return a fully set up config entry."""
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    return config_entry
+
+
 @pytest.fixture
 def fake_client() -> FakeBleakClient:
     """Return the fake BLE client used by the connection mock."""
@@ -303,7 +323,9 @@ def config_entry() -> MockConfigEntry:
         version=1,
         unique_id=FORMATTED_MAC,
         data={CONF_ADDRESS: ADDRESS},
-        options={CONF_FAN_ON_CONNECT: False},
+        # Connect on an advertisement straight away; the delayed path has its
+        # own tests.
+        options={CONF_FAN_ON_CONNECT: False, CONF_AUTO_CONNECT_DELAY: 0.0},
     )
 
 

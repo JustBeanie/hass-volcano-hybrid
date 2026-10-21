@@ -161,10 +161,10 @@ async def test_user_flow_creates_entry(
     assert result["data"][CONF_ADDRESS] == ADDRESS
 
 
-async def test_user_flow_without_devices_aborts(
+async def test_user_flow_without_devices_asks_for_an_address(
     hass: HomeAssistant, mock_bluetooth: AsyncMock
 ) -> None:
-    """With nothing in range the flow says so instead of showing an empty list."""
+    """With nothing in range the flow asks for the address instead of giving up."""
     with patch(
         "custom_components.storzandbickel_ble.config_flow.async_discovered_service_info",
         return_value=[NOT_VOLCANO_SERVICE_INFO],
@@ -173,8 +173,8 @@ async def test_user_flow_without_devices_aborts(
             DOMAIN, context={"source": SOURCE_USER}
         )
 
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "no_devices_found"
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "manual"
 
 
 async def test_user_flow_hides_configured_devices(
@@ -187,8 +187,8 @@ async def test_user_flow_hides_configured_devices(
         DOMAIN, context={"source": SOURCE_USER}
     )
 
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "no_devices_found"
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "manual"
 
 
 async def test_user_flow_handles_a_failed_connection(

@@ -10,8 +10,12 @@ from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.storzandbickel_ble.const import (
+    CONF_AUTO_CONNECT_DELAY,
+    CONF_DELAYED_RECONNECT_DELAY,
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
+    DEFAULT_AUTO_CONNECT_DELAY,
+    DEFAULT_DELAYED_RECONNECT_DELAY,
     DOMAIN,
 )
 from custom_components.storzandbickel_ble.volcano import (
@@ -49,6 +53,8 @@ async def test_options_flow_updates_and_reloads(
     assert config_entry.options == {
         CONF_INITIAL_TEMP: 195,
         CONF_FAN_ON_CONNECT: False,
+        CONF_AUTO_CONNECT_DELAY: DEFAULT_AUTO_CONNECT_DELAY,
+        CONF_DELAYED_RECONNECT_DELAY: DEFAULT_DELAYED_RECONNECT_DELAY,
     }
     # The reload re-applied it to the device.
     assert (CHAR_TARGET_TEMP, (1950).to_bytes(4, "little")) in fake_client.writes
