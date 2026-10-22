@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.1] - 2026-10-22
+
+### Fixed
+
+- **Upgrading from 3.x did not move anything.** Home Assistant only starts a
+  custom integration that already has an entry of its own, and straight after
+  the rename this one has none, so the code that adopts the old entry never
+  ran. The device showed up as a *new* discovery instead, next to the old entry
+  that was still working. Discovery now starts the integration, which adopts
+  the old entry with its entity IDs, or raises the "remove the old folder"
+  repair if the old copy is still installed.
+- **A device another integration already has is no longer offered as new.**
+  Discovering, picking or typing the address of a device the pre-4.0 version,
+  SavageNL's or Chuffnugget's integration has ends in a message pointing to the
+  move instead. Adding it again would have created a second set of entities
+  and two integrations fighting over one Bluetooth connection.
+- **Adoption never takes a device from an old entry that is still running.**
+  If the old copy is still installed and loaded, its entities and connection
+  are left alone until it is removed.
+
 ## [4.0.0] - 2026-10-21
 
 ### Changed

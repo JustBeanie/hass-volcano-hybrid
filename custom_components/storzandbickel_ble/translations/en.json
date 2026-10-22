@@ -62,7 +62,9 @@
       "already_configured": "Device is already configured",
       "no_devices_found": "No unconfigured devices found on the network",
       "not_supported": "This Bluetooth device is not a supported Storz & Bickel device.",
-      "reconfigure_successful": "Connected successfully."
+      "reconfigure_successful": "Connected successfully.",
+      "moving_from_old_version": "This device is set up by the version of this integration from before 4.0. It moves across by itself, keeping its entity IDs, so there is nothing to add. If the old copy is still installed, a repair under Settings → System → Repairs says how to remove it.",
+      "set_up_elsewhere": "This device is set up in another Storz & Bickel integration. To move it here and keep its entity IDs, open its repair under Settings → System → Repairs instead of adding it again."
     }
   },
   "options": {

@@ -30,7 +30,7 @@ from homeassistant.helpers import (
 
 from .const import CONF_MODEL, DOMAIN, ISSUE_MIGRATE_FROM_OTHER, LEGACY_DOMAIN
 from .families import Family
-from .migration import is_own_legacy_entry, move_registry_rows
+from .migration import is_own_legacy_entry, legacy_address, move_registry_rows
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -184,6 +184,26 @@ def _other_of(entry: ConfigEntry) -> OtherIntegration | None:
     for other in OTHER_INTEGRATIONS:
         if entry.domain == other.domain and other.owns(entry):
             return other
+    return None
+
+
+def held_elsewhere(hass: HomeAssistant, mac: str) -> str | None:
+    """Return why a device must not be added afresh, or None if it may be.
+
+    A device our pre-4.0 version or another integration already has is moved
+    here, keeping its entity IDs. Adding it as a new device instead would give
+    it a second set of entities and two integrations competing for its one
+    Bluetooth connection. The answer doubles as the config flow's abort reason.
+    """
+    for entry in hass.config_entries.async_entries(LEGACY_DOMAIN):
+        address = legacy_address(entry)
+        if is_own_legacy_entry(entry) and address and dr.format_mac(address) == mac:
+            return "moving_from_old_version"
+    for other in OTHER_INTEGRATIONS:
+        for entry in hass.config_entries.async_entries(other.domain):
+            address = other.address(entry)
+            if other.owns(entry) and address and dr.format_mac(address) == mac:
+                return "set_up_elsewhere"
     return None
 
 
