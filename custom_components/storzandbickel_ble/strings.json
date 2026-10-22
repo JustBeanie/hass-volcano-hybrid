@@ -286,6 +286,33 @@
     },
     "command_failed": {
       "message": "The command could not be sent to the Volcano Hybrid: {error}"
+    },
+    "no_device": {
+      "message": "No Volcano is set up and loaded."
+    },
+    "ambiguous_device": {
+      "message": "More than one Volcano is set up; choose a device."
+    },
+    "invalid_device": {
+      "message": "{device_id} is not a loaded Volcano."
+    },
+    "wait_timeout": {
+      "message": "The Volcano did not reach the target temperature within {seconds} seconds."
+    },
+    "wait_heater_off": {
+      "message": "The heater is off, so the target temperature will not be reached."
+    },
+    "wait_target_changed": {
+      "message": "The target temperature was changed while waiting for it."
+    },
+    "wait_disconnected": {
+      "message": "The connection to the Volcano dropped while waiting."
+    },
+    "connect_timeout": {
+      "message": "The Volcano did not connect within {seconds} seconds."
+    },
+    "release_unconfirmed": {
+      "message": "The Volcano still reports heat or air on, so the connection was kept open. Check the vaporizer."
     }
   },
   "device_automation": {
@@ -294,6 +321,58 @@
       "fault_raised": "Reported a fault",
       "connection_lost": "Lost its Bluetooth connection",
       "connection_restored": "Bluetooth connection restored"
+    }
+  },
+  "services": {
+    "set_temperature": {
+      "name": "Set temperature",
+      "description": "Sets the target temperature, and can wait until the vaporizer reports it reached.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The vaporizer. Can be left out when there is only one."
+        },
+        "temperature": {
+          "name": "Temperature",
+          "description": "Target temperature in °C."
+        },
+        "wait_until_reached": {
+          "name": "Wait until reached",
+          "description": "Finish only once the vaporizer reports the target reached. The heater must be on. Stops with an error if the heater is switched off, the target is changed or the connection drops."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "How long to wait before stopping with an error, in seconds."
+        }
+      }
+    },
+    "connect": {
+      "name": "Connect",
+      "description": "Turns auto-connect on and connects to the vaporizer.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The vaporizer. Can be left out when there is only one."
+        },
+        "wait": {
+          "name": "Wait until connected",
+          "description": "Finish only once the connection is up."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "How long to wait before stopping with an error, in seconds."
+        }
+      }
+    },
+    "disconnect": {
+      "name": "Disconnect",
+      "description": "Switches heat and air off, confirms they are off, then turns auto-connect off and releases the connection so the Storz & Bickel app can use the vaporizer.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The vaporizer. Can be left out when there is only one."
+        }
+      }
     }
   }
 }

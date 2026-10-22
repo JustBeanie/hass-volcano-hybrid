@@ -1,12 +1,10 @@
 rules:
   # Bronze
   action-setup:
-    status: exempt
+    status: done
     comment: |
-      The integration provides no actions. It had two, fan_timer and
-      screen_animation, both removed in 3.0.0 -- they were convenience wrappers
-      over the switch and light entities, and the README shows the equivalent
-      built-in actions.
+      set_temperature, connect and disconnect are registered once in
+      async_setup, so they exist (and validate) even with no entry loaded.
   appropriate-polling:
     status: done
     comment: |
@@ -41,8 +39,7 @@ rules:
       One requirement, bleak-retry-connector, published on PyPI and pinned by
       minimum version. bleak itself comes from Home Assistant.
   docs-actions:
-    status: exempt
-    comment: The integration provides no actions.
+    status: done
   docs-high-level-description:
     status: done
   docs-installation-instructions:
@@ -53,8 +50,7 @@ rules:
     status: exempt
     comment: The integration provides no conditions.
   docs-triggers:
-    status: exempt
-    comment: The integration provides no triggers.
+    status: done
   entity-event-setup:
     status: done
     comment: |
@@ -86,9 +82,10 @@ rules:
   action-exceptions:
     status: done
     comment: |
-      Still applies with no custom actions: every entity command goes through
-      the coordinator's wrapper, which raises a translated HomeAssistantError
-      when the device cannot be reached.
+      Every entity command goes through the coordinator's wrapper, which
+      raises a translated HomeAssistantError when the device cannot be
+      reached. The actions raise ServiceValidationError for a bad device and
+      HomeAssistantError when a wait times out or is cut short.
   config-entry-unloading:
     status: done
   docs-configuration-parameters:

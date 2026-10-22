@@ -29,6 +29,7 @@ from .const import (
 )
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
 from .migration import async_adopt_legacy, async_import_legacy_entries
+from .services import async_setup_services
 from .volcano import VolcanoHybrid
 
 _LOGGER = logging.getLogger(__name__)
@@ -79,6 +80,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         BluetoothCallbackMatcher(manufacturer_id=MANUFACTURER_ID, connectable=True),
         BluetoothScanningMode.PASSIVE,
     )
+
+    async_setup_services(hass)
 
     # Entries left under the pre-rename domain are brought across before
     # anything else, so their entity_ids survive.
