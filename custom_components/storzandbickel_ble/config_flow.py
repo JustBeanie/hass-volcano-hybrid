@@ -26,6 +26,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
 )
+from homeassistant.setup import async_setup_component
 import voluptuous as vol
 
 from .ble_device import DeviceConnectionError
@@ -45,7 +46,7 @@ from .const import (
     TEMP_STEP,
 )
 from .families import FAMILY_NAMES, Family, create_device, detect_family
-from .other_integrations import CONF_MOVE_FROM
+from .other_integrations import CONF_MOVE_FROM, held_elsewhere
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -159,6 +160,12 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="not_supported")
         self._family = family
 
+        await self._async_start_integration()
+        if reason := held_elsewhere(self.hass, self.unique_id or ""):
+            return self.async_abort(reason=reason)
+        # Starting the integration may just have adopted this very device.
+        self._abort_if_unique_id_configured()
+
         self._discovery_info = discovery_info
         self.context["title_placeholders"] = {"name": discovery_info.name}
         return await self.async_step_bluetooth_confirm()
@@ -197,7 +204,9 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
         another integration, its device family and which entry to take over.
         """
         address: str = import_data[CONF_ADDRESS]
-        await self.async_set_unique_id(format_mac(address))
+        # Not raise_on_progress: the discovery that started this integration
+        # is itself a flow for the same device, and it gives way to this one.
+        await self.async_set_unique_id(format_mac(address), raise_on_progress=False)
         self._abort_if_unique_id_configured()
         data = {CONF_ADDRESS: address}
         for key in (CONF_MODEL, CONF_MOVE_FROM):
@@ -213,6 +222,7 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Offer the devices Home Assistant can see, or typing an address."""
+        await self._async_start_integration()
         current_addresses = self._async_current_ids()
         self._discovered = {
             service_info.address: service_info
@@ -221,6 +231,7 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             if _family_of(service_info) is not None
             and format_mac(service_info.address) not in current_addresses
+            and not held_elsewhere(self.hass, format_mac(service_info.address))
         }
 
         # Nothing heard yet is no reason to give up: the address can be typed.
@@ -288,6 +299,8 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
                     format_mac(address), raise_on_progress=False
                 )
                 self._abort_if_unique_id_configured()
+                if reason := held_elsewhere(self.hass, self.unique_id or ""):
+                    return self.async_abort(reason=reason)
                 visible = async_ble_device_from_address(
                     self.hass, address, connectable=True
                 )
@@ -386,6 +399,18 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(entry: ConfigEntry) -> StorzBickelOptionsFlow:
         """Return the options flow."""
         return StorzBickelOptionsFlow()
+
+    async def _async_start_integration(self) -> None:
+        """Set the integration itself up, if nothing has yet.
+
+        Home Assistant only starts a custom integration that already has a
+        config entry, so on the first start after the 4.0 rename -- or for
+        someone coming from another integration -- the code that adopts the
+        old entry and offers the moves has not run. Discovery is what reaches
+        a new install first, so it starts it.
+        """
+        if DOMAIN not in self.hass.config.components:
+            await async_setup_component(self.hass, DOMAIN, {})
 
     async def _async_test_connection(self, address: str) -> str | None:
         """Prove we can talk to the device; return an error key on failure."""

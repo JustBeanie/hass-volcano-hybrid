@@ -143,15 +143,17 @@ uses that domain too, so 4.0 renamed it to `storzandbickel_ble`. Nothing needs
 redoing by hand:
 
 1. Update in HACS as usual and restart Home Assistant.
-2. On startup the integration finds the old entry and moves its device and every
-   entity across. **Entity IDs stay exactly as they were**, along with areas,
-   labels, aliases, voice exposure and disabled entities, so automations,
-   scripts and dashboards keep working. The old entry is then removed.
+2. HACS installs the new `custom_components/storzandbickel_ble` folder but may
+   leave the old `custom_components/volcano_hybrid` one in place, and the old
+   copy keeps working until it is gone. If it is still there, a repair under
+   **Settings → System → Repairs** asks you to delete it. Delete it and restart.
+3. The next time Home Assistant hears the vaporizer, the integration moves the
+   device and every entity across. **Entity IDs stay exactly as they were**,
+   along with areas, labels, aliases, voice exposure and disabled entities, so
+   automations, scripts and dashboards keep working. The old entry is removed.
 
-If HACS left the old `custom_components/volcano_hybrid` folder behind, nothing is
-moved while it is there, because both copies would fight over the vaporizer's
-single Bluetooth connection. A repair under **Settings → System → Repairs** says
-so. Delete that folder and restart, and the move happens then.
+Do not use **Add** on the vaporizer if it shows up as a new discovery while the
+old folder is still installed: from 4.0.1 it is not offered there at all.
 
 Entries made by the *other* `volcano_hybrid` integration are never touched by
 this step; see below.

@@ -15,7 +15,11 @@ from collections.abc import Callable
 import logging
 from typing import Any
 
-from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
+from homeassistant.config_entries import (
+    SOURCE_IMPORT,
+    ConfigEntry,
+    ConfigEntryState,
+)
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import (
@@ -158,8 +162,13 @@ async def async_adopt_legacy(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """
     mac = dr.format_mac(entry.data[CONF_ADDRESS])
     for legacy in _legacy_entries(hass):
-        # Each new entry takes only the old entry for its own vaporizer.
-        if dr.format_mac(legacy_address(legacy) or "") != mac:
+        # Each new entry takes only the old entry for its own vaporizer, and
+        # never one the old code still has running: its entities are live and
+        # it holds the Bluetooth connection.
+        if (
+            dr.format_mac(legacy_address(legacy) or "") != mac
+            or legacy.state is ConfigEntryState.LOADED
+        ):
             continue
         old_entry_id = legacy.entry_id
 
