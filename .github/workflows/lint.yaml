@@ -41,6 +41,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # diff-cover needs the base branch to diff against.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -53,11 +56,20 @@ jobs:
       - name: Run tests
         run: |
           python -m pytest tests/ \
-            --cov=custom_components.volcano_hybrid \
+            --cov=custom_components.storzandbickel_ble \
             --cov-report=term-missing \
+            --cov-report=xml \
             --cov-fail-under=95
+      # Every line a change adds or touches must be covered, whatever the
+      # package-wide figure says. On a push to main there is no diff, so this
+      # passes trivially.
+      - name: Require full coverage of changed lines
+        run: |
+          diff-cover coverage.xml \
+            --compare-branch=origin/${{ github.base_ref || 'main' }} \
+            --fail-under=100
       - name: Require full config flow coverage
         run: |
           python -m pytest tests/ -q \
-            --cov=custom_components.volcano_hybrid.config_flow \
+            --cov=custom_components.storzandbickel_ble.config_flow \
             --cov-fail-under=100

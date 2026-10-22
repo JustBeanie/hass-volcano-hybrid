@@ -29,7 +29,7 @@ relevant lines:
 ```yaml
 logger:
   logs:
-    custom_components.volcano_hybrid: debug
+    custom_components.storzandbickel_ble: debug
 ```
 
 ```

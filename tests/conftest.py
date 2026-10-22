@@ -13,13 +13,14 @@ from homeassistant.const import CONF_ADDRESS
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.volcano_hybrid.const import (
+from custom_components.storzandbickel_ble.const import (
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
     CONF_MAC_ADDRESS,
     DOMAIN,
+    LEGACY_DOMAIN,
 )
-from custom_components.volcano_hybrid.volcano import (
+from custom_components.storzandbickel_ble.volcano import (
     CHAR_AUTO_OFF_SETTING,
     CHAR_BLE_FIRMWARE,
     CHAR_BRIGHTNESS,
@@ -239,7 +240,7 @@ def mock_establish_connection(
         return fake_client
 
     with patch(
-        "custom_components.volcano_hybrid.volcano.establish_connection",
+        "custom_components.storzandbickel_ble.volcano.establish_connection",
         AsyncMock(side_effect=_establish),
     ) as mock:
         yield mock
@@ -269,24 +270,24 @@ def mock_bluetooth(
 
     with (
         patch(
-            "custom_components.volcano_hybrid.async_ble_device_from_address",
+            "custom_components.storzandbickel_ble.async_ble_device_from_address",
             return_value=ble_device,
         ),
         patch(
-            "custom_components.volcano_hybrid.config_flow.async_ble_device_from_address",
+            "custom_components.storzandbickel_ble.config_flow.async_ble_device_from_address",
             return_value=ble_device,
         ),
         patch(
-            "custom_components.volcano_hybrid.coordinator."
+            "custom_components.storzandbickel_ble.coordinator."
             "async_ble_device_from_address",
             return_value=ble_device,
         ),
         patch(
-            "custom_components.volcano_hybrid.async_register_callback",
+            "custom_components.storzandbickel_ble.async_register_callback",
             _register_callback,
         ),
         patch(
-            "custom_components.volcano_hybrid.config_flow.async_discovered_service_info",
+            "custom_components.storzandbickel_ble.config_flow.async_discovered_service_info",
             return_value=[SERVICE_INFO],
         ) as discovered,
     ):
@@ -299,7 +300,7 @@ def config_entry() -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         title=DEVICE_NAME,
-        version=3,
+        version=1,
         unique_id=FORMATTED_MAC,
         data={CONF_ADDRESS: ADDRESS},
         options={CONF_FAN_ON_CONNECT: False},
@@ -307,10 +308,23 @@ def config_entry() -> MockConfigEntry:
 
 
 @pytest.fixture
-def v2_config_entry() -> MockConfigEntry:
-    """Return a version 2 entry, with the behaviour settings still in data."""
+def legacy_v3_entry() -> MockConfigEntry:
+    """Return a 3.x entry left behind under the pre-rename domain."""
     return MockConfigEntry(
-        domain=DOMAIN,
+        domain=LEGACY_DOMAIN,
+        title=DEVICE_NAME,
+        version=3,
+        unique_id=FORMATTED_MAC,
+        data={CONF_ADDRESS: ADDRESS},
+        options={CONF_FAN_ON_CONNECT: True, CONF_INITIAL_TEMP: 180},
+    )
+
+
+@pytest.fixture
+def legacy_v2_entry() -> MockConfigEntry:
+    """Return a version 2 old-domain entry, behaviour settings still in data."""
+    return MockConfigEntry(
+        domain=LEGACY_DOMAIN,
         title=DEVICE_NAME,
         version=2,
         unique_id=FORMATTED_MAC,
@@ -323,12 +337,12 @@ def v2_config_entry() -> MockConfigEntry:
 
 
 @pytest.fixture
-def legacy_config_entry() -> MockConfigEntry:
-    """Return a version 1 config entry, as created before the rewrite."""
+def legacy_v1_entry() -> MockConfigEntry:
+    """Return a version 1 old-domain entry, as created before the rewrite."""
     return MockConfigEntry(
-        domain=DOMAIN,
+        domain=LEGACY_DOMAIN,
         title=DEVICE_NAME,
         version=1,
         unique_id=ADDRESS,
-        data={CONF_MAC_ADDRESS: ADDRESS, "name": DEVICE_NAME},
+        data={CONF_MAC_ADDRESS: ADDRESS, "name": DEVICE_NAME, CONF_INITIAL_TEMP: None},
     )

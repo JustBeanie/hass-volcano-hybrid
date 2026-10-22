@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.volcano_hybrid.diagnostics import (
+from custom_components.storzandbickel_ble.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 
@@ -35,7 +35,7 @@ async def test_diagnostics_include_the_raw_wire_values(
     """
     result = await async_get_config_entry_diagnostics(hass, loaded_entry)
 
-    assert result["entry"]["version"] == 3
+    assert result["entry"]["version"] == 1
     assert result["state"]["raw"]["current_temperature"] == "4cffffff"
     assert result["state"]["raw"]["target_temperature"] == "02080000"
     assert result["state"]["target_temperature"] == 205.0
@@ -51,7 +51,7 @@ async def test_diagnostics_redact_hardware_identifiers(
     # Populate the connection block, otherwise its identifiers are None and
     # redaction has nothing to prove.
     with patch(
-        "custom_components.volcano_hybrid.diagnostics.async_last_service_info",
+        "custom_components.storzandbickel_ble.diagnostics.async_last_service_info",
         return_value=SERVICE_INFO,
     ):
         result = await async_get_config_entry_diagnostics(hass, loaded_entry)
@@ -76,7 +76,7 @@ async def test_diagnostics_never_leak_a_nameless_advertisement(
     nameless = make_service_info(name=ADDRESS)
 
     with patch(
-        "custom_components.volcano_hybrid.diagnostics.async_last_service_info",
+        "custom_components.storzandbickel_ble.diagnostics.async_last_service_info",
         return_value=nameless,
     ):
         result = await async_get_config_entry_diagnostics(hass, loaded_entry)
@@ -91,7 +91,7 @@ async def test_diagnostics_keep_a_real_advertised_name(
 ) -> None:
     """A genuine name is kept, since it is useful and is not an identifier."""
     with patch(
-        "custom_components.volcano_hybrid.diagnostics.async_last_service_info",
+        "custom_components.storzandbickel_ble.diagnostics.async_last_service_info",
         return_value=SERVICE_INFO,
     ):
         result = await async_get_config_entry_diagnostics(hass, loaded_entry)

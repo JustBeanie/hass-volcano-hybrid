@@ -59,3 +59,4 @@ pids
 .mypy_cache/
 .coverage
 htmlcov/
+coverage.xml

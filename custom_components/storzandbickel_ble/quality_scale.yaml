@@ -18,7 +18,7 @@ rules:
     status: todo
     comment: |
       The integration now ships spec-compliant local icon and logo assets in
-      custom_components/volcano_hybrid/brand/, which Home Assistant 2026.3+
+      custom_components/storzandbickel_ble/brand/, which Home Assistant 2026.3+
       uses at runtime. The quality-scale rule still requires the assets to be
       submitted to the Home Assistant brands repository; that upstream PR is
       still pending.

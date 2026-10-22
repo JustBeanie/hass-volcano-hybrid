@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 from bleak.exc import BleakError
 import pytest
 
-from custom_components.volcano_hybrid.volcano import (
+from custom_components.storzandbickel_ble.volcano import (
     ADAPTER_CACHE_RESET_AFTER,
     CHAR_AUTO_OFF_SETTING,
     CHAR_BRIGHTNESS,
@@ -36,14 +36,17 @@ from custom_components.volcano_hybrid.volcano import (
     MASK_SERVICE_MODE,
     MASK_VIBRATION_OFF,
     R2_ERROR_FLAGS,
+    REQUIRED_CHARACTERISTICS,
     ConnectionFailure,
     VolcanoConnectionError,
     VolcanoHybrid,
+    VolcanoState,
     _decode_firmware,
     _decode_history,
     _decode_int,
     _decode_string,
     _decode_temperature,
+    _missing_characteristics,
 )
 
 from .conftest import (
@@ -322,7 +325,7 @@ async def test_a_persistently_dead_link_clears_the_adapter_cache(
     with (
         patch.object(fake_client, "read_gatt_char", side_effect=BleakError("gone")),
         patch(
-            "custom_components.volcano_hybrid.volcano.clear_adapter_cache",
+            "custom_components.storzandbickel_ble.volcano.clear_adapter_cache",
             AsyncMock(return_value=True),
         ) as clear_adapter,
     ):
@@ -694,7 +697,7 @@ async def test_a_service_table_that_stays_partial_is_reported(
 
     with (
         patch(
-            "custom_components.volcano_hybrid.volcano.clear_adapter_cache",
+            "custom_components.storzandbickel_ble.volcano.clear_adapter_cache",
             AsyncMock(return_value=True),
         ) as clear_adapter,
         pytest.raises(VolcanoConnectionError, match=CHAR_FAN_ON) as err,
@@ -719,7 +722,7 @@ async def test_a_command_rebuilds_a_link_that_lost_its_characteristic(
     # The table goes stale under a live link; a rediscovery restores it.
     fake_client.missing = {CHAR_FAN_ON}
     with patch(
-        "custom_components.volcano_hybrid.volcano.clear_adapter_cache",
+        "custom_components.storzandbickel_ble.volcano.clear_adapter_cache",
         AsyncMock(return_value=True),
     ):
         await device.async_turn_fan_on()
@@ -767,3 +770,31 @@ async def test_status_without_temperatures_is_a_stale_table(
     assert device._client is None
     assert device._no_read_failures == 1
     assert fake_client.caches_cleared == 1
+
+
+def test_regulation_faults_without_register_2() -> None:
+    """A device that never answered register 2 reports no regulation faults."""
+    assert VolcanoState().regulation_faults == []
+
+
+def test_an_unresolved_service_table_lacks_everything() -> None:
+    """Discovery that never finished means no characteristic is resolvable."""
+
+    class _Unresolved:
+        @property
+        def services(self) -> None:
+            raise BleakError("Service Discovery has not been performed yet")
+
+    assert _missing_characteristics(_Unresolved()) == sorted(  # type: ignore[arg-type]
+        REQUIRED_CHARACTERISTICS
+    )
+
+
+async def test_resetting_a_link_tolerates_a_failing_client() -> None:
+    """A client that errors while being dropped does not abort the reset."""
+    client = FakeBleakClient()
+    client.clear_cache = AsyncMock(side_effect=BleakError("gone"))  # type: ignore[method-assign]
+
+    await VolcanoHybrid(ADDRESS)._async_drop_client(client)  # type: ignore[arg-type]
+
+    client.clear_cache.assert_awaited_once()

@@ -1,4 +1,4 @@
-"""The Volcano Hybrid integration."""
+"""The Storz & Bickel BLE integration."""
 
 from __future__ import annotations
 
@@ -16,26 +16,17 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import (
-    config_validation as cv,
-    device_registry as dr,
-    entity_registry as er,
-)
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
-from .const import (
-    CONF_FAN_ON_CONNECT,
-    CONF_INITIAL_TEMP,
-    CONF_MAC_ADDRESS,
-    DOMAIN,
-    MANUFACTURER_ID,
-)
+from .const import CONF_FAN_ON_CONNECT, CONF_INITIAL_TEMP, DOMAIN, MANUFACTURER_ID
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
+from .migration import async_adopt_legacy, async_import_legacy_entries
 from .volcano import VolcanoHybrid
 
 _LOGGER = logging.getLogger(__name__)
 
-# The integration is config-entry only. This rejects a stray `volcano_hybrid:`
+# The integration is config-entry only. This rejects a stray `storzandbickel_ble:`
 # block in configuration.yaml rather than silently ignoring it.
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -69,7 +60,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         for entry in hass.config_entries.async_entries(DOMAIN):
             if entry.state is not ConfigEntryState.SETUP_RETRY:
                 continue
-            address = entry.data.get(CONF_ADDRESS) or entry.data.get(CONF_MAC_ADDRESS)
+            address = entry.data.get(CONF_ADDRESS)
             if address and dr.format_mac(address) == seen:
                 hass.config_entries.async_schedule_reload(entry.entry_id)
 
@@ -79,12 +70,20 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         BluetoothCallbackMatcher(manufacturer_id=MANUFACTURER_ID, connectable=True),
         BluetoothScanningMode.PASSIVE,
     )
+
+    # Entries left under the pre-rename domain are brought across before
+    # anything else, so their entity_ids survive.
+    await async_import_legacy_entries(hass)
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> bool:
     """Set up Volcano Hybrid from a config entry."""
     address: str = entry.data[CONF_ADDRESS]
+
+    # Before anything can fail or register an entity: adoption has to land on
+    # an entry with no entities of its own yet.
+    await async_adopt_legacy(hass, entry)
 
     ble_device = async_ble_device_from_address(hass, address, connectable=True)
     if ble_device is None:
@@ -144,86 +143,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: VolcanoConfigEntry) -> 
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrate an old config entry.
+    """Refuse entries from a newer version than this code understands.
 
-    Version 1 stored the address under a bespoke ``mac_address`` key and keyed
-    both the device identifier and every entity unique_id on the config entry
-    id. Version 2 uses ``CONF_ADDRESS`` and the MAC, so the device survives
-    being removed and re-added. Version 3 moves the startup behaviour out of
-    ``data`` and into ``options``, so it can be changed without re-adding.
-
-    The registries are updated in place, which keeps existing entity_ids -- and
-    therefore existing automations, scripts and dashboards -- working.
+    Pre-rename entries are not migrated here: they live under the old domain
+    and are adopted by migration.py instead.
     """
-    if entry.version > 3:
-        return False
-    if entry.version == 3:
-        return True
-    if entry.version == 2:
-        return _migrate_v2_to_v3(hass, entry)
-
-    address = entry.data.get(CONF_ADDRESS) or entry.data.get(CONF_MAC_ADDRESS)
-    if not address:
-        _LOGGER.error("Cannot migrate config entry without an address")
-        return False
-
-    formatted = dr.format_mac(address)
-
-    device_registry = dr.async_get(hass)
-    if device := device_registry.async_get_device(
-        identifiers={(DOMAIN, entry.entry_id)}
-    ):
-        device_registry.async_update_device(
-            device.id, new_identifiers={(DOMAIN, formatted)}
-        )
-        _LOGGER.debug("Migrated device identifier to %s", formatted)
-
-    entity_registry = er.async_get(hass)
-    for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
-        prefix = f"{entry.entry_id}_"
-        if not entity.unique_id.startswith(prefix):
-            continue
-        new_unique_id = f"{formatted}_{entity.unique_id[len(prefix) :]}"
-        if entity_registry.async_get_entity_id(
-            entity.domain, entity.platform, new_unique_id
-        ):
-            _LOGGER.debug(
-                "Skipping %s, target unique_id already taken", entity.entity_id
-            )
-            continue
-        entity_registry.async_update_entity(
-            entity.entity_id, new_unique_id=new_unique_id
-        )
-
-    new_data = {
-        key: value for key, value in entry.data.items() if key != CONF_MAC_ADDRESS
-    }
-    new_data[CONF_ADDRESS] = address
-
-    hass.config_entries.async_update_entry(
-        entry, data=new_data, unique_id=formatted, version=2
-    )
-    _LOGGER.info("Migrated Volcano Hybrid config entry to version 2")
-    return _migrate_v2_to_v3(hass, entry)
-
-
-@callback
-def _migrate_v2_to_v3(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Move the startup behaviour from entry.data to entry.options."""
-    behaviour_keys = (CONF_INITIAL_TEMP, CONF_FAN_ON_CONNECT)
-
-    options = dict(entry.options)
-    for key in behaviour_keys:
-        # Version 1 stored an unset initial temperature as an explicit None.
-        # Carrying that across would show as a populated-but-empty option.
-        if key in entry.data and key not in options and entry.data[key] is not None:
-            options[key] = entry.data[key]
-    options.setdefault(CONF_FAN_ON_CONNECT, False)
-
-    data = {
-        key: value for key, value in entry.data.items() if key not in behaviour_keys
-    }
-
-    hass.config_entries.async_update_entry(entry, data=data, options=options, version=3)
-    _LOGGER.info("Migrated Volcano Hybrid config entry to version 3")
-    return True
+    return entry.version <= 1
