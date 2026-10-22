@@ -79,7 +79,7 @@ async def test_a_visible_device_is_added(
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Volcano Hybrid"
-    assert result["data"] == {CONF_ADDRESS: ADDRESS}
+    assert result["data"] == {CONF_ADDRESS: ADDRESS, "model": "volcano_hybrid"}
     assert result["result"].unique_id == FORMATTED_MAC
 
 
@@ -89,7 +89,7 @@ async def test_a_visible_device_that_refuses_is_not_added(
     """One in range that will not connect stays on the manual step."""
     result = await _manual(hass)
     with patch(
-        f"{FLOW}.VolcanoHybrid.async_connect",
+        "custom_components.storzandbickel_ble.ble_device.StorzBickelDevice.async_connect",
         side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -119,7 +119,10 @@ async def test_a_device_out_of_range_is_still_added(
         await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"] == {CONF_ADDRESS: "11:22:33:44:55:66"}
+    assert result["data"] == {
+        CONF_ADDRESS: "11:22:33:44:55:66",
+        "model": "volcano_hybrid",
+    }
 
 
 async def test_a_configured_device_is_a_duplicate_in_any_case(

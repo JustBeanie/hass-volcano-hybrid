@@ -47,6 +47,7 @@ async def async_get_config_entry_diagnostics(
                 "last_update_success": coordinator.last_update_success,
                 "consecutive_failures": coordinator.consecutive_failures,
                 "update_interval": str(coordinator.update_interval),
+                "family": str(coordinator.family),
                 "auto_connect": coordinator.auto_connect,
                 "link_health": {
                     "state": coordinator.health_state,

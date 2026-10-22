@@ -16,6 +16,7 @@ from homeassistant.util.color import brightness_to_value, value_to_brightness
 from .const import DEFAULT_BRIGHTNESS
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
 from .entity import VolcanoEntity
+from .families import Family
 
 # The device takes 0-100; Home Assistant lights are 0-255.
 BRIGHTNESS_SCALE = (1, 100)
@@ -32,7 +33,9 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the Volcano Hybrid screen light."""
-    async_add_entities([VolcanoScreenLight(entry.runtime_data)])
+    # Only the Volcano has this.
+    if entry.runtime_data.family is Family.VOLCANO_HYBRID:
+        async_add_entities([VolcanoScreenLight(entry.runtime_data)])
 
 
 class VolcanoScreenLight(VolcanoEntity, LightEntity):
@@ -58,7 +61,8 @@ class VolcanoScreenLight(VolcanoEntity, LightEntity):
     @property
     def is_on(self) -> bool | None:
         """Return whether the screen is lit."""
-        if (percent := self.data.brightness) is None:
+        percent: int | None = self.data.brightness
+        if percent is None:
             return None
         return percent > 0
 

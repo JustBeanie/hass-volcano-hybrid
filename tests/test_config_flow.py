@@ -51,7 +51,7 @@ async def test_bluetooth_discovery_creates_entry(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == DEVICE_NAME
     # Behaviour settings live in options so they stay editable afterwards.
-    assert result["data"] == {CONF_ADDRESS: ADDRESS}
+    assert result["data"] == {CONF_ADDRESS: ADDRESS, "model": "volcano_hybrid"}
     assert result["options"] == {
         CONF_INITIAL_TEMP: 185,
         CONF_FAN_ON_CONNECT: True,
@@ -71,7 +71,7 @@ async def test_bluetooth_discovery_without_options(
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"] == {CONF_ADDRESS: ADDRESS}
+    assert result["data"] == {CONF_ADDRESS: ADDRESS, "model": "volcano_hybrid"}
     assert result["options"] == {CONF_FAN_ON_CONNECT: False}
 
 
@@ -108,7 +108,7 @@ async def test_bluetooth_confirm_handles_a_failed_connection(
     )
 
     with patch(
-        "custom_components.storzandbickel_ble.config_flow.VolcanoHybrid.async_connect",
+        "custom_components.storzandbickel_ble.ble_device.StorzBickelDevice.async_connect",
         side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
@@ -200,7 +200,7 @@ async def test_user_flow_handles_a_failed_connection(
     )
 
     with patch(
-        "custom_components.storzandbickel_ble.config_flow.VolcanoHybrid.async_connect",
+        "custom_components.storzandbickel_ble.ble_device.StorzBickelDevice.async_connect",
         side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -234,17 +234,21 @@ async def test_user_flow_aborts_on_duplicate(
 @pytest.mark.parametrize(
     ("name", "expected"),
     [
-        ("S&B VOLCANO H", True),
-        ("s&b volcano h", True),
-        ("VOLCANO HYBRID", True),
-        ("Kitchen Scale", False),
-        ("", False),
+        ("S&B VOLCANO H", "volcano_hybrid"),
+        ("s&b volcano h", "volcano_hybrid"),
+        ("VOLCANO HYBRID", "volcano_hybrid"),
+        ("S&B VY123456", "venty"),
+        ("S&B VZ123456", "veazy"),
+        ("STORZ&BICKEL", "crafty"),
+        ("Storz&Bickel", "crafty"),
+        ("Kitchen Scale", None),
+        ("", None),
     ],
 )
-def test_is_volcano(name: str, expected: bool) -> None:
-    """The name check is case-insensitive and rejects everything else."""
-    from custom_components.storzandbickel_ble.config_flow import _is_volcano
+def test_family_of(name: str, expected: str | None) -> None:
+    """The name picks the family, case-insensitively; anything else is not ours."""
+    from custom_components.storzandbickel_ble.config_flow import _family_of
 
     from .conftest import make_service_info
 
-    assert _is_volcano(make_service_info(name=name)) is expected
+    assert _family_of(make_service_info(name=name)) == expected

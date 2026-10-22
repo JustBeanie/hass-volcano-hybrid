@@ -103,7 +103,7 @@ async def test_reconfigure_reports_an_unreachable_device(
 
     result = await config_entry.start_reconfigure_flow(hass)
     with patch(
-        "custom_components.storzandbickel_ble.config_flow.VolcanoHybrid.async_connect",
+        "custom_components.storzandbickel_ble.ble_device.StorzBickelDevice.async_connect",
         side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})

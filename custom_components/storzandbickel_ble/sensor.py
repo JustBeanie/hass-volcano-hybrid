@@ -29,7 +29,9 @@ from .coordinator import (
     VolcanoConfigEntry,
     VolcanoDataUpdateCoordinator,
 )
-from .entity import VolcanoEntity
+from .entity import VolcanoEntity, always
+from .families import ALL_FAMILIES, PORTABLE, QVAP, VOLCANO_ONLY, Family
+from .qvap import HEATER_MODES
 from .volcano import FAULT_CODES, ConnectionFailure, VolcanoState
 
 # The coordinator owns every read, and writes are already serialised by the
@@ -41,10 +43,14 @@ PARALLEL_UPDATES = 0
 class VolcanoSensorEntityDescription(SensorEntityDescription):
     """Describes a Volcano Hybrid sensor."""
 
-    value_fn: Callable[[VolcanoState], StateType]
+    value_fn: Callable[[Any], StateType]
     # Diagnostic sensors must stay readable while the device is unreachable.
     available_when_disconnected: bool = False
-    attributes_fn: Callable[[VolcanoState], dict[str, Any]] | None = None
+    attributes_fn: Callable[[Any], dict[str, Any]] | None = None
+    # Which device families have this entity, and whether a given device of
+    # them can use it right now.
+    families: frozenset[Family] = VOLCANO_ONLY
+    available_fn: Callable[[Any], bool] = always
 
 
 LINK_HEALTH_OPTIONS = [
@@ -110,6 +116,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
     VolcanoSensorEntityDescription(
         key="temperature",
         translation_key="temperature",
+        families=ALL_FAMILIES,
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
@@ -118,6 +125,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
     VolcanoSensorEntityDescription(
         key="connection_status",
         translation_key="connection_status",
+        families=ALL_FAMILIES,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         available_when_disconnected=True,
@@ -156,6 +164,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
     VolcanoSensorEntityDescription(
         key="serial_number",
         translation_key="serial_number",
+        families=ALL_FAMILIES,
         entity_category=EntityCategory.DIAGNOSTIC,
         available_when_disconnected=True,
         value_fn=lambda state: state.serial_number,
@@ -170,6 +179,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
     VolcanoSensorEntityDescription(
         key="firmware_version",
         translation_key="firmware_version",
+        families=ALL_FAMILIES,
         entity_category=EntityCategory.DIAGNOSTIC,
         available_when_disconnected=True,
         value_fn=lambda state: state.firmware_version,
@@ -177,6 +187,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
     VolcanoSensorEntityDescription(
         key="hours_operation",
         translation_key="hours_operation",
+        families=frozenset({Family.VOLCANO_HYBRID, Family.CRAFTY}),
         entity_category=EntityCategory.DIAGNOSTIC,
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -207,6 +218,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
     VolcanoSensorEntityDescription(
         key="rssi",
         translation_key="rssi",
+        families=ALL_FAMILIES,
         device_class=SensorDeviceClass.SIGNAL_STRENGTH,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
@@ -218,6 +230,7 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
     VolcanoSensorEntityDescription(
         key="connected_via",
         translation_key="connected_via",
+        families=ALL_FAMILIES,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value_fn=lambda state: state.connected_via,
@@ -237,6 +250,62 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
     _raw_sensor("status_register_5"),
     _raw_sensor("error_history_1"),
     _raw_sensor("error_history_2"),
+    # -- portables (experimental) --
+    VolcanoSensorEntityDescription(
+        key="battery",
+        translation_key="battery",
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=PERCENTAGE,
+        families=PORTABLE,
+        value_fn=lambda state: state.battery,
+    ),
+    VolcanoSensorEntityDescription(
+        key="auto_off_countdown",
+        translation_key="auto_off_countdown",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        families=PORTABLE,
+        value_fn=lambda state: state.auto_off_countdown,
+    ),
+    VolcanoSensorEntityDescription(
+        key="heater_mode",
+        translation_key="heater_mode",
+        device_class=SensorDeviceClass.ENUM,
+        options=list(HEATER_MODES),
+        families=QVAP,
+        value_fn=lambda state: state.heater_mode,
+    ),
+    VolcanoSensorEntityDescription(
+        key="heater_runtime",
+        translation_key="heater_runtime",
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        available_when_disconnected=True,
+        families=QVAP,
+        value_fn=lambda state: state.heater_minutes,
+    ),
+    VolcanoSensorEntityDescription(
+        key="charging_time",
+        translation_key="charging_time",
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        available_when_disconnected=True,
+        families=QVAP,
+        value_fn=lambda state: state.charge_minutes,
+    ),
+    VolcanoSensorEntityDescription(
+        key="colour",
+        translation_key="colour",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        available_when_disconnected=True,
+        families=frozenset({Family.VEAZY}),
+        value_fn=lambda state: state.colour,
+    ),
 )
 
 
@@ -250,7 +319,11 @@ async def async_setup_entry(
     async_add_entities(
         [
             VolcanoLinkHealthSensor(coordinator),
-            *(VolcanoSensor(coordinator, description) for description in SENSORS),
+            *(
+                VolcanoSensor(coordinator, description)
+                for description in SENSORS
+                if coordinator.family in description.families
+            ),
         ]
     )
 

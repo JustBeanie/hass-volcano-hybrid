@@ -11,6 +11,18 @@
       },
       "auto_off_time": {
         "default": "mdi:timer-outline"
+      },
+      "boost_temperature": {
+        "default": "mdi:thermometer-chevron-up"
+      },
+      "superboost_temperature": {
+        "default": "mdi:thermometer-high"
+      },
+      "led_brightness": {
+        "default": "mdi:brightness-6"
+      },
+      "display_brightness": {
+        "default": "mdi:brightness-6"
       }
     },
     "sensor": {
@@ -78,6 +90,21 @@
       },
       "mains_voltage": {
         "default": "mdi:power-plug"
+      },
+      "auto_off_countdown": {
+        "default": "mdi:timer-sand"
+      },
+      "heater_mode": {
+        "default": "mdi:radiator"
+      },
+      "heater_runtime": {
+        "default": "mdi:clock-time-eight"
+      },
+      "charging_time": {
+        "default": "mdi:battery-clock"
+      },
+      "colour": {
+        "default": "mdi:palette"
       }
     },
     "switch": {
@@ -94,10 +121,7 @@
         }
       },
       "vibration": {
-        "default": "mdi:vibrate",
-        "state": {
-          "off": "mdi:vibrate-off"
-        }
+        "default": "mdi:vibrate"
       },
       "display_while_cooling": {
         "default": "mdi:monitor"
@@ -113,6 +137,27 @@
         "state": {
           "off": "mdi:bluetooth-off"
         }
+      },
+      "charge_led": {
+        "default": "mdi:led-on"
+      },
+      "auto_ble_shutdown": {
+        "default": "mdi:bluetooth-off"
+      },
+      "charge_optimisation": {
+        "default": "mdi:battery-heart-variant"
+      },
+      "charge_limit": {
+        "default": "mdi:battery-80"
+      },
+      "boost_visualisation": {
+        "default": "mdi:monitor-eye"
+      },
+      "boost_timeout_disabled": {
+        "default": "mdi:timer-off-outline"
+      },
+      "permanent_bluetooth": {
+        "default": "mdi:bluetooth"
       }
     },
     "binary_sensor": {
@@ -130,6 +175,18 @@
         "state": {
           "on": "mdi:check-circle"
         }
+      },
+      "boost": {
+        "default": "mdi:rocket-launch-outline"
+      },
+      "superboost": {
+        "default": "mdi:rocket-launch"
+      },
+      "needs_factory_reset": {
+        "default": "mdi:restore-alert"
+      },
+      "bootloader": {
+        "default": "mdi:chip"
       }
     },
     "button": {
@@ -138,6 +195,9 @@
       },
       "delayed_reconnect": {
         "default": "mdi:timer-sync-outline"
+      },
+      "find": {
+        "default": "mdi:map-marker-radius"
       }
     }
   }

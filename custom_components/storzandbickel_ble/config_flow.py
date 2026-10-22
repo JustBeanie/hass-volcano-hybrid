@@ -23,12 +23,14 @@ from homeassistant.core import callback
 from homeassistant.helpers.device_registry import format_mac
 import voluptuous as vol
 
+from .ble_device import DeviceConnectionError
 from .const import (
     CONF_AUTO_CONNECT,
     CONF_AUTO_CONNECT_DELAY,
     CONF_DELAYED_RECONNECT_DELAY,
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
+    CONF_MODEL,
     DEFAULT_AUTO_CONNECT_DELAY,
     DEFAULT_DELAYED_RECONNECT_DELAY,
     DEFAULT_NAME,
@@ -37,12 +39,9 @@ from .const import (
     MIN_TEMP,
     TEMP_STEP,
 )
-from .volcano import VolcanoConnectionError, VolcanoHybrid
+from .families import FAMILY_NAMES, Family, create_device, detect_family
 
 _LOGGER = logging.getLogger(__name__)
-
-# The Volcano Hybrid advertises as "S&B VOLCANO H".
-NAME_PREFIX = "S&B VOLCANO"
 
 OPTIONS_SCHEMA = vol.Schema(
     {
@@ -71,9 +70,9 @@ MAC_PATTERN = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 MANUAL_ENTRY = "manual"
 
 
-def _is_volcano(service_info: BluetoothServiceInfoBleak) -> bool:
-    """Return whether an advertisement looks like a Volcano Hybrid."""
-    return bool(service_info.name) and "VOLCANO" in service_info.name.upper()
+def _family_of(service_info: BluetoothServiceInfoBleak) -> Family | None:
+    """Return which Storz & Bickel family an advertisement is, if any."""
+    return detect_family(service_info.name, service_info.service_uuids)
 
 
 def _clean_options(user_input: dict[str, Any]) -> dict[str, Any]:
@@ -130,6 +129,7 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
         # What the entry is created for; from discovery or typed by hand.
         self._address: str | None = None
         self._name = DEFAULT_NAME
+        self._family = Family.VOLCANO_HYBRID
 
     # -- automatic discovery ----------------------------------------------
 
@@ -150,8 +150,9 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
                 self.hass.config_entries.async_schedule_reload(entry.entry_id)
             return self.async_abort(reason="already_configured")
 
-        if not _is_volcano(discovery_info):
+        if (family := _family_of(discovery_info)) is None:
             return self.async_abort(reason="not_supported")
+        self._family = family
 
         self._discovery_info = discovery_info
         self.context["title_placeholders"] = {"name": discovery_info.name}
@@ -212,6 +213,7 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(format_mac(address), raise_on_progress=False)
             self._abort_if_unique_id_configured()
             self._discovery_info = self._discovered[address]
+            self._family = _family_of(self._discovery_info) or Family.VOLCANO_HYBRID
             if error := await self._async_test_connection(address):
                 errors["base"] = error
             else:
@@ -223,7 +225,7 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
             for service_info in async_discovered_service_info(
                 self.hass, connectable=True
             )
-            if _is_volcano(service_info)
+            if _family_of(service_info) is not None
             and format_mac(service_info.address) not in current_addresses
         }
 
@@ -263,6 +265,7 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             address = user_input[CONF_ADDRESS].strip()
+            self._family = Family(user_input[CONF_MODEL])
             if not MAC_PATTERN.match(address):
                 errors[CONF_ADDRESS] = "invalid_address"
             else:
@@ -280,12 +283,20 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
                     errors["base"] = error
                 else:
                     self._address = address
-                    self._name = DEFAULT_NAME
+                    self._name = FAMILY_NAMES[self._family]
                     return await self.async_step_options()
 
         return self.async_show_form(
             step_id="manual",
-            data_schema=vol.Schema({vol.Required(CONF_ADDRESS): str}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_ADDRESS): str,
+                    # Nothing to detect it from without an advertisement.
+                    vol.Required(CONF_MODEL, default=Family.VOLCANO_HYBRID): vol.In(
+                        {family.value: FAMILY_NAMES[family] for family in Family}
+                    ),
+                }
+            ),
             errors=errors,
         )
 
@@ -303,7 +314,7 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             return self.async_create_entry(
                 title=self._name,
-                data={CONF_ADDRESS: self._address},
+                data={CONF_ADDRESS: self._address, CONF_MODEL: self._family.value},
                 options=_clean_options(user_input),
             )
 
@@ -332,6 +343,7 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
         """
         entry = self._get_reconfigure_entry()
         address: str = entry.data[CONF_ADDRESS]
+        self._family = Family(entry.data.get(CONF_MODEL, Family.VOLCANO_HYBRID))
 
         if user_input is not None:
             if error := await self._async_test_connection(address):
@@ -361,11 +373,11 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
         if ble_device is None:
             return "not_in_range"
 
-        device = VolcanoHybrid(address)
+        device = create_device(self._family, address)
         device.set_ble_device(ble_device)
         try:
             await device.async_connect()
-        except VolcanoConnectionError as err:
+        except DeviceConnectionError as err:
             _LOGGER.debug("Could not connect to %s: %s", address, err)
             return "cannot_connect"
         finally:

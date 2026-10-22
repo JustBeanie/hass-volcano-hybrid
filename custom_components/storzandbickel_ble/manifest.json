@@ -10,6 +10,30 @@
     {
       "local_name": "S&B VOLCANO*",
       "connectable": true
+    },
+    {
+      "local_name": "S&B VY*",
+      "connectable": true
+    },
+    {
+      "local_name": "S&B VZ*",
+      "connectable": true
+    },
+    {
+      "local_name": "STORZ&BICKEL*",
+      "connectable": true
+    },
+    {
+      "local_name": "Storz&Bickel*",
+      "connectable": true
+    },
+    {
+      "service_uuid": "00000001-4c45-4b43-4942-265a524f5453",
+      "connectable": true
+    },
+    {
+      "service_uuid": "00000000-5354-4f52-5a26-4249434b454c",
+      "connectable": true
     }
   ],
   "codeowners": [
@@ -31,5 +55,5 @@
   "requirements": [
     "bleak-retry-connector>=3.6.0"
   ],
-  "version": "4.2.0"
+  "version": "4.3.0"
 }

@@ -12,8 +12,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
-from .entity import VolcanoEntity
-from .volcano import VolcanoState
+from .entity import VolcanoEntity, always
+from .families import ALL_FAMILIES, PORTABLE, QVAP, VOLCANO_ONLY, Family
 
 # The coordinator owns every read, and writes are already serialised by the
 # single GATT lock in volcano.py, so Home Assistant does not need to throttle.
@@ -24,14 +24,42 @@ PARALLEL_UPDATES = 0
 class VolcanoSwitchEntityDescription(SwitchEntityDescription):
     """Describes a Volcano Hybrid switch."""
 
-    is_on_fn: Callable[[VolcanoState], bool | None]
+    is_on_fn: Callable[[Any], bool | None]
     set_fn: Callable[[VolcanoDataUpdateCoordinator, bool], Awaitable[None]]
+    # Which device families have this entity, and whether a given device of
+    # them can use it right now.
+    families: frozenset[Family] = VOLCANO_ONLY
+    available_fn: Callable[[Any], bool] = always
+
+
+def _controllable(state: Any) -> bool:
+    """Return whether the device accepts commands (old Crafty firmware does not)."""
+    return bool(getattr(state, "controllable", True))
+
+
+def _portable_setting(
+    key: str, families: frozenset[Family], method: str
+) -> VolcanoSwitchEntityDescription:
+    """Describe a portable's on/off setting, read from the state field ``key``."""
+    return VolcanoSwitchEntityDescription(
+        key=key,
+        translation_key=key,
+        entity_category=EntityCategory.CONFIG,
+        families=families,
+        available_fn=_controllable,
+        is_on_fn=lambda state: getattr(state, key),
+        set_fn=lambda coordinator, on: coordinator.async_command(
+            getattr(coordinator.family_device, method)(on)
+        ),
+    )
 
 
 SWITCHES: tuple[VolcanoSwitchEntityDescription, ...] = (
     VolcanoSwitchEntityDescription(
         key="heater",
         translation_key="heater",
+        families=ALL_FAMILIES,
+        available_fn=_controllable,
         is_on_fn=lambda state: state.heater_on,
         set_fn=lambda coordinator, on: (
             coordinator.async_turn_heater_on()
@@ -68,10 +96,36 @@ SWITCHES: tuple[VolcanoSwitchEntityDescription, ...] = (
     VolcanoSwitchEntityDescription(
         key="display_fahrenheit",
         translation_key="display_fahrenheit",
+        families=frozenset({Family.VOLCANO_HYBRID}) | QVAP,
         entity_category=EntityCategory.CONFIG,
         entity_registry_enabled_default=False,
         is_on_fn=lambda state: state.display_fahrenheit,
         set_fn=lambda coordinator, on: coordinator.async_set_display_fahrenheit(on),
+    ),
+    # -- portables (experimental) --
+    VolcanoSwitchEntityDescription(
+        key="vibration",
+        translation_key="vibration",
+        entity_category=EntityCategory.CONFIG,
+        families=PORTABLE,
+        available_fn=_controllable,
+        is_on_fn=lambda state: state.vibration,
+        set_fn=lambda coordinator, on: coordinator.async_set_vibration(on),
+    ),
+    _portable_setting("charge_led", frozenset({Family.CRAFTY}), "async_set_charge_led"),
+    _portable_setting(
+        "auto_ble_shutdown", frozenset({Family.CRAFTY}), "async_set_auto_ble_shutdown"
+    ),
+    _portable_setting("charge_optimisation", QVAP, "async_set_charge_optimisation"),
+    _portable_setting("charge_limit", QVAP, "async_set_charge_limit"),
+    _portable_setting("boost_visualisation", QVAP, "async_set_boost_visualisation"),
+    _portable_setting(
+        "boost_timeout_disabled", QVAP, "async_set_boost_timeout_disabled"
+    ),
+    _portable_setting(
+        "permanent_bluetooth",
+        frozenset({Family.VEAZY}),
+        "async_set_permanent_bluetooth",
     ),
 )
 
@@ -86,7 +140,11 @@ async def async_setup_entry(
     async_add_entities(
         [
             VolcanoAutoConnectSwitch(coordinator),
-            *(VolcanoSwitch(coordinator, description) for description in SWITCHES),
+            *(
+                VolcanoSwitch(coordinator, description)
+                for description in SWITCHES
+                if coordinator.family in description.families
+            ),
         ]
     )
 

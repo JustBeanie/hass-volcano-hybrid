@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.helpers.device_registry import (
     CONNECTION_BLUETOOTH,
     DeviceInfo,
@@ -11,7 +13,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER, MODEL
 from .coordinator import VolcanoDataUpdateCoordinator
-from .volcano import VolcanoState
 
 
 class VolcanoEntity(CoordinatorEntity[VolcanoDataUpdateCoordinator]):
@@ -41,8 +42,8 @@ class VolcanoEntity(CoordinatorEntity[VolcanoDataUpdateCoordinator]):
         )
 
     @property
-    def data(self) -> VolcanoState:
-        """Return the current device state."""
+    def data(self) -> Any:
+        """Return the current state, as the device family's own dataclass."""
         return self.coordinator.data
 
     @property
@@ -50,6 +51,18 @@ class VolcanoEntity(CoordinatorEntity[VolcanoDataUpdateCoordinator]):
         """Return whether the device is reachable, or can be reached on demand."""
         if not super().available:
             return False
+        # Some controls depend on the device: a Crafty on old firmware takes
+        # no commands, and only a Crafty+ can be told to buzz.
+        description = getattr(self, "entity_description", None)
+        if (supported := getattr(description, "available_fn", None)) and not (
+            supported(self.data)
+        ):
+            return False
         if self.coordinator.data.connected:
             return True
         return self._controls_device and not self.coordinator.auto_connect
+
+
+def always(_state: Any) -> bool:
+    """Return True: the default for an entity every device of its family has."""
+    return True

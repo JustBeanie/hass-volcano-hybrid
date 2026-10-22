@@ -36,10 +36,12 @@
         "title": "Enter the Bluetooth address",
         "description": "Use this when the vaporizer has not been discovered. Its address is printed in the Storz & Bickel app and in Home Assistant's Bluetooth advertisement monitor. A vaporizer that is not in range yet is still added, and connects the first time it is switched on near an adapter or proxy.",
         "data": {
-          "address": "Bluetooth address"
+          "address": "Bluetooth address",
+          "model": "Device"
         },
         "data_description": {
-          "address": "Six pairs of hex digits separated by colons, for example DD:BA:AA:DE:1F:F9."
+          "address": "Six pairs of hex digits separated by colons, for example DD:BA:AA:DE:1F:F9.",
+          "model": "Which Storz & Bickel device this is. The Crafty, Venty and Veazy are experimental: they are decoded from the vendor's app and have not been tested on hardware."
         }
       }
     },
@@ -51,7 +53,7 @@
     "abort": {
       "already_configured": "Device is already configured",
       "no_devices_found": "No unconfigured devices found on the network",
-      "not_supported": "This Bluetooth device is not a Volcano Hybrid.",
+      "not_supported": "This Bluetooth device is not a supported Storz & Bickel device.",
       "reconfigure_successful": "Connected successfully."
     }
   },
@@ -116,6 +118,24 @@
       },
       "ready": {
         "name": "Ready"
+      },
+      "boost": {
+        "name": "Boost"
+      },
+      "superboost": {
+        "name": "Superboost"
+      },
+      "error": {
+        "name": "Error"
+      },
+      "needs_factory_reset": {
+        "name": "Needs factory reset"
+      },
+      "charging": {
+        "name": "Charging"
+      },
+      "bootloader": {
+        "name": "Bootloader mode"
       }
     },
     "light": {
@@ -129,6 +149,18 @@
       },
       "auto_off_time": {
         "name": "Auto-off time"
+      },
+      "boost_temperature": {
+        "name": "Boost temperature"
+      },
+      "superboost_temperature": {
+        "name": "Superboost temperature"
+      },
+      "led_brightness": {
+        "name": "LED brightness"
+      },
+      "display_brightness": {
+        "name": "Display brightness"
       }
     },
     "sensor": {
@@ -244,6 +276,30 @@
       },
       "mains_voltage": {
         "name": "Mains voltage"
+      },
+      "battery": {
+        "name": "Battery"
+      },
+      "auto_off_countdown": {
+        "name": "Auto-off countdown"
+      },
+      "heater_runtime": {
+        "name": "Total heating time"
+      },
+      "charging_time": {
+        "name": "Total charging time"
+      },
+      "colour": {
+        "name": "Colour"
+      },
+      "heater_mode": {
+        "name": "Heater mode",
+        "state": {
+          "off": "Off",
+          "heating": "Heating",
+          "boost": "Boost",
+          "superboost": "Superboost"
+        }
       }
     },
     "switch": {
@@ -264,6 +320,27 @@
       },
       "auto_connect": {
         "name": "Auto-connect"
+      },
+      "charge_led": {
+        "name": "Charge LED"
+      },
+      "auto_ble_shutdown": {
+        "name": "Automatic Bluetooth shutdown"
+      },
+      "charge_optimisation": {
+        "name": "Charge optimisation"
+      },
+      "charge_limit": {
+        "name": "Charge limit"
+      },
+      "boost_visualisation": {
+        "name": "Boost on display"
+      },
+      "boost_timeout_disabled": {
+        "name": "Boost never times out"
+      },
+      "permanent_bluetooth": {
+        "name": "Permanent Bluetooth"
       }
     },
     "button": {
@@ -272,6 +349,9 @@
       },
       "delayed_reconnect": {
         "name": "Reconnect after delay"
+      },
+      "find": {
+        "name": "Find device"
       }
     },
     "update": {
