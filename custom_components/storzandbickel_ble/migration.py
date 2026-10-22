@@ -11,6 +11,7 @@ aliases and voice exposure.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import logging
 from typing import Any
 
@@ -160,7 +161,12 @@ async def async_adopt_legacy(hass: HomeAssistant, entry: ConfigEntry) -> None:
         # Each new entry takes only the old entry for its own vaporizer.
         if dr.format_mac(legacy_address(legacy) or "") != mac:
             continue
-        _move_registry_rows(hass, legacy, entry, mac)
+        old_entry_id = legacy.entry_id
+
+        def _unique_id_for(row: er.RegistryEntry, old: str = old_entry_id) -> str:
+            return normalise_unique_id(row.unique_id, old, mac)
+
+        move_registry_rows(hass, legacy, entry, mac, _unique_id_for)
         await hass.config_entries.async_remove(legacy.entry_id)
         _LOGGER.info(
             "Adopted %s from the %s integration; entity_ids are unchanged",
@@ -172,10 +178,18 @@ async def async_adopt_legacy(hass: HomeAssistant, entry: ConfigEntry) -> None:
         ir.async_delete_issue(hass, "homeassistant", CORE_NOT_FOUND_ISSUE)
 
 
-def _move_registry_rows(
-    hass: HomeAssistant, legacy: ConfigEntry, entry: ConfigEntry, mac: str
+def move_registry_rows(
+    hass: HomeAssistant,
+    source: ConfigEntry,
+    entry: ConfigEntry,
+    mac: str,
+    unique_id_for: Callable[[er.RegistryEntry], str | None],
 ) -> None:
-    """Re-home the device and every entity row from ``legacy`` to ``entry``.
+    """Re-home the device and the entity rows of ``source`` onto ``entry``.
+
+    ``unique_id_for`` says what an entity's unique_id becomes here, or None
+    for one with no counterpart; those are left behind and go when ``source``
+    is removed.
 
     The order matters. Detaching the old entry from the device makes the
     entity registry delete that entry's entities on the spot, so they have to
@@ -183,7 +197,7 @@ def _move_registry_rows(
     and every area, label and disabled flag on them is lost.
     """
     device_registry = dr.async_get(hass)
-    devices = dr.async_entries_for_config_entry(device_registry, legacy.entry_id)
+    devices = dr.async_entries_for_config_entry(device_registry, source.entry_id)
     for device in devices:
         identifier = (DOMAIN, mac)
         # Only take the identifier if nothing holds it yet; a collision would
@@ -200,12 +214,14 @@ def _move_registry_rows(
         )
 
     entity_registry = er.async_get(hass)
-    for row in er.async_entries_for_config_entry(entity_registry, legacy.entry_id):
-        new_unique_id = normalise_unique_id(row.unique_id, legacy.entry_id, mac)
+    for row in er.async_entries_for_config_entry(entity_registry, source.entry_id):
+        if (new_unique_id := unique_id_for(row)) is None:
+            _LOGGER.debug("Leaving %s behind, it has no counterpart", row.entity_id)
+            continue
         if entity_registry.async_get_entity_id(row.domain, DOMAIN, new_unique_id):
             _LOGGER.debug("Skipping %s, its unique_id is taken", row.entity_id)
             continue
-        # The old integration is gone, so whatever state this entity has is
+        # The source is not loaded, so whatever state this entity has is
         # Home Assistant's restored "unavailable" placeholder -- and the
         # registry refuses to move an entity that has a state.
         hass.states.async_remove(row.entity_id)
@@ -220,5 +236,5 @@ def _move_registry_rows(
 
     for device in devices:
         device_registry.async_update_device(
-            device.id, remove_config_entry_id=legacy.entry_id
+            device.id, remove_config_entry_id=source.entry_id
         )

@@ -6,7 +6,12 @@ from homeassistant.components.repairs import RepairsFlow
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 
-from .const import ISSUE_CONNECTION_REFUSED, ISSUE_CONNECTION_UNRESPONSIVE
+from .const import (
+    ISSUE_CONNECTION_REFUSED,
+    ISSUE_CONNECTION_UNRESPONSIVE,
+    ISSUE_MIGRATE_FROM_OTHER,
+)
+from .other_integrations import async_start_move
 
 
 class RetryRepairFlow(RepairsFlow):
@@ -40,16 +45,44 @@ class RetryRepairFlow(RepairsFlow):
         return self.async_show_form(step_id="confirm", data_schema=None)
 
 
+class MoveRepairFlow(RepairsFlow):
+    """Move a device over from another integration, once the user agrees."""
+
+    def __init__(self, entry_id: str) -> None:
+        """Store the other integration's entry."""
+        self._entry_id = entry_id
+
+    async def async_step_init(
+        self, user_input: dict[str, str] | None = None
+    ) -> FlowResult:
+        """Start the flow."""
+        return await self.async_step_confirm()
+
+    async def async_step_confirm(
+        self, user_input: dict[str, str] | None = None
+    ) -> FlowResult:
+        """Explain what moves and what does not, then do it."""
+        if user_input is not None:
+            if not await async_start_move(self.hass, self._entry_id):
+                return self.async_abort(reason="entry_gone")
+            return self.async_create_entry(data={})
+
+        return self.async_show_form(step_id="confirm", data_schema=None)
+
+
 async def async_create_fix_flow(
     hass: HomeAssistant,
     issue_id: str,
     data: dict[str, str | int | float | None] | None,
 ) -> RepairsFlow:
     """Create the fix flow for one of this integration's issues."""
-    known = (ISSUE_CONNECTION_REFUSED, ISSUE_CONNECTION_UNRESPONSIVE)
-    if data and issue_id.startswith(known):
-        entry_id = data["entry_id"]
-        assert isinstance(entry_id, str)
-        return RetryRepairFlow(entry_id)
+    entry_id = data.get("entry_id") if data else None
+    if isinstance(entry_id, str):
+        if issue_id.startswith(ISSUE_MIGRATE_FROM_OTHER):
+            return MoveRepairFlow(entry_id)
+        if issue_id.startswith(
+            (ISSUE_CONNECTION_REFUSED, ISSUE_CONNECTION_UNRESPONSIVE)
+        ):
+            return RetryRepairFlow(entry_id)
 
     raise ValueError(f"Unknown repair issue: {issue_id}")

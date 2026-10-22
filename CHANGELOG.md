@@ -5,10 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.3.0] - Unreleased
+## [4.0.0] - 2026-10-21
+
+### Changed
+
+- **The integration is now "Storz & Bickel BLE", domain `storzandbickel_ble`.**
+  Another HACS integration also uses `volcano_hybrid`, and two integrations
+  cannot share a domain. Your existing setup is moved across automatically on the
+  first restart after updating: the device and every entity keep their entity
+  IDs, areas, labels, aliases, voice exposure and disabled state, so automations,
+  scripts and dashboards keep working without edits. See
+  [Upgrading from 3.x](README.md#upgrading-from-3x).
+- After an advertisement the integration waits the auto-connect delay before
+  connecting, so it uses the strongest adapter or proxy rather than the first.
+- Heater-off and fan-off are re-sent once if the device still reports them on a
+  second later. On-commands are never repeated.
+- The auto-off delay can be set from 20 to 180 minutes, down from 1–180. A
+  shorter delay set on the device itself is still read and shown.
+- When devices have been discovered, adding one starts with a choice: pick a
+  discovered device or enter an address. Every option, and the device types on
+  the manual step, is translated.
 
 ### Added
 
+- **Moving from another integration.** A device set up in SavageNL's Volcano
+  Hybrid integration or Chuffnugget's Volcano Integration is offered as a repair:
+  accept it and the device moves here, keeping its area and name, and every
+  entity that means the same thing here keeps its entity ID. Nothing is moved
+  unasked. See
+  [Moving from another integration](README.md#moving-from-another-integration).
 - **Experimental support for the Crafty / Crafty+, Venty and Veazy.** Implemented
   from Storz & Bickel's web app by way of SavageNL's protocol descriptions; not
   run on hardware by this project, so please report how it goes with the
@@ -23,29 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     charging and display settings each device has. See the README.
   - A Crafty below firmware V02.51 is watch-only: its controls show as
     unavailable. A Venty or Veazy in its bootloader is never controlled.
-
-### Fixed
-
-- The device page named every device a "Volcano Hybrid". It now shows the
-  device's own model.
-
-### Changed
-
-- When devices have been discovered, adding one starts with a choice: pick a
-  discovered device or enter an address. Every option, and the device types on
-  the manual step, is now translated.
-- Code quality: shared code is named after Storz & Bickel rather than the
-  Volcano; typed accessors replace `Any` and attribute lookups by name; the
-  test suite covers every line and every branch, treats warnings as errors and
-  checks the translation files against the code.
-- The Bluetooth link code is shared by every device family (`ble_device.py`).
-  The Volcano's behaviour is unchanged; its whole test suite runs against the
-  shared code.
-
-## [4.2.0] - Unreleased
-
-### Added
-
+- **Device triggers**: reached the target temperature, reported a fault, lost
+  its Bluetooth connection, connection restored. Each fires once per change and
+  never for the state found at startup.
 - **Actions** for scripts, each failing loudly instead of letting a script carry
   on past a step that did not happen:
   - `set_temperature` with `wait_until_reached`: returns once the device reports
@@ -56,68 +61,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `disconnect`: switches heat and air off, confirms it on the device, then
     turns auto-connect off and releases the link. If either is still on, the
     link is kept and the action fails.
-  - The device can be left out when only one Volcano is set up. Read-only users
-    cannot call them.
-
-## [4.1.0] - Unreleased
-
-### Added
-
-- **Device triggers**: reached the target temperature, reported a fault, lost
-  its Bluetooth connection, connection restored. Each fires once per change and
-  never for the state found at startup.
+  - The device can be left out when only one is set up. Read-only users cannot
+    call them.
 - **Link health** sensor: `connected`, `auto_connect_off` or why the link is
   down, with recoveries, link resets, adapter-cache resets and the last outage's
   length as attributes. The self-healing used to be invisible.
-- **Auto-connect** switch, on by default. Off hands the vaporizer to the Storz &
+- **Auto-connect** switch, on by default. Off hands the device to the Storz &
   Bickel app straight away: no reconnecting on advertisements or polls, no
   connection repairs. Controls stay usable and connect on demand, releasing the
   link again after a minute idle.
-- **Ready** binary sensor, from the device's own "target reached" bit (status
-  register 1, bit 10). The climate action now uses the same bit: **Heating**
-  until reached, **Idle** while holding.
+- **Ready** binary sensor, from the device's own "target reached" signal. The
+  climate action uses the same signal: **Heating** until reached, **Idle** while
+  holding.
 - **Reconnect** and **Reconnect after delay** buttons, disabled by default: manual
   overrides for a link that already heals itself.
-- **Firmware** update entity, report-only and **disabled by default** because it
-  has not been checked against a device that was actually behind. A weekly
-  workflow asks Storz & Bickel's endpoint and opens an issue when new firmware
-  is published.
+- **Firmware** update entity for the Volcano, report-only and **disabled by
+  default** because it has not been checked against a device that was actually
+  behind. A weekly workflow asks Storz & Bickel's endpoint and opens an issue
+  when new firmware is published.
 - Signal strength, connected-via (adapter or proxy) and mains voltage diagnostic
-  sensors, disabled by default. The device page shows the vaporizer's own model
-  class.
-- Adding a vaporizer by typing its Bluetooth address, including one not yet in
+  sensors, disabled by default.
+- Adding a device by typing its Bluetooth address, including one not yet in
   range.
 - Options for the auto-connect delay (1 s) and the delayed-reconnect wait (11 s).
-
-### Changed
-
-- After an advertisement the integration waits the auto-connect delay before
-  connecting, so it uses the strongest adapter or proxy rather than the first.
-- Heater-off and fan-off are re-sent once if the device still reports them on a
-  second later. On-commands are never repeated.
-- The auto-off delay can be set from 20 to 180 minutes, down from 1–180. A shorter
-  delay set on the device itself is still read and shown.
-## [4.0.0] - Unreleased
-
-### Changed
-
-- **The integration is now "Storz & Bickel BLE", domain `storzandbickel_ble`.**
-  Another HACS integration also uses `volcano_hybrid`, and two integrations
-  cannot share a domain. Your existing setup is moved across automatically on the
-  first restart after updating: the device and every entity keep their entity
-  IDs, areas, labels, aliases, voice exposure and disabled state, so automations,
-  scripts and dashboards keep working without edits. See
-  [Upgrading from 3.x](README.md#upgrading-from-3x).
-- Entries made by the other `volcano_hybrid` integration are recognised and left
-  alone.
-
-### Added
-
 - A repair, "Remove the old Volcano Hybrid folder", raised if the pre-rename
   copy is still installed. Nothing is moved while it is there, because both
-  copies would compete for the vaporizer's one Bluetooth connection.
-- CI now requires every changed line to be covered by tests (`diff-cover`), on
-  top of the package-wide 95% gate.
+  copies would compete for the device's one Bluetooth connection.
+
+### Fixed
+
+- The device page shows the device's own model, and its model class as reported
+  by the device itself.
+
+### Development
+
+- The Bluetooth link code is shared by every device family (`ble_device.py`);
+  the Volcano's behaviour is unchanged and its whole test suite runs against it.
+- Shared code is named after Storz & Bickel rather than the Volcano, and typed
+  accessors replace `Any` and attribute lookups by name.
+- CI requires 100% line and branch coverage, treats warnings from the
+  integration and un-awaited coroutines as errors, checks the translation files
+  against the code, and reports the coverage of every changed line.
+- The default branch is now `master`.
+
 ## [3.3.2] - 2026-10-06
 
 ### Fixed

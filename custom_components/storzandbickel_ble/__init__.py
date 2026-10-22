@@ -31,6 +31,7 @@ from .const import (
 from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
 from .families import Family, create_device
 from .migration import async_adopt_legacy, async_import_legacy_entries
+from .other_integrations import async_finish_move, async_offer_moves
 from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,6 +88,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     # Entries left under the pre-rename domain are brought across before
     # anything else, so their entity_ids survive.
     await async_import_legacy_entries(hass)
+    # Devices another Storz & Bickel integration has are offered, never
+    # taken: a repair asks first.
+    async_offer_moves(hass)
     return True
 
 
@@ -97,6 +101,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: StorzBickelConfigEntry) 
     # Before anything can fail or register an entity: adoption has to land on
     # an entry with no entities of its own yet.
     await async_adopt_legacy(hass, entry)
+    await async_finish_move(hass, entry)
 
     family = Family(entry.data.get(CONF_MODEL, Family.VOLCANO_HYBRID))
     device = create_device(family, address)
