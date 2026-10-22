@@ -21,6 +21,11 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import format_mac
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 import voluptuous as vol
 
 from .ble_device import DeviceConnectionError
@@ -67,7 +72,6 @@ CONNECTION_SCHEMA = OPTIONS_SCHEMA.extend(
 
 # Six colon-separated hex pairs, any case.
 MAC_PATTERN = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
-MANUAL_ENTRY = "manual"
 
 
 def _family_of(service_info: BluetoothServiceInfoBleak) -> Family | None:
@@ -203,22 +207,7 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Let the user pick from the devices Home Assistant can already see."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            address = user_input[CONF_ADDRESS]
-            if address == MANUAL_ENTRY:
-                return await self.async_step_manual()
-            await self.async_set_unique_id(format_mac(address), raise_on_progress=False)
-            self._abort_if_unique_id_configured()
-            self._discovery_info = self._discovered[address]
-            self._family = _family_of(self._discovery_info) or Family.VOLCANO_HYBRID
-            if error := await self._async_test_connection(address):
-                errors["base"] = error
-            else:
-                return await self.async_step_options()
-
+        """Offer the devices Home Assistant can see, or typing an address."""
         current_addresses = self._async_current_ids()
         self._discovered = {
             service_info.address: service_info
@@ -233,17 +222,37 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
         if not self._discovered:
             return await self.async_step_manual()
 
+        return self.async_show_menu(
+            step_id="user", menu_options=["pick_device", "manual"]
+        )
+
+    async def async_step_pick_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Let the user pick from the devices Home Assistant can already see."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            address = user_input[CONF_ADDRESS]
+            await self.async_set_unique_id(format_mac(address), raise_on_progress=False)
+            self._abort_if_unique_id_configured()
+            self._discovery_info = self._discovered[address]
+            self._family = _family_of(self._discovery_info) or Family.VOLCANO_HYBRID
+            if error := await self._async_test_connection(address):
+                errors["base"] = error
+            else:
+                return await self.async_step_options()
+
         return self.async_show_form(
-            step_id="user",
+            step_id="pick_device",
             data_schema=vol.Schema(
                 {
+                    # The device's own advertised name and address: data, not
+                    # text to translate.
                     vol.Required(CONF_ADDRESS): vol.In(
                         {
-                            **{
-                                address: f"{info.name} ({address})"
-                                for address, info in self._discovered.items()
-                            },
-                            MANUAL_ENTRY: "Enter an address manually",
+                            address: f"{info.name} ({address})"
+                            for address, info in self._discovered.items()
                         }
                     )
                 }
@@ -292,8 +301,14 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_ADDRESS): str,
                     # Nothing to detect it from without an advertisement.
-                    vol.Required(CONF_MODEL, default=Family.VOLCANO_HYBRID): vol.In(
-                        {family.value: FAMILY_NAMES[family] for family in Family}
+                    vol.Required(
+                        CONF_MODEL, default=Family.VOLCANO_HYBRID.value
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[family.value for family in Family],
+                            translation_key=CONF_MODEL,
+                            mode=SelectSelectorMode.DROPDOWN,
+                        )
                     ),
                 }
             ),
