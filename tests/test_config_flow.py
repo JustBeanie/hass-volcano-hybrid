@@ -16,6 +16,7 @@ from custom_components.storzandbickel_ble.ble_device import (
     ConnectionFailure,
     DeviceConnectionError,
 )
+from custom_components.storzandbickel_ble.config_flow import _family_of
 from custom_components.storzandbickel_ble.const import (
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
@@ -28,6 +29,7 @@ from .conftest import (
     FORMATTED_MAC,
     NOT_VOLCANO_SERVICE_INFO,
     SERVICE_INFO,
+    make_service_info,
 )
 
 
@@ -254,8 +256,4 @@ async def test_user_flow_aborts_on_duplicate(
 )
 def test_family_of(name: str, expected: str | None) -> None:
     """The name picks the family, case-insensitively; anything else is not ours."""
-    from custom_components.storzandbickel_ble.config_flow import _family_of
-
-    from .conftest import make_service_info
-
     assert _family_of(make_service_info(name=name)) == expected

@@ -23,17 +23,6 @@ from custom_components.storzandbickel_ble.repairs import async_create_fix_flow
 from .conftest import FakeBleakClient
 
 
-@pytest.fixture
-async def loaded_entry(
-    hass: HomeAssistant, mock_bluetooth: AsyncMock, config_entry: MockConfigEntry
-) -> MockConfigEntry:
-    """Return a fully set up config entry."""
-    config_entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
-    return config_entry
-
-
 async def test_fix_flow_reloads_the_entry(
     hass: HomeAssistant, loaded_entry: MockConfigEntry, fake_client: FakeBleakClient
 ) -> None:

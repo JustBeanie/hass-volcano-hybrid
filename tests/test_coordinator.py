@@ -34,17 +34,6 @@ from .conftest import RAW_STATUS_HEATING, FakeBleakClient, make_service_info
 CLIMATE = "climate.s_b_volcano_h"
 
 
-@pytest.fixture
-async def loaded_entry(
-    hass: HomeAssistant, mock_bluetooth: AsyncMock, config_entry: MockConfigEntry
-) -> MockConfigEntry:
-    """Return a fully set up config entry."""
-    config_entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
-    return config_entry
-
-
 async def test_command_failure_raises_a_translated_error(
     hass: HomeAssistant, loaded_entry: MockConfigEntry
 ) -> None:

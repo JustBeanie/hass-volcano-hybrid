@@ -24,8 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A Crafty below firmware V02.51 is watch-only: its controls show as
     unavailable. A Venty or Veazy in its bootloader is never controlled.
 
+### Fixed
+
+- The device page named every device a "Volcano Hybrid". It now shows the
+  device's own model.
+
 ### Changed
 
+- When devices have been discovered, adding one starts with a choice: pick a
+  discovered device or enter an address. Every option, and the device types on
+  the manual step, is now translated.
+- Code quality: shared code is named after Storz & Bickel rather than the
+  Volcano; typed accessors replace `Any` and attribute lookups by name; the
+  test suite covers every line and every branch, treats warnings as errors and
+  checks the translation files against the code.
 - The Bluetooth link code is shared by every device family (`ble_device.py`).
   The Volcano's behaviour is unchanged; its whole test suite runs against the
   shared code.

@@ -2,6 +2,12 @@
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "--strict-markers"
+filterwarnings = [
+  # A coroutine nobody awaited is a bug, in the code or in a test's mock.
+  "error::RuntimeWarning",
+  # As is anything this integration itself warns about.
+  "error:::custom_components.storzandbickel_ble",
+]
 
 # Home Assistant's own strict-typing settings. The core repo lists strictly
 # typed integrations in a .strict-typing file; a custom integration has no

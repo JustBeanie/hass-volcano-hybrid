@@ -232,11 +232,11 @@ async def test_a_dropped_link_ends_the_wait(
         loaded_entry.runtime_data.device.state.connected = False
         await failing()
 
+    await loaded_entry.runtime_data.async_set_temperature(190)
     with (
         patch(UPDATE, AsyncMock(side_effect=_drop)),
         pytest.raises(HomeAssistantError) as err,
     ):
-        await loaded_entry.runtime_data.async_set_temperature(190)
         await loaded_entry.runtime_data.async_wait_until_reached(30)
     assert err.value.translation_key == "wait_disconnected"
 

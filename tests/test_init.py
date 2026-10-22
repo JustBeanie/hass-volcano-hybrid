@@ -11,6 +11,7 @@ from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.storzandbickel_ble import PLATFORMS
 from custom_components.storzandbickel_ble.ble_device import (
     ConnectionFailure,
     DeviceConnectionError,
@@ -222,8 +223,6 @@ async def test_entities_go_unavailable_when_the_device_drops(
 
 async def test_platforms_are_all_declared() -> None:
     """Every platform module the integration ships is forwarded."""
-    from custom_components.storzandbickel_ble import PLATFORMS
-
     assert set(PLATFORMS) == {
         Platform.BINARY_SENSOR,
         Platform.BUTTON,

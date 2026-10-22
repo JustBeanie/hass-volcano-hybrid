@@ -59,17 +59,6 @@ CLIMATE = "climate.s_b_volcano_h"
 SCREEN = "light.s_b_volcano_h_screen"
 
 
-@pytest.fixture
-async def loaded_entry(
-    hass: HomeAssistant, mock_bluetooth: AsyncMock, config_entry: MockConfigEntry
-) -> MockConfigEntry:
-    """Return a fully set up config entry."""
-    config_entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
-    return config_entry
-
-
 async def test_all_entities_are_created(
     hass: HomeAssistant, loaded_entry: MockConfigEntry
 ) -> None:
