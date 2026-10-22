@@ -34,6 +34,18 @@ class VolcanoBinarySensorEntityDescription(BinarySensorEntityDescription):
 
 BINARY_SENSORS: tuple[VolcanoBinarySensorEntityDescription, ...] = (
     VolcanoBinarySensorEntityDescription(
+        # The device's own "target reached" bit, which also drives its
+        # vibration alert, so this turns on exactly when the Volcano says it is
+        # ready. Only while heating: the bit can outlive the heater.
+        key="ready",
+        translation_key="ready",
+        is_on_fn=lambda state: (
+            None
+            if state.target_reached is None
+            else state.target_reached and state.heater_on
+        ),
+    ),
+    VolcanoBinarySensorEntityDescription(
         key="heater_pump_fault",
         translation_key="heater_pump_fault",
         device_class=BinarySensorDeviceClass.PROBLEM,

@@ -48,6 +48,8 @@ from custom_components.storzandbickel_ble.volcano import (
     CHAR_REGISTER3,
     CHAR_STATUS_REGISTER,
     CHAR_TARGET_TEMP,
+    MASK_HEATER,
+    MASK_TARGET_REACHED,
     VolcanoState,
 )
 
@@ -79,12 +81,14 @@ async def test_all_entities_are_created(
         by_platform[entity.domain] = by_platform.get(entity.domain, 0) + 1
 
     assert by_platform == {
-        Platform.BINARY_SENSOR: 3,
+        Platform.BINARY_SENSOR: 4,
+        Platform.BUTTON: 2,
         Platform.CLIMATE: 1,
         Platform.LIGHT: 1,
         Platform.NUMBER: 2,
-        Platform.SENSOR: 18,
-        Platform.SWITCH: 5,
+        Platform.SENSOR: 22,
+        Platform.SWITCH: 6,
+        Platform.UPDATE: 1,
     }
     assert len({entity.device_id for entity in entities}) == 1
 
@@ -131,7 +135,12 @@ async def test_climate_heating_action(
     assert state.attributes["current_temperature"] == 150.0
     assert state.attributes[ATTR_HVAC_ACTION] == "heating"
 
+    # Holding is the device's own call: its "target reached" bit, not a
+    # comparison of the two temperatures.
     fake_client.reads[CHAR_CURRENT_TEMP] = RAW_CURRENT_TEMP_HOT
+    fake_client.reads[CHAR_STATUS_REGISTER] = (
+        MASK_HEATER | MASK_TARGET_REACHED
+    ).to_bytes(2, "little")
     await loaded_entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
     assert hass.states.get(CLIMATE).attributes[ATTR_HVAC_ACTION] == "idle"

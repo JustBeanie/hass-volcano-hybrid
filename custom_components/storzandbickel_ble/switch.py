@@ -84,12 +84,53 @@ async def async_setup_entry(
     """Set up the Volcano Hybrid switches."""
     coordinator = entry.runtime_data
     async_add_entities(
-        VolcanoSwitch(coordinator, description) for description in SWITCHES
+        [
+            VolcanoAutoConnectSwitch(coordinator),
+            *(VolcanoSwitch(coordinator, description) for description in SWITCHES),
+        ]
     )
+
+
+class VolcanoAutoConnectSwitch(VolcanoEntity, SwitchEntity):
+    """Whether Home Assistant connects to the vaporizer on its own.
+
+    Off hands the single Bluetooth connection back, so the Storz & Bickel app
+    can use the vaporizer; commands still connect on demand. The choice lives
+    in the entry options, so it survives a restart.
+    """
+
+    _attr_translation_key = "auto_connect"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: VolcanoDataUpdateCoordinator) -> None:
+        """Initialise the switch."""
+        super().__init__(coordinator, "auto_connect")
+
+    @property
+    def available(self) -> bool:
+        """Stay usable while disconnected: turning it on is how to reconnect."""
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        """Return whether auto-connect is on."""
+        return self.coordinator.auto_connect
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Connect on its own again."""
+        await self.coordinator.async_set_auto_connect(True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Release the link and stop connecting on its own."""
+        await self.coordinator.async_set_auto_connect(False)
+        self.async_write_ha_state()
 
 
 class VolcanoSwitch(VolcanoEntity, SwitchEntity):
     """A Volcano Hybrid switch."""
+
+    _controls_device = True
 
     entity_description: VolcanoSwitchEntityDescription
 

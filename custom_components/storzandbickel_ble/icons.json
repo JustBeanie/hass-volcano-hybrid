@@ -64,6 +64,20 @@
       },
       "error_history_2": {
         "default": "mdi:format-list-numbered"
+      },
+      "link_health": {
+        "default": "mdi:heart-pulse",
+        "state": {
+          "connected": "mdi:bluetooth-connect",
+          "auto_connect_off": "mdi:bluetooth-off",
+          "not_visible": "mdi:bluetooth-off"
+        }
+      },
+      "connected_via": {
+        "default": "mdi:access-point"
+      },
+      "mains_voltage": {
+        "default": "mdi:power-plug"
       }
     },
     "switch": {
@@ -93,6 +107,12 @@
         "state": {
           "off": "mdi:temperature-celsius"
         }
+      },
+      "auto_connect": {
+        "default": "mdi:bluetooth-connect",
+        "state": {
+          "off": "mdi:bluetooth-off"
+        }
       }
     },
     "binary_sensor": {
@@ -104,6 +124,20 @@
       },
       "service_mode": {
         "default": "mdi:wrench-clock"
+      },
+      "ready": {
+        "default": "mdi:check-circle-outline",
+        "state": {
+          "on": "mdi:check-circle"
+        }
+      }
+    },
+    "button": {
+      "reconnect": {
+        "default": "mdi:bluetooth-connect"
+      },
+      "delayed_reconnect": {
+        "default": "mdi:timer-sync-outline"
       }
     }
   }

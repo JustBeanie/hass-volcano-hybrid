@@ -38,6 +38,8 @@ async def async_setup_entry(
 class VolcanoScreenLight(VolcanoEntity, LightEntity):
     """The Volcano Hybrid screen backlight."""
 
+    _controls_device = True
+
     _attr_translation_key = "screen"
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}

@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant
 from .coordinator import VolcanoConfigEntry
 
 # Hardware identifiers. Diagnostics get pasted into public issues.
-TO_REDACT = {CONF_ADDRESS, "address", "serial_number", "source"}
+TO_REDACT = {CONF_ADDRESS, "address", "serial_number", "source", "connected_via"}
 
 
 async def async_get_config_entry_diagnostics(
@@ -47,6 +47,13 @@ async def async_get_config_entry_diagnostics(
                 "last_update_success": coordinator.last_update_success,
                 "consecutive_failures": coordinator.consecutive_failures,
                 "update_interval": str(coordinator.update_interval),
+                "auto_connect": coordinator.auto_connect,
+                "link_health": {
+                    "state": coordinator.health_state,
+                    **asdict(coordinator.link_health),
+                    "link_resets": coordinator.device.link_resets,
+                    "adapter_cache_resets": coordinator.device.adapter_cache_resets,
+                },
             },
             # The raw wire values are the useful part: every decoding bug found
             # so far was diagnosed from these bytes rather than from the states.

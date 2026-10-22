@@ -224,9 +224,11 @@ async def test_platforms_are_all_declared() -> None:
 
     assert set(PLATFORMS) == {
         Platform.BINARY_SENSOR,
+        Platform.BUTTON,
         Platform.CLIMATE,
         Platform.LIGHT,
         Platform.NUMBER,
         Platform.SENSOR,
         Platform.SWITCH,
+        Platform.UPDATE,
     }

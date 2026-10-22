@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from homeassistant.components.bluetooth import (
@@ -23,8 +24,14 @@ from homeassistant.helpers.device_registry import format_mac
 import voluptuous as vol
 
 from .const import (
+    CONF_AUTO_CONNECT,
+    CONF_AUTO_CONNECT_DELAY,
+    CONF_DELAYED_RECONNECT_DELAY,
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
+    DEFAULT_AUTO_CONNECT_DELAY,
+    DEFAULT_DELAYED_RECONNECT_DELAY,
+    DEFAULT_NAME,
     DOMAIN,
     MAX_TEMP,
     MIN_TEMP,
@@ -46,6 +53,23 @@ OPTIONS_SCHEMA = vol.Schema(
     }
 )
 
+# The connection timing is only worth changing once the device is set up, so
+# it is offered in the options flow and not while adding the device.
+CONNECTION_SCHEMA = OPTIONS_SCHEMA.extend(
+    {
+        vol.Optional(
+            CONF_AUTO_CONNECT_DELAY, default=DEFAULT_AUTO_CONNECT_DELAY
+        ): vol.All(vol.Coerce(float), vol.Range(min=0, max=30)),
+        vol.Optional(
+            CONF_DELAYED_RECONNECT_DELAY, default=DEFAULT_DELAYED_RECONNECT_DELAY
+        ): vol.All(vol.Coerce(float), vol.Range(min=1, max=120)),
+    }
+)
+
+# Six colon-separated hex pairs, any case.
+MAC_PATTERN = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
+MANUAL_ENTRY = "manual"
+
 
 def _is_volcano(service_info: BluetoothServiceInfoBleak) -> bool:
     """Return whether an advertisement looks like a Volcano Hybrid."""
@@ -59,6 +83,9 @@ def _clean_options(user_input: dict[str, Any]) -> dict[str, Any]:
     }
     if (initial_temp := user_input.get(CONF_INITIAL_TEMP)) is not None:
         options[CONF_INITIAL_TEMP] = initial_temp
+    for key in (CONF_AUTO_CONNECT_DELAY, CONF_DELAYED_RECONNECT_DELAY):
+        if key in user_input:
+            options[key] = user_input[key]
     return options
 
 
@@ -70,12 +97,18 @@ class VolcanoOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show and save the options."""
         if user_input is not None:
-            return self.async_create_entry(data=_clean_options(user_input))
+            options = _clean_options(user_input)
+            # Set by its switch, not this form, so it must not be dropped.
+            if CONF_AUTO_CONNECT in self.config_entry.options:
+                options[CONF_AUTO_CONNECT] = self.config_entry.options[
+                    CONF_AUTO_CONNECT
+                ]
+            return self.async_create_entry(data=options)
 
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(
-                OPTIONS_SCHEMA, self.config_entry.options
+                CONNECTION_SCHEMA, self.config_entry.options
             ),
             description_placeholders={
                 "min_temp": str(MIN_TEMP),
@@ -94,6 +127,9 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialise the flow."""
         self._discovery_info: BluetoothServiceInfoBleak | None = None
         self._discovered: dict[str, BluetoothServiceInfoBleak] = {}
+        # What the entry is created for; from discovery or typed by hand.
+        self._address: str | None = None
+        self._name = DEFAULT_NAME
 
     # -- automatic discovery ----------------------------------------------
 
@@ -171,6 +207,8 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             address = user_input[CONF_ADDRESS]
+            if address == MANUAL_ENTRY:
+                return await self.async_step_manual()
             await self.async_set_unique_id(format_mac(address), raise_on_progress=False)
             self._abort_if_unique_id_configured()
             self._discovery_info = self._discovered[address]
@@ -189,8 +227,9 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
             and format_mac(service_info.address) not in current_addresses
         }
 
+        # Nothing heard yet is no reason to give up: the address can be typed.
         if not self._discovered:
-            return self.async_abort(reason="no_devices_found")
+            return await self.async_step_manual()
 
         return self.async_show_form(
             step_id="user",
@@ -198,12 +237,55 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_ADDRESS): vol.In(
                         {
-                            address: f"{info.name} ({address})"
-                            for address, info in self._discovered.items()
+                            **{
+                                address: f"{info.name} ({address})"
+                                for address, info in self._discovered.items()
+                            },
+                            MANUAL_ENTRY: "Enter an address manually",
                         }
                     )
                 }
             ),
+            errors=errors,
+        )
+
+    async def async_step_manual(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Add a vaporizer by its Bluetooth address.
+
+        One that no adapter can hear yet is still accepted: the entry waits in
+        setup-retry, and the advertisement watcher brings it up the moment the
+        vaporizer is switched on in range. One that can be heard has to accept
+        a connection first, the same as a discovered one.
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            address = user_input[CONF_ADDRESS].strip()
+            if not MAC_PATTERN.match(address):
+                errors[CONF_ADDRESS] = "invalid_address"
+            else:
+                address = address.upper()
+                await self.async_set_unique_id(
+                    format_mac(address), raise_on_progress=False
+                )
+                self._abort_if_unique_id_configured()
+                visible = async_ble_device_from_address(
+                    self.hass, address, connectable=True
+                )
+                if visible is not None and (
+                    error := await self._async_test_connection(address)
+                ):
+                    errors["base"] = error
+                else:
+                    self._address = address
+                    self._name = DEFAULT_NAME
+                    return await self.async_step_options()
+
+        return self.async_show_form(
+            step_id="manual",
+            data_schema=vol.Schema({vol.Required(CONF_ADDRESS): str}),
             errors=errors,
         )
 
@@ -213,13 +295,15 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Collect the optional startup behaviour and create the entry."""
-        assert self._discovery_info is not None
-        discovery_info = self._discovery_info
+        if self._discovery_info is not None:
+            self._address = self._discovery_info.address
+            self._name = self._discovery_info.name
+        assert self._address is not None
 
         if user_input is not None:
             return self.async_create_entry(
-                title=discovery_info.name,
-                data={CONF_ADDRESS: discovery_info.address},
+                title=self._name,
+                data={CONF_ADDRESS: self._address},
                 options=_clean_options(user_input),
             )
 
@@ -227,8 +311,8 @@ class VolcanoHybridConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="options",
             data_schema=OPTIONS_SCHEMA,
             description_placeholders={
-                "name": discovery_info.name,
-                "address": discovery_info.address,
+                "name": self._name,
+                "address": self._address,
                 "min_temp": str(MIN_TEMP),
                 "max_temp": str(MAX_TEMP),
                 "step": str(TEMP_STEP),

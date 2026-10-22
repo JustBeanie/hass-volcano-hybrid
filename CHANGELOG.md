@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] - Unreleased
+
+### Added
+
+- **Device triggers**: reached the target temperature, reported a fault, lost
+  its Bluetooth connection, connection restored. Each fires once per change and
+  never for the state found at startup.
+- **Link health** sensor: `connected`, `auto_connect_off` or why the link is
+  down, with recoveries, link resets, adapter-cache resets and the last outage's
+  length as attributes. The self-healing used to be invisible.
+- **Auto-connect** switch, on by default. Off hands the vaporizer to the Storz &
+  Bickel app straight away: no reconnecting on advertisements or polls, no
+  connection repairs. Controls stay usable and connect on demand, releasing the
+  link again after a minute idle.
+- **Ready** binary sensor, from the device's own "target reached" bit (status
+  register 1, bit 10). The climate action now uses the same bit: **Heating**
+  until reached, **Idle** while holding.
+- **Reconnect** and **Reconnect after delay** buttons, disabled by default: manual
+  overrides for a link that already heals itself.
+- **Firmware** update entity, report-only and **disabled by default** because it
+  has not been checked against a device that was actually behind. A weekly
+  workflow asks Storz & Bickel's endpoint and opens an issue when new firmware
+  is published.
+- Signal strength, connected-via (adapter or proxy) and mains voltage diagnostic
+  sensors, disabled by default. The device page shows the vaporizer's own model
+  class.
+- Adding a vaporizer by typing its Bluetooth address, including one not yet in
+  range.
+- Options for the auto-connect delay (1 s) and the delayed-reconnect wait (11 s).
+
+### Changed
+
+- After an advertisement the integration waits the auto-connect delay before
+  connecting, so it uses the strongest adapter or proxy rather than the first.
+- Heater-off and fan-off are re-sent once if the device still reports them on a
+  second later. On-commands are never repeated.
+- The auto-off delay can be set from 20 to 180 minutes, down from 1–180. A shorter
+  delay set on the device itself is still read and shown.
 ## [4.0.0] - Unreleased
 
 ### Changed

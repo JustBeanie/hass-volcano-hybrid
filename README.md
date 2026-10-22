@@ -33,6 +33,16 @@ they can be used in automations, scripts and dashboards like anything else.
   service (burn-in) mode and live connection state
 - **Works through ESPHome Bluetooth proxies**, so the vaporizer does not need to
   be in range of the machine running Home Assistant
+- **A link that heals itself** — a connection that stops answering, or comes up
+  with half its Bluetooth service table, is torn down and rebuilt without you
+  doing anything, and a **Link health** sensor shows it happening
+- **Repairs that name the actual problem** — "close the Storz & Bickel app" only
+  when something else really holds the link, "power-cycle it" only when every
+  automatic remedy has failed
+- **Device triggers** — heat-up reached, fault raised, connection lost and
+  connection restored, straight from the automation editor
+- **Auto-connect switch** — hand the vaporizer back to the phone app without
+  disabling anything; commands still connect on demand
 
 ## Supported devices
 
@@ -114,20 +124,35 @@ If it does not appear, you can add it manually:
 
 1. Go to **Settings → Devices & services**.
 2. Select **Add integration** and search for **Storz & Bickel BLE**.
-3. Pick your vaporizer from the list of devices Home Assistant can currently see.
+3. Pick your vaporizer from the list of devices Home Assistant can currently see,
+   or choose **Enter an address manually** and type its Bluetooth address. A
+   vaporizer that is not in range yet is still added, and connects the first time
+   it is switched on near an adapter or proxy.
 
 Either route ends on an optional startup step. Both settings can be changed later —
 see below.
 
 ## Configuration options
 
-**Settings → Devices & services → Storz & Bickel BLE → Configure.** Changing either one
-reloads the integration so it takes effect immediately.
+**Settings → Devices & services → Storz & Bickel BLE → Configure.** Changing any
+of these reloads the integration so it takes effect immediately.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | Initial temperature | unset | A target temperature in °C, between 40 and 230, written whenever Home Assistant starts or the integration is reloaded. Leave blank to keep whatever the device already has. |
 | Start the fan on startup | off | Runs the fan once on startup or reload. It is **not** re-applied when Bluetooth reconnects — that behaviour caused the fan to start on its own after any signal blip. |
+| Auto-connect delay | 1 s | How long to wait after hearing the vaporizer before connecting, so every adapter and proxy can report it and the strongest one is used. Keep it low. |
+| Delayed reconnect wait | 11 s | How long **Reconnect after delay** stays off the link. The vaporizer advertises about every ten seconds, so this guarantees a fresh advertisement. |
+
+### Auto-connect
+
+The **Auto-connect** switch (on by default, remembered across restarts) controls
+everything Home Assistant does on its own with the Bluetooth link. Turn it **off**
+to hand the vaporizer to the Storz & Bickel app: the link is dropped straight away,
+advertisements and polls no longer reconnect, and the connection repairs are
+withdrawn. The controls stay usable — pressing heat, fan or a reconnect button
+connects on demand, and the link is released again after a minute of inactivity.
+Readings show as unavailable while nothing holds the link.
 
 There is also a **Reconfigure** option on the same menu. A vaporizer's Bluetooth
 address never changes, so there is nothing to re-point; what it does is attempt a
@@ -307,9 +332,15 @@ These are design constraints, not bugs:
 | `switch.<name>_fan` | Fan on/off |
 | `light.<name>_screen` | Screen backlight, dimmable |
 | `number.<name>_target_temperature` | 40–230 °C in 5° steps |
-| `number.<name>_auto_off_time` | 1–180 minutes |
+| `number.<name>_auto_off_time` | 20–180 minutes. A shorter delay set on the device itself is still shown |
 | `sensor.<name>_temperature` | Current heat-block temperature |
 | `binary_sensor.<name>_connection` | Whether Home Assistant holds a Bluetooth link |
+| `binary_sensor.<name>_ready` | On once the device reports it has reached the target, while heating. This is the device's own signal — the one behind its vibration alert |
+| `sensor.<name>_link_health` | `connected`, `auto_connect_off`, or why the link is down (`not_visible`, `connect_failed`, `no_reads`, `stale_gatt`). Attributes count recoveries, link resets and adapter-cache resets since the integration was loaded, and the length of the last outage |
+| `switch.<name>_auto_connect` | See [Auto-connect](#auto-connect) |
+| `button.<name>_reconnect` | Rebuild the link now (disabled by default) |
+| `button.<name>_reconnect_after_delay` | Drop the link and reconnect once a fresh advertisement is due, so the best proxy is picked (disabled by default) |
+| `update.<name>_firmware` | Whether the vaporizer runs the newest firmware this release knows of, with a link to the Storz & Bickel web app that installs it. Report-only. **Disabled by default**: it has not yet been checked against a device that was actually behind |
 | `binary_sensor.<name>_heater_pump_fault` | The heater timing fault that stops both the heater and the pump. Attributes carry the heater-only fault, the pump interlock fault and any regulation faults |
 | `binary_sensor.<name>_service_mode` | The service / burn-in mode: the device heats itself to 230 °C for ten minutes |
 | `sensor.<name>_last_fault` | The newest fault in the device's error log, by name (`none` for an empty log). Attributes carry the whole log, decoded and raw |
@@ -320,7 +351,9 @@ These are design constraints, not bugs:
 Plus diagnostic sensors for the serial number, firmware versions, hours of
 operation, brightness and auto-off delay. Debug entities ship disabled by default
 and can be enabled from the device page: status registers 1–5 and error history
-1–2 as raw hex, connection status and heater/fan status text. A fresh install names
+1–2 as raw hex, connection status and heater/fan status text, signal strength, the
+adapter or proxy the link goes through, and the mains voltage the unit was built
+for. A fresh install names
 the settings switches `vibration` and `display_while_cooling`; an upgrade keeps the
 existing `register_3` / `register_2` entity IDs.
 
@@ -328,8 +361,23 @@ The temperature sensor reports **unknown** while the heater is idle. That is not
 a fault: the device reports a −18 °C placeholder when the probe has no live
 reading, and surfacing that as a real temperature would poison your history.
 
-This integration provides no custom actions, triggers or conditions — use Home
-Assistant's standard ones against the entities above.
+The climate entity's action is **Heating** until the device reports the target
+reached and **Idle** while it holds, from the same device signal as Ready.
+
+### Device triggers
+
+Under the device in the automation editor:
+
+| Trigger | Fires when | Event data |
+| --- | --- | --- |
+| Reached the target temperature | The device reports the target reached while heating | `temperature` |
+| Reported a fault | A fault bit appears in the status registers | `last_fault`, the newest code in the error log |
+| Lost its Bluetooth connection | A link that was up stops answering | `kind`, the failure shape |
+| Bluetooth connection restored | It comes back | `outage_seconds` |
+
+Each fires once per change, never for the state found at startup. *Reached* follows
+the device's own rule: lowering the target never clears it, so it fires again only
+after the target is raised by 3 °C or more or the heater is switched off and on.
 
 ## Removal
 

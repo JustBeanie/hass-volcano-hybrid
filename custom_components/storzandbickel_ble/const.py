@@ -22,6 +22,37 @@ MANUFACTURER_ID = 1736
 CONF_MAC_ADDRESS = "mac_address"
 CONF_INITIAL_TEMP = "initial_temperature"
 CONF_FAN_ON_CONNECT = "fan_on_connect"
+# Whether Home Assistant connects and stays connected on its own. Kept in the
+# entry options so it survives a restart, but set from its switch, not the form.
+CONF_AUTO_CONNECT = "auto_connect"
+CONF_AUTO_CONNECT_DELAY = "auto_connect_delay"
+CONF_DELAYED_RECONNECT_DELAY = "delayed_reconnect_delay"
+
+# Seconds to wait after an advertisement before connecting. Long enough for
+# every adapter and proxy that heard it to report, so Home Assistant connects
+# through the strongest one rather than the first.
+DEFAULT_AUTO_CONNECT_DELAY = 1.0
+# The delayed reconnect button stays off the link this long. The vaporizer
+# advertises about every ten seconds while nothing is connected, so this
+# guarantees a fresh advertisement to pick a path from.
+DEFAULT_DELAYED_RECONNECT_DELAY = 11.0
+# With auto-connect off, a link opened on demand -- a command or a reconnect
+# button -- is released once it has been idle this long, so a run of commands
+# from a script is not cut off between steps.
+ON_DEMAND_GRACE = timedelta(seconds=60)
+
+# Fired on the bus for device triggers; see device_trigger.py.
+EVENT_DEVICE = f"{DOMAIN}_event"
+TRIGGER_TARGET_REACHED = "target_reached"
+TRIGGER_FAULT_RAISED = "fault_raised"
+TRIGGER_CONNECTION_LOST = "connection_lost"
+TRIGGER_CONNECTION_RESTORED = "connection_restored"
+TRIGGER_TYPES = (
+    TRIGGER_TARGET_REACHED,
+    TRIGGER_FAULT_RAISED,
+    TRIGGER_CONNECTION_LOST,
+    TRIGGER_CONNECTION_RESTORED,
+)
 
 # Repair issues. These describe two different failures and must not be swapped:
 # refused is turned away at the connect stage, which is the only shape another
@@ -36,7 +67,10 @@ ISSUE_LEGACY_INSTALLED = "legacy_integration_installed"
 MIN_TEMP = 40
 MAX_TEMP = 230
 TEMP_STEP = 5
-MIN_AUTO_OFF_MINUTES = 1
+# The lowest auto-off delay offered. The device itself accepts less, so a value
+# set lower elsewhere is still read back and shown -- it just cannot be chosen.
+MIN_AUTO_OFF_MINUTES = 20
+DEVICE_MIN_AUTO_OFF_MINUTES = 1
 MAX_AUTO_OFF_MINUTES = 180
 DEFAULT_BRIGHTNESS = 70
 

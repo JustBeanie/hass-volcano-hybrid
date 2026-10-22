@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Coroutine
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 import logging
+import time
 from typing import Any
 
 from homeassistant.components.bluetooth import (
@@ -14,17 +16,31 @@ from homeassistant.components.bluetooth import (
     async_ble_device_from_address,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import CONF_DEVICE_ID, CONF_TYPE
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import device_registry as dr, issue_registry as ir
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import (
     ACTIVE_INTERVAL,
+    CONF_AUTO_CONNECT,
+    CONF_AUTO_CONNECT_DELAY,
+    CONF_DELAYED_RECONNECT_DELAY,
+    DEFAULT_AUTO_CONNECT_DELAY,
+    DEFAULT_DELAYED_RECONNECT_DELAY,
     DOMAIN,
+    EVENT_DEVICE,
     IDLE_INTERVAL,
     ISSUE_CONNECTION_REFUSED,
     ISSUE_CONNECTION_UNRESPONSIVE,
+    ON_DEMAND_GRACE,
+    TRIGGER_CONNECTION_LOST,
+    TRIGGER_CONNECTION_RESTORED,
+    TRIGGER_FAULT_RAISED,
+    TRIGGER_TARGET_REACHED,
 )
 from .volcano import (
     ConnectionFailure,
@@ -49,6 +65,23 @@ CONTENTION_THRESHOLD = 3
 # that the next poll was about to fix on its own.
 UNRESPONSIVE_THRESHOLD = 4
 
+# Link-health states beyond the ConnectionFailure kinds.
+HEALTH_CONNECTED = "connected"
+HEALTH_AUTO_CONNECT_OFF = "auto_connect_off"
+
+
+@dataclass
+class LinkHealth:
+    """What has happened to the Bluetooth link since the entry was set up."""
+
+    # The failure the link is in right now; None while it is healthy.
+    current_failure: ConnectionFailure | None = None
+    last_failure: ConnectionFailure | None = None
+    last_failure_at: datetime | None = None
+    last_restored_at: datetime | None = None
+    last_outage_seconds: float | None = None
+    recoveries: int = 0
+
 
 class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
     """Coordinate polling and commands for one Volcano Hybrid."""
@@ -72,6 +105,10 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         self.device = device
         self.address = device.address
         self._was_available = True
+        # Lost/restored triggers only make sense for a link that existed; a
+        # vaporizer that was unplugged at startup has lost nothing.
+        self._ever_connected = False
+        self._outage_started: float | None = None
         self.consecutive_failures = 0
         # Counted separately from the total: the two repair issues describe
         # different failures, and a poll that failed for one reason must never
@@ -79,7 +116,70 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         self.consecutive_refusals = 0
         self.consecutive_no_reads = 0
         self._reconnect_pending = False
+        self._cancel_reconnect: CALLBACK_TYPE | None = None
+        self.link_health = LinkHealth()
+        # When a command or button last asked for the link, for auto-connect
+        # off: see ON_DEMAND_GRACE.
+        self._demanded_at: float | None = None
+        # The last value of each edge-triggered signal. None until the first
+        # reading, so nothing fires for a state the device was already in.
+        self._last_target_reached: bool | None = None
+        self._last_any_fault: bool | None = None
+        # The options this entry was set up with that need a reload to change;
+        # see _async_options_updated in __init__.py.
+        self.reload_options: dict[str, Any] = {}
         entry.async_on_unload(device.register_callback(self._handle_push_update))
+        entry.async_on_unload(self._async_cancel_reconnect)
+
+    # -- options -----------------------------------------------------------
+
+    @property
+    def auto_connect(self) -> bool:
+        """Return whether Home Assistant connects on its own."""
+        return bool(self.config_entry.options.get(CONF_AUTO_CONNECT, True))
+
+    @property
+    def auto_connect_delay(self) -> float:
+        """Return how long to wait after an advertisement before connecting."""
+        return float(
+            self.config_entry.options.get(
+                CONF_AUTO_CONNECT_DELAY, DEFAULT_AUTO_CONNECT_DELAY
+            )
+        )
+
+    @property
+    def delayed_reconnect_delay(self) -> float:
+        """Return how long the delayed reconnect stays off the link."""
+        return float(
+            self.config_entry.options.get(
+                CONF_DELAYED_RECONNECT_DELAY, DEFAULT_DELAYED_RECONNECT_DELAY
+            )
+        )
+
+    @property
+    def _may_connect(self) -> bool:
+        """Return whether a poll may open a link that is not already up."""
+        return self.auto_connect or self._within_demand_grace
+
+    @property
+    def _within_demand_grace(self) -> bool:
+        """Return whether a command asked for the link recently."""
+        return (
+            self._demanded_at is not None
+            and time.monotonic() - self._demanded_at < ON_DEMAND_GRACE.total_seconds()
+        )
+
+    @property
+    def health_state(self) -> str:
+        """Return the link-health sensor's state."""
+        if self.last_update_success and self.data.connected:
+            return HEALTH_CONNECTED
+        if not self.auto_connect and not self.data.connected:
+            return HEALTH_AUTO_CONNECT_OFF
+        failure = self.link_health.current_failure
+        return str(failure) if failure else str(ConnectionFailure.NOT_VISIBLE)
+
+    # -- pushes and advertisements ----------------------------------------
 
     @callback
     def _handle_push_update(self, _state: VolcanoState) -> None:
@@ -96,6 +196,9 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         listeners is all a push needs.
         """
         self.async_update_listeners()
+        # Not the fault trigger: its payload names the newest logged fault,
+        # and the log is only re-read by the poll that follows.
+        self._async_fire_edges(include_fault=False)
 
     @callback
     def async_set_ble_device(
@@ -108,6 +211,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         registration time. Omitting ``change`` silently breaks the callback.
         """
         self.device.set_ble_device(service_info.device)
+        self.device.state.rssi = service_info.rssi
 
         # Hearing the vaporiser again is the earliest possible signal that it is
         # back, so this reconnects rather than waiting for the next scheduled
@@ -116,11 +220,47 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         # already started, so a reconnect could sit behind it for the remainder
         # -- measured at 10-15s on real hardware, against under a second when
         # the cooldown happened to have expired.
-        if not self.device.connected and not self._reconnect_pending:
+        if (
+            self.auto_connect
+            and not self.device.connected
+            and not self._reconnect_pending
+        ):
             self._reconnect_pending = True
-            self.config_entry.async_create_task(
-                self.hass, self._async_reconnect(), eager_start=True
-            )
+            self._async_schedule_reconnect(self.auto_connect_delay)
+
+    @callback
+    def _async_schedule_reconnect(self, delay: float) -> None:
+        """Reconnect after ``delay`` seconds, or straight away for zero.
+
+        A short wait lets every adapter and proxy that heard the advertisement
+        report it, so the connection goes through the strongest rather than
+        whichever happened to be first.
+        """
+        if delay <= 0:
+            self._async_start_reconnect()
+            return
+
+        @callback
+        def _fire(_now: datetime) -> None:
+            self._cancel_reconnect = None
+            self._async_start_reconnect()
+
+        self._async_cancel_reconnect()
+        self._cancel_reconnect = async_call_later(self.hass, delay, _fire)
+
+    @callback
+    def _async_start_reconnect(self) -> None:
+        """Run the reconnect as a task owned by the entry."""
+        self.config_entry.async_create_task(
+            self.hass, self._async_reconnect(), eager_start=True
+        )
+
+    @callback
+    def _async_cancel_reconnect(self) -> None:
+        """Cancel a scheduled reconnect, if there is one."""
+        if self._cancel_reconnect is not None:
+            self._cancel_reconnect()
+            self._cancel_reconnect = None
 
     async def _async_reconnect(self) -> None:
         """Reconnect on an advertisement, then let the next one try again.
@@ -136,6 +276,8 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         finally:
             self._reconnect_pending = False
 
+    # -- polling -----------------------------------------------------------
+
     async def _async_update_data(self) -> VolcanoState:
         """Fetch the current device state."""
         # Assigned unconditionally: None means nothing can hear the device, and
@@ -144,6 +286,17 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         self.device.set_ble_device(
             async_ble_device_from_address(self.hass, self.address, connectable=True)
         )
+
+        if not self.auto_connect and self.device.connected:
+            if not self._within_demand_grace:
+                # The command that opened this link is done with it; hand the
+                # vaporizer back so the phone app can connect.
+                await self.device.async_disconnect()
+                return self.device.state
+        elif not self._may_connect:
+            # Auto-connect is off and nothing asked for the link: report what
+            # is known without opening one. Not a failure, so no repairs.
+            return self.device.state
 
         try:
             state = await self.device.async_update()
@@ -155,6 +308,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         self._async_set_interval(
             ACTIVE_INTERVAL if state.heater_on or state.fan_on else IDLE_INTERVAL
         )
+        self._async_fire_edges()
         return state
 
     @callback
@@ -167,12 +321,24 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
     def _handle_update_failure(self, err: VolcanoConnectionError) -> None:
         """Log the outage once and raise the repair that fits the failure."""
         self.consecutive_failures += 1
+        health = self.link_health
+        health.current_failure = err.kind
+        health.last_failure = err.kind
+        health.last_failure_at = dt_util.utcnow()
 
         if self._was_available:
             self._was_available = False
+            self._outage_started = time.monotonic()
             _LOGGER.warning(
                 "Lost connection to the Volcano Hybrid at %s: %s", self.address, err
             )
+            if self._ever_connected:
+                self._async_fire(TRIGGER_CONNECTION_LOST, kind=str(err.kind))
+
+        # Asked for by a command or button, not by Home Assistant itself: the
+        # user has said they are managing the link, so no repairs.
+        if not self.auto_connect:
+            return
 
         if err.kind is ConnectionFailure.CONNECT_FAILED:
             self.consecutive_refusals += 1
@@ -206,27 +372,126 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[VolcanoState]):
         )
 
     @callback
-    def _handle_update_success(self) -> None:
-        """Log recovery once and clear both connection issues."""
-        self.consecutive_failures = 0
-        self.consecutive_refusals = 0
-        self.consecutive_no_reads = 0
-        if not self._was_available:
-            self._was_available = True
-            _LOGGER.info("Reconnected to the Volcano Hybrid at %s", self.address)
+    def _async_clear_issues(self) -> None:
+        """Clear both connection issues."""
         for issue in (ISSUE_CONNECTION_REFUSED, ISSUE_CONNECTION_UNRESPONSIVE):
             ir.async_delete_issue(
                 self.hass, DOMAIN, f"{issue}_{self.config_entry.entry_id}"
             )
 
+    @callback
+    def _handle_update_success(self) -> None:
+        """Log recovery once and clear both connection issues."""
+        self.consecutive_failures = 0
+        self.consecutive_refusals = 0
+        self.consecutive_no_reads = 0
+        self.link_health.current_failure = None
+        if not self._was_available:
+            self._was_available = True
+            _LOGGER.info("Reconnected to the Volcano Hybrid at %s", self.address)
+            if self._ever_connected and self._outage_started is not None:
+                outage = round(time.monotonic() - self._outage_started, 1)
+                self.link_health.recoveries += 1
+                self.link_health.last_restored_at = dt_util.utcnow()
+                self.link_health.last_outage_seconds = outage
+                self._async_fire(TRIGGER_CONNECTION_RESTORED, outage_seconds=outage)
+        self._outage_started = None
+        self._ever_connected = True
+        self._async_clear_issues()
+
+    # -- device triggers ---------------------------------------------------
+
+    @callback
+    def _async_fire_edges(self, *, include_fault: bool = True) -> None:
+        """Fire the triggers whose signal has just gone from off to on."""
+        state = self.device.state
+        reached = state.target_reached
+        if reached is not None:
+            # Only while heating: the bit can stay set after the heater stops.
+            reached = reached and state.heater_on
+            if self._last_target_reached is False and reached:
+                self._async_fire(
+                    TRIGGER_TARGET_REACHED, temperature=state.target_temperature
+                )
+            self._last_target_reached = reached
+
+        if include_fault and state.status1 is not None:
+            fault = state.any_fault
+            if self._last_any_fault is False and fault:
+                self._async_fire(TRIGGER_FAULT_RAISED, last_fault=state.last_fault)
+            self._last_any_fault = fault
+
+    @callback
+    def _async_fire(self, trigger_type: str, **data: Any) -> None:
+        """Fire a device trigger event, if the device is registered yet."""
+        device = dr.async_get(self.hass).async_get_device(
+            identifiers={(DOMAIN, dr.format_mac(self.address))}
+        )
+        if device is None:
+            return
+        self.hass.bus.async_fire(
+            EVENT_DEVICE,
+            {CONF_DEVICE_ID: device.id, CONF_TYPE: trigger_type, **data},
+        )
+
+    # -- link control ------------------------------------------------------
+
     async def async_shutdown_device(self) -> None:
         """Drop the BLE link."""
+        self._async_cancel_reconnect()
         await self.device.async_disconnect()
+
+    async def async_reconnect(self) -> None:
+        """Drop the link and connect again straight away."""
+        self._demanded_at = time.monotonic()
+        await self.device.async_disconnect()
+        await self.async_refresh()
+
+    async def async_delayed_reconnect(self) -> None:
+        """Drop the link, then reconnect once a fresh advertisement is due.
+
+        Staying off long enough for the vaporizer to advertise again lets the
+        reconnect go through whichever adapter or proxy now hears it best.
+        """
+        await self.device.async_disconnect()
+        self.async_update_listeners()
+
+        @callback
+        def _fire(_now: datetime) -> None:
+            self._cancel_reconnect = None
+            self._demanded_at = time.monotonic()
+            self._async_start_reconnect()
+
+        self._async_cancel_reconnect()
+        self._cancel_reconnect = async_call_later(
+            self.hass, self.delayed_reconnect_delay, _fire
+        )
+
+    async def async_set_auto_connect(self, enabled: bool) -> None:
+        """Turn automatic connecting on or off, and remember the choice."""
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            options={**self.config_entry.options, CONF_AUTO_CONNECT: enabled},
+        )
+        if enabled:
+            self.config_entry.async_create_task(
+                self.hass, self.async_refresh(), eager_start=True
+            )
+            return
+
+        # Off means off now: free the link for the phone app, forget any
+        # pending reconnect and withdraw repairs nobody should act on.
+        self._async_cancel_reconnect()
+        self._demanded_at = None
+        self._async_clear_issues()
+        await self.device.async_disconnect()
+        self.async_update_listeners()
 
     # -- commands ----------------------------------------------------------
 
     async def _async_command(self, coro: Coroutine[Any, Any, None]) -> None:
         """Run a device command, then refresh."""
+        self._demanded_at = time.monotonic()
         try:
             await coro
         except VolcanoConnectionError as err:

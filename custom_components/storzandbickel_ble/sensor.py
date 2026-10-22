@@ -14,6 +14,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import (
     PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     EntityCategory,
     UnitOfTemperature,
     UnitOfTime,
@@ -22,9 +23,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
-from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
+from .coordinator import (
+    HEALTH_AUTO_CONNECT_OFF,
+    HEALTH_CONNECTED,
+    VolcanoConfigEntry,
+    VolcanoDataUpdateCoordinator,
+)
 from .entity import VolcanoEntity
-from .volcano import FAULT_CODES, VolcanoState
+from .volcano import FAULT_CODES, ConnectionFailure, VolcanoState
 
 # The coordinator owns every read, and writes are already serialised by the
 # single GATT lock in volcano.py, so Home Assistant does not need to throttle.
@@ -40,6 +46,12 @@ class VolcanoSensorEntityDescription(SensorEntityDescription):
     available_when_disconnected: bool = False
     attributes_fn: Callable[[VolcanoState], dict[str, Any]] | None = None
 
+
+LINK_HEALTH_OPTIONS = [
+    HEALTH_CONNECTED,
+    HEALTH_AUTO_CONNECT_OFF,
+    *(str(kind) for kind in ConnectionFailure),
+]
 
 LAST_FAULT_NONE = "none"
 LAST_FAULT_UNRECOGNISED = "unrecognised"
@@ -192,6 +204,32 @@ SENSORS: tuple[VolcanoSensorEntityDescription, ...] = (
         value_fn=_last_fault,
         attributes_fn=_fault_log_attributes,
     ),
+    VolcanoSensorEntityDescription(
+        key="rssi",
+        translation_key="rssi",
+        device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        available_when_disconnected=True,
+        value_fn=lambda state: state.rssi,
+    ),
+    VolcanoSensorEntityDescription(
+        key="connected_via",
+        translation_key="connected_via",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda state: state.connected_via,
+    ),
+    VolcanoSensorEntityDescription(
+        key="mains_voltage",
+        translation_key="mains_voltage",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        available_when_disconnected=True,
+        value_fn=lambda state: state.mains_voltage,
+    ),
     # Status register 1 is the existing "raw_register" sensor above.
     _raw_sensor("status_register_2"),
     _raw_sensor("status_register_3"),
@@ -210,8 +248,53 @@ async def async_setup_entry(
     """Set up the Volcano Hybrid sensors."""
     coordinator = entry.runtime_data
     async_add_entities(
-        VolcanoSensor(coordinator, description) for description in SENSORS
+        [
+            VolcanoLinkHealthSensor(coordinator),
+            *(VolcanoSensor(coordinator, description) for description in SENSORS),
+        ]
     )
+
+
+class VolcanoLinkHealthSensor(VolcanoEntity, SensorEntity):
+    """What the Bluetooth link is doing, and what it has recovered from.
+
+    The link heals itself without telling anyone; this is where that shows.
+    The counters start from zero whenever the integration is set up.
+    """
+
+    _attr_translation_key = "link_health"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_options = LINK_HEALTH_OPTIONS
+
+    def __init__(self, coordinator: VolcanoDataUpdateCoordinator) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator, "link_health")
+
+    @property
+    def available(self) -> bool:
+        """Stay available: an outage is exactly what this reports."""
+        return True
+
+    @property
+    def native_value(self) -> str:
+        """Return the link's current state."""
+        return self.coordinator.health_state
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the history behind the state."""
+        health = self.coordinator.link_health
+        device = self.coordinator.device
+        return {
+            "last_failure": str(health.last_failure) if health.last_failure else None,
+            "last_failure_at": health.last_failure_at,
+            "last_restored_at": health.last_restored_at,
+            "last_outage_seconds": health.last_outage_seconds,
+            "recoveries": health.recoveries,
+            "link_resets": device.link_resets,
+            "adapter_cache_resets": device.adapter_cache_resets,
+        }
 
 
 class VolcanoSensor(VolcanoEntity, SensorEntity):

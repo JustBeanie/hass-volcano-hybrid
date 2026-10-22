@@ -1,0 +1,60 @@
+name: Firmware check
+
+# Asks Storz & Bickel's firmware endpoint whether newer Volcano Hybrid firmware
+# has been published than custom_components/storzandbickel_ble/firmware.py
+# records, so the integration never has to call it at runtime. Opens an issue
+# when it has, or when the endpoint stops answering the way it did.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC: a firmware release is noticed within the week.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/check_firmware.py"
+      - "custom_components/storzandbickel_ble/firmware.py"
+      - ".github/workflows/firmware-check.yaml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  firmware:
+    name: Published firmware version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # Standard library only: nothing to install.
+      - name: Compare with the vendor endpoint
+        id: check
+        continue-on-error: true
+        run: python3 scripts/check_firmware.py
+      - name: Open an issue
+        # Pull requests only get a red run; the scheduled run files the issue.
+        if: >-
+          github.event_name != 'pull_request'
+          && steps.check.outcome == 'failure'
+          && steps.check.outputs.title != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Passed through the environment, never interpolated: the body can
+          # quote a response from outside this repository.
+          TITLE: ${{ steps.check.outputs.title }}
+          BODY: ${{ steps.check.outputs.body }}
+        run: |
+          set -euo pipefail
+          gh label create firmware-watch --color FBCA04 --force \
+            --description "Raised by the scheduled firmware check"
+          # One open issue per title; the weekly run just stays red meanwhile.
+          if gh issue list --label firmware-watch --state open --search "in:title \"$TITLE\"" \
+              --json number --jq 'length' | grep -qx 0; then
+            gh issue create --title "$TITLE" --body "$BODY" --label firmware-watch
+          fi
+      - name: Fail the run if the check failed
+        if: steps.check.outcome == 'failure'
+        run: exit 1

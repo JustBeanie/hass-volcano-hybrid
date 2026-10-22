@@ -31,11 +31,22 @@
       "reconfigure": {
         "title": "Check the connection",
         "description": "This will try to connect to {name} at {address} right now. The Bluetooth address of a vaporizer never changes, so there is nothing to re-point — use this to confirm Home Assistant can still reach it."
+      },
+      "manual": {
+        "title": "Enter the Bluetooth address",
+        "description": "Use this when the vaporizer has not been discovered. Its address is printed in the Storz & Bickel app and in Home Assistant's Bluetooth advertisement monitor. A vaporizer that is not in range yet is still added, and connects the first time it is switched on near an adapter or proxy.",
+        "data": {
+          "address": "Bluetooth address"
+        },
+        "data_description": {
+          "address": "Six pairs of hex digits separated by colons, for example DD:BA:AA:DE:1F:F9."
+        }
       }
     },
     "error": {
       "cannot_connect": "Could not connect. Make sure the vaporizer is switched on and is not already connected to the Storz & Bickel app.",
-      "not_in_range": "The device is not currently visible to any Bluetooth adapter or proxy."
+      "not_in_range": "The device is not currently visible to any Bluetooth adapter or proxy.",
+      "invalid_address": "That is not a Bluetooth address. Use six pairs of hex digits separated by colons."
     },
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
@@ -51,11 +62,15 @@
         "description": "These are applied whenever Home Assistant starts up or reloads this integration.",
         "data": {
           "initial_temperature": "Initial temperature",
-          "fan_on_connect": "Start the fan on startup"
+          "fan_on_connect": "Start the fan on startup",
+          "auto_connect_delay": "Auto-connect delay",
+          "delayed_reconnect_delay": "Delayed reconnect wait"
         },
         "data_description": {
           "initial_temperature": "Target temperature in °C written on startup, between {min_temp} and {max_temp}. Leave empty to keep whatever the device already has.",
-          "fan_on_connect": "Run the fan when Home Assistant starts. This applies once per startup or reload, not on every Bluetooth reconnect."
+          "fan_on_connect": "Run the fan when Home Assistant starts. This applies once per startup or reload, not on every Bluetooth reconnect.",
+          "auto_connect_delay": "Seconds to wait after hearing the vaporizer before connecting, so the strongest Bluetooth adapter or proxy is chosen rather than the first. Keep this low.",
+          "delayed_reconnect_delay": "Seconds the Reconnect after delay button stays disconnected. The vaporizer advertises about every ten seconds, so the default guarantees a fresh advertisement."
         }
       }
     }
@@ -98,6 +113,9 @@
       },
       "service_mode": {
         "name": "Service mode"
+      },
+      "ready": {
+        "name": "Ready"
       }
     },
     "light": {
@@ -182,6 +200,50 @@
       },
       "error_history_2": {
         "name": "Error history 2"
+      },
+      "link_health": {
+        "name": "Link health",
+        "state": {
+          "connected": "Connected",
+          "auto_connect_off": "Auto-connect off",
+          "not_visible": "Not in range",
+          "connect_failed": "Connection refused",
+          "no_reads": "Connected but not responding",
+          "stale_gatt": "Incomplete service table",
+          "write_failed": "Command failed"
+        },
+        "state_attributes": {
+          "last_failure": {
+            "name": "Last failure"
+          },
+          "last_failure_at": {
+            "name": "Last failure at"
+          },
+          "last_restored_at": {
+            "name": "Last restored at"
+          },
+          "last_outage_seconds": {
+            "name": "Last outage (seconds)"
+          },
+          "recoveries": {
+            "name": "Recoveries"
+          },
+          "link_resets": {
+            "name": "Link resets"
+          },
+          "adapter_cache_resets": {
+            "name": "Adapter cache resets"
+          }
+        }
+      },
+      "rssi": {
+        "name": "Signal strength"
+      },
+      "connected_via": {
+        "name": "Connected via"
+      },
+      "mains_voltage": {
+        "name": "Mains voltage"
       }
     },
     "switch": {
@@ -199,6 +261,22 @@
       },
       "display_fahrenheit": {
         "name": "Display Fahrenheit"
+      },
+      "auto_connect": {
+        "name": "Auto-connect"
+      }
+    },
+    "button": {
+      "reconnect": {
+        "name": "Reconnect"
+      },
+      "delayed_reconnect": {
+        "name": "Reconnect after delay"
+      }
+    },
+    "update": {
+      "firmware": {
+        "name": "Firmware"
       }
     }
   },
@@ -208,6 +286,14 @@
     },
     "command_failed": {
       "message": "The command could not be sent to the Volcano Hybrid: {error}"
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "target_reached": "Reached the target temperature",
+      "fault_raised": "Reported a fault",
+      "connection_lost": "Lost its Bluetooth connection",
+      "connection_restored": "Bluetooth connection restored"
     }
   }
 }

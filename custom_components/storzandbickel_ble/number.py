@@ -82,6 +82,8 @@ async def async_setup_entry(
 class VolcanoNumber(VolcanoEntity, NumberEntity):
     """A Volcano Hybrid number."""
 
+    _controls_device = True
+
     entity_description: VolcanoNumberEntityDescription
 
     def __init__(
