@@ -153,7 +153,28 @@ moved while it is there, because both copies would fight over the vaporizer's
 single Bluetooth connection. A repair under **Settings → System → Repairs** says
 so. Delete that folder and restart, and the move happens then.
 
-Entries made by the *other* `volcano_hybrid` integration are never touched.
+Entries made by the *other* `volcano_hybrid` integration are never touched by
+this step; see below.
+
+## Moving from another integration
+
+If a device is set up in **SavageNL's Volcano Hybrid** integration or
+**Chuffnugget's Volcano Integration**, this integration offers to take it over.
+Nothing happens unasked:
+
+1. Install this integration and restart Home Assistant.
+2. Under **Settings → System → Repairs**, open **Move *name* from *integration***
+   and select **Submit**.
+
+The other integration lets go of the Bluetooth connection, and the device moves
+here with its area and name. Every entity that means the same thing here, in the
+same unit, keeps its entity ID — the climate entity, temperature, target
+temperature, vibration and the other settings switches, the fault and status
+sensors and so on — so automations, scripts and dashboards that use them keep
+working. The other integration's remaining entities for that device are removed
+and this integration adds its own. Its entry is removed too, after which it can be
+uninstalled from HACS if nothing else uses it.
+
 ## Setup
 
 [![Add the Storz & Bickel BLE integration to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=storzandbickel_ble)

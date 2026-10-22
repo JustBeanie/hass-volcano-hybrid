@@ -62,9 +62,9 @@ jobs:
             --cov-report=xml \
             --cov-fail-under=100
       # Lists exactly which changed lines a pull request leaves uncovered.
-      # On a push to main there is no diff, so this passes trivially.
+      # On a push to master there is no diff, so this passes trivially.
       - name: Report coverage of changed lines
         run: |
           diff-cover coverage.xml \
-            --compare-branch=origin/${{ github.base_ref || 'main' }} \
+            --compare-branch=origin/${{ github.base_ref || 'master' }} \
             --fail-under=100

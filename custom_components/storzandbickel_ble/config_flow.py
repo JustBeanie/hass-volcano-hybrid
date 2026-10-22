@@ -45,6 +45,7 @@ from .const import (
     TEMP_STEP,
 )
 from .families import FAMILY_NAMES, Family, create_device, detect_family
+from .other_integrations import CONF_MOVE_FROM
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -187,19 +188,23 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
     # -- adoption of a pre-rename entry -------------------------------------
 
     async def async_step_import(self, import_data: dict[str, Any]) -> ConfigFlowResult:
-        """Create the entry an old-domain entry is adopted into.
+        """Create the entry another entry's device is moved into.
 
-        Started by migration.py. The device and entity rows move across when
-        this entry sets up; here only the entry itself is made, carrying the
-        old title and startup options.
+        Started by migration.py for a pre-rename entry, and by
+        other_integrations.py for one from another integration. The device and
+        entity rows move across when this entry sets up; here only the entry
+        itself is made, carrying the old title, options and, for a move from
+        another integration, its device family and which entry to take over.
         """
         address: str = import_data[CONF_ADDRESS]
         await self.async_set_unique_id(format_mac(address))
         self._abort_if_unique_id_configured()
+        data = {CONF_ADDRESS: address}
+        for key in (CONF_MODEL, CONF_MOVE_FROM):
+            if key in import_data:
+                data[key] = import_data[key]
         return self.async_create_entry(
-            title=import_data["title"],
-            data={CONF_ADDRESS: address},
-            options=import_data["options"],
+            title=import_data["title"], data=data, options=import_data["options"]
         )
 
     # -- manual setup ------------------------------------------------------

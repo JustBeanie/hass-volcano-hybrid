@@ -64,6 +64,8 @@ ISSUE_CONNECTION_REFUSED = "connection_refused"
 ISSUE_CONNECTION_UNRESPONSIVE = "connection_unresponsive"
 # The pre-rename integration is still installed alongside this one.
 ISSUE_LEGACY_INSTALLED = "legacy_integration_installed"
+# A device another Storz & Bickel integration has could be moved here.
+ISSUE_MIGRATE_FROM_OTHER = "migrate_from_other_integration"
 
 # Device limits.
 MIN_TEMP = 40
