@@ -12,15 +12,14 @@ from homeassistant.data_entry_flow import FlowResultType
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.storzandbickel_ble.config_flow import MANUAL_ENTRY
+from custom_components.storzandbickel_ble.ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+)
 from custom_components.storzandbickel_ble.const import (
     CONF_AUTO_CONNECT,
     CONF_AUTO_CONNECT_DELAY,
     DOMAIN,
-)
-from custom_components.storzandbickel_ble.volcano import (
-    ConnectionFailure,
-    VolcanoConnectionError,
 )
 
 from .conftest import ADDRESS, FORMATTED_MAC
@@ -36,15 +35,16 @@ async def _manual(hass: HomeAssistant) -> dict[str, Any]:
         )
 
 
-async def test_the_picker_offers_manual_entry(
+async def test_the_menu_offers_manual_entry(
     hass: HomeAssistant, mock_bluetooth: AsyncMock
 ) -> None:
-    """Choosing "enter an address" from the picker opens the manual step."""
+    """With devices discovered, "enter an address" is still on the menu."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
+    assert result["type"] is FlowResultType.MENU
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_ADDRESS: MANUAL_ENTRY}
+        result["flow_id"], {"next_step_id": "manual"}
     )
 
     assert result["type"] is FlowResultType.FORM
@@ -90,7 +90,7 @@ async def test_a_visible_device_that_refuses_is_not_added(
     result = await _manual(hass)
     with patch(
         "custom_components.storzandbickel_ble.ble_device.StorzBickelDevice.async_connect",
-        side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
+        side_effect=DeviceConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_ADDRESS: ADDRESS}

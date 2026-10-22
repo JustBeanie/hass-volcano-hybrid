@@ -11,6 +11,11 @@ from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.storzandbickel_ble import PLATFORMS
+from custom_components.storzandbickel_ble.ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+)
 from custom_components.storzandbickel_ble.const import (
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
@@ -19,8 +24,6 @@ from custom_components.storzandbickel_ble.const import (
 from custom_components.storzandbickel_ble.volcano import (
     CHAR_FAN_ON,
     CHAR_TARGET_TEMP,
-    ConnectionFailure,
-    VolcanoConnectionError,
 )
 
 from .conftest import (
@@ -107,7 +110,7 @@ async def test_setup_retries_when_connection_fails(
 
     with patch(
         "custom_components.storzandbickel_ble.volcano.VolcanoHybrid.async_update",
-        side_effect=VolcanoConnectionError("nope", ConnectionFailure.CONNECT_FAILED),
+        side_effect=DeviceConnectionError("nope", ConnectionFailure.CONNECT_FAILED),
     ):
         assert not await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
@@ -220,8 +223,6 @@ async def test_entities_go_unavailable_when_the_device_drops(
 
 async def test_platforms_are_all_declared() -> None:
     """Every platform module the integration ships is forwarded."""
-    from custom_components.storzandbickel_ble import PLATFORMS
-
     assert set(PLATFORMS) == {
         Platform.BINARY_SENSOR,
         Platform.BUTTON,

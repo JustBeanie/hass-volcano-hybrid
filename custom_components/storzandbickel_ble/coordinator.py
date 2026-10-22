@@ -1,4 +1,4 @@
-"""DataUpdateCoordinator for the Volcano Hybrid integration."""
+"""DataUpdateCoordinator for the Storz & Bickel BLE integration."""
 
 from __future__ import annotations
 
@@ -47,12 +47,14 @@ from .const import (
     TRIGGER_FAULT_RAISED,
     TRIGGER_TARGET_REACHED,
 )
+from .crafty import CraftyDevice
 from .families import Family
+from .qvap import QvapDevice
 from .volcano import VolcanoHybrid
 
 _LOGGER = logging.getLogger(__name__)
 
-type VolcanoConfigEntry = ConfigEntry[VolcanoDataUpdateCoordinator]
+type StorzBickelConfigEntry = ConfigEntry[StorzBickelCoordinator]
 
 # The vaporizer accepts one BLE connection at a time. This many consecutive
 # refusals while it is still advertising means something else holds the link.
@@ -88,19 +90,19 @@ class LinkHealth:
     recoveries: int = 0
 
 
-class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[Any]):
+class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
     """Coordinate polling and commands for one Storz & Bickel device.
 
     The data is the device family's own state dataclass, which always
     extends ``DeviceState``.
     """
 
-    config_entry: VolcanoConfigEntry
+    config_entry: StorzBickelConfigEntry
 
     def __init__(
         self,
         hass: HomeAssistant,
-        entry: VolcanoConfigEntry,
+        entry: StorzBickelConfigEntry,
         device: StorzBickelDevice,
         family: Family = Family.VOLCANO_HYBRID,
     ) -> None:
@@ -289,7 +291,7 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[Any]):
 
     # -- polling -----------------------------------------------------------
 
-    async def _async_update_data(self) -> Any:
+    async def _async_update_data(self) -> DeviceState:
         """Fetch the current device state."""
         # Assigned unconditionally: None means nothing can hear the device, and
         # recording that lets the connect attempt fail immediately instead of
@@ -612,15 +614,21 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[Any]):
 
     # -- commands ----------------------------------------------------------
 
-    @property
-    def family_device(self) -> Any:
-        """Return the device, for commands only some families have."""
+    def device_as[DeviceT: StorzBickelDevice](self, kind: type[DeviceT]) -> DeviceT:
+        """Return the device as ``kind``, for a command only that family has.
+
+        Entities only offer such a command on that family, so a mismatch is a
+        bug, not a user error.
+        """
+        if not isinstance(self.device, kind):
+            raise TypeError(f"{self.config_entry.title} is not a {kind.__name__}")
         return self.device
 
     @property
-    def _volcano(self) -> VolcanoHybrid:
-        """Return the device, for the commands only a Volcano has."""
-        assert isinstance(self.device, VolcanoHybrid)
+    def portable(self) -> CraftyDevice | QvapDevice:
+        """Return the device, for a command every portable family has."""
+        if not isinstance(self.device, CraftyDevice | QvapDevice):
+            raise TypeError(f"{self.config_entry.title} is not a portable device")
         return self.device
 
     async def async_command(self, coro: Coroutine[Any, Any, None]) -> None:
@@ -670,7 +678,9 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[Any]):
 
     async def async_set_auto_off_minutes(self, minutes: int) -> None:
         """Set the auto-off delay."""
-        await self.async_command(self._volcano.async_set_auto_off_minutes(minutes))
+        await self.async_command(
+            self.device_as(VolcanoHybrid).async_set_auto_off_minutes(minutes)
+        )
 
     async def async_set_vibration(self, enabled: bool) -> None:
         """Enable or disable vibration."""
@@ -678,7 +688,9 @@ class VolcanoDataUpdateCoordinator(DataUpdateCoordinator[Any]):
 
     async def async_set_display_while_cooling(self, enabled: bool) -> None:
         """Keep the display on while cooling, or not."""
-        await self.async_command(self._volcano.async_set_display_while_cooling(enabled))
+        await self.async_command(
+            self.device_as(VolcanoHybrid).async_set_display_while_cooling(enabled)
+        )
 
     async def async_set_display_fahrenheit(self, enabled: bool) -> None:
         """Show Fahrenheit or Celsius on the device."""

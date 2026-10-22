@@ -16,6 +16,10 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
+from custom_components.storzandbickel_ble.ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+)
 from custom_components.storzandbickel_ble.const import (
     CONF_AUTO_CONNECT,
     CONF_AUTO_CONNECT_DELAY,
@@ -28,8 +32,6 @@ from custom_components.storzandbickel_ble.const import (
 from custom_components.storzandbickel_ble.coordinator import CONTENTION_THRESHOLD
 from custom_components.storzandbickel_ble.volcano import (
     CHAR_FAN_ON,
-    ConnectionFailure,
-    VolcanoConnectionError,
 )
 
 from .conftest import FakeBleakClient, make_service_info
@@ -45,7 +47,7 @@ PRESENT = "custom_components.storzandbickel_ble.coordinator.async_address_presen
 
 def _failing(kind: ConnectionFailure) -> AsyncMock:
     """Return an update that fails the way ``kind`` does."""
-    return AsyncMock(side_effect=VolcanoConnectionError("nope", kind))
+    return AsyncMock(side_effect=DeviceConnectionError("nope", kind))
 
 
 async def _enable(

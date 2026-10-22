@@ -9,7 +9,11 @@ from homeassistant.config_entries import SOURCE_BLUETOOTH, SOURCE_USER, ConfigEn
 from homeassistant.const import ATTR_ENTITY_ID, CONF_ADDRESS
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -39,7 +43,7 @@ from custom_components.storzandbickel_ble.qvap import (
 )
 from custom_components.storzandbickel_ble.volcano import VolcanoHybrid
 
-from .conftest import ADDRESS, FORMATTED_MAC, make_service_info
+from .conftest import ADDRESS, FORMATTED_MAC, FakeBleakClient, make_service_info
 from .test_crafty import FakeCraftyClient
 from .test_qvap import FakeQvapClient
 
@@ -133,9 +137,12 @@ async def test_the_base_class_only_shares_the_link() -> None:
 
 @pytest.fixture
 def fake_client(request: pytest.FixtureRequest) -> Any:
-    """Return a Crafty by default, or a Venty for tests that ask for one."""
-    if getattr(request, "param", None) == "venty":
+    """Return a Crafty by default, or the client a test asks for."""
+    kind = getattr(request, "param", None)
+    if kind == "venty":
         return FakeQvapClient()
+    if kind == "volcano":
+        return FakeBleakClient()
     return FakeCraftyClient()
 
 
@@ -181,6 +188,41 @@ async def test_a_crafty_gets_its_entities(
         hass.states.get("number.my_crafty_target_temperature").attributes["max"] == 210
     )
     assert hass.states.get("sensor.my_crafty_battery").state == "76"
+
+
+async def test_the_device_page_names_the_right_model(
+    hass: HomeAssistant, mock_bluetooth: AsyncMock, fake_client: FakeCraftyClient
+) -> None:
+    """A Crafty is a Crafty on its device page, not a Volcano Hybrid."""
+    entry = _entry(Family.CRAFTY)
+    await _setup(hass, entry)
+
+    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, FORMATTED_MAC)})
+    assert device is not None
+    assert device.model == "Crafty"
+
+
+async def test_a_command_for_another_family_is_a_bug(
+    hass: HomeAssistant, mock_bluetooth: AsyncMock, fake_client: FakeCraftyClient
+) -> None:
+    """Asking a Crafty for a Venty or Volcano command fails loudly."""
+    entry = _entry(Family.CRAFTY)
+    await _setup(hass, entry)
+    coordinator = entry.runtime_data
+
+    assert coordinator.device_as(CraftyDevice) is coordinator.device
+    assert coordinator.portable is coordinator.device
+    with pytest.raises(TypeError, match="is not a VolcanoHybrid"):
+        coordinator.device_as(VolcanoHybrid)
+
+
+@pytest.mark.parametrize("fake_client", ["volcano"], indirect=True)
+async def test_a_volcano_is_not_portable(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """Portable-only commands are refused on a Volcano."""
+    with pytest.raises(TypeError, match="is not a portable device"):
+        _ = loaded_entry.runtime_data.portable
 
 
 async def test_a_plain_crafty_cannot_be_found(

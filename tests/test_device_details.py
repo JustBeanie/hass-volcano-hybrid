@@ -6,6 +6,9 @@ from unittest.mock import AsyncMock
 
 from bleak.backends.device import BLEDevice
 
+from custom_components.storzandbickel_ble.ble_device import (
+    _ble_device_source,
+)
 from custom_components.storzandbickel_ble.volcano import (
     CHAR_AUTO_OFF_SETTING,
     CHAR_FAN_OFF,
@@ -18,7 +21,6 @@ from custom_components.storzandbickel_ble.volcano import (
     MASK_TARGET_REACHED,
     VolcanoHybrid,
     VolcanoState,
-    _ble_device_source,
 )
 
 from .conftest import ADDRESS, FakeBleakClient, make_ble_device

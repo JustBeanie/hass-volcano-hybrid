@@ -122,7 +122,7 @@ def main() -> int:
         check(recorded, published_version(fetch()))
     except CheckError as failure:
         if output := os.environ.get("GITHUB_OUTPUT"):
-            with open(output, "a", encoding="utf-8") as handle:
+            with Path(output).open("a", encoding="utf-8") as handle:
                 handle.write(f"title={failure.title}\n")
                 handle.write(f"body<<EOF\n{failure.body}\nEOF\n")
         sys.stderr.write(f"{failure.title}\n{failure.body}\n")

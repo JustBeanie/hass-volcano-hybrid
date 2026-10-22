@@ -11,8 +11,16 @@ from unittest.mock import AsyncMock, patch
 from bleak.exc import BleakError
 import pytest
 
-from custom_components.storzandbickel_ble.volcano import (
+from custom_components.storzandbickel_ble.ble_device import (
     ADAPTER_CACHE_RESET_AFTER,
+    ConnectionFailure,
+    DeviceConnectionError,
+    _decode_firmware,
+    _decode_int,
+    _decode_string,
+    _missing_characteristics,
+)
+from custom_components.storzandbickel_ble.volcano import (
     CHAR_AUTO_OFF_SETTING,
     CHAR_BRIGHTNESS,
     CHAR_CURRENT_TEMP,
@@ -37,16 +45,10 @@ from custom_components.storzandbickel_ble.volcano import (
     MASK_VIBRATION_OFF,
     R2_ERROR_FLAGS,
     REQUIRED_CHARACTERISTICS,
-    ConnectionFailure,
-    VolcanoConnectionError,
     VolcanoHybrid,
     VolcanoState,
-    _decode_firmware,
     _decode_history,
-    _decode_int,
-    _decode_string,
     _decode_temperature,
-    _missing_characteristics,
 )
 
 from .conftest import (
@@ -231,7 +233,7 @@ async def test_optimistic_window_survives_a_stale_notification(
 async def test_connect_without_a_ble_device_raises() -> None:
     """Connecting with no advertisement in hand is an explicit error."""
     device = VolcanoHybrid(ADDRESS)
-    with pytest.raises(VolcanoConnectionError):
+    with pytest.raises(DeviceConnectionError):
         await device.async_connect()
 
 
@@ -252,7 +254,7 @@ async def test_losing_sight_of_the_device_stops_connection_attempts(
     device.set_ble_device(None)
     before = mock_establish_connection.call_count
 
-    with pytest.raises(VolcanoConnectionError, match="not currently visible"):
+    with pytest.raises(DeviceConnectionError, match="not currently visible"):
         await device.async_update()
 
     assert mock_establish_connection.call_count == before
@@ -273,7 +275,7 @@ async def test_a_link_that_answers_nothing_is_treated_as_disconnected(
 
     with (
         patch.object(fake_client, "read_gatt_char", side_effect=BleakError("gone")),
-        pytest.raises(VolcanoConnectionError, match="answered no reads") as err,
+        pytest.raises(DeviceConnectionError, match="answered no reads") as err,
     ):
         await device.async_update()
 
@@ -302,7 +304,7 @@ async def test_a_link_that_answers_nothing_is_rebuilt_from_scratch(
 
     with (
         patch.object(fake_client, "read_gatt_char", side_effect=BleakError("gone")),
-        pytest.raises(VolcanoConnectionError),
+        pytest.raises(DeviceConnectionError),
     ):
         await device.async_update()
 
@@ -330,7 +332,7 @@ async def test_a_persistently_dead_link_clears_the_adapter_cache(
         ) as clear_adapter,
     ):
         for _ in range(ADAPTER_CACHE_RESET_AFTER):
-            with pytest.raises(VolcanoConnectionError):
+            with pytest.raises(DeviceConnectionError):
                 await device.async_update()
 
     # Only once the plain reconnect has been given its chances.
@@ -404,12 +406,12 @@ async def test_missing_characteristics_are_tolerated(
 async def test_connect_failure_is_wrapped(
     mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
 ) -> None:
-    """A bleak failure surfaces as VolcanoConnectionError, not a bleak type."""
+    """A bleak failure surfaces as DeviceConnectionError, not a bleak type."""
     device = VolcanoHybrid(ADDRESS)
     device.set_ble_device(make_ble_device())
 
     mock_establish_connection.side_effect = BleakError("no route")
-    with pytest.raises(VolcanoConnectionError, match="Could not connect"):
+    with pytest.raises(DeviceConnectionError, match="Could not connect"):
         await device.async_connect()
 
 
@@ -447,14 +449,14 @@ async def test_disconnect_tolerates_a_failing_client(
 async def test_write_failure_is_wrapped(
     mock_establish_connection: object, fake_client: FakeBleakClient
 ) -> None:
-    """A failed GATT write surfaces as VolcanoConnectionError."""
+    """A failed GATT write surfaces as DeviceConnectionError."""
     device = VolcanoHybrid(ADDRESS)
     device.set_ble_device(make_ble_device())
     await device.async_update()
 
     with (
         patch.object(fake_client, "write_gatt_char", side_effect=BleakError("nope")),
-        pytest.raises(VolcanoConnectionError, match="Write to"),
+        pytest.raises(DeviceConnectionError, match="Write to"),
     ):
         await device.async_turn_heater_on()
 
@@ -700,7 +702,7 @@ async def test_a_service_table_that_stays_partial_is_reported(
             "custom_components.storzandbickel_ble.ble_device.clear_adapter_cache",
             AsyncMock(return_value=True),
         ) as clear_adapter,
-        pytest.raises(VolcanoConnectionError, match=CHAR_FAN_ON) as err,
+        pytest.raises(DeviceConnectionError, match=CHAR_FAN_ON) as err,
     ):
         await device.async_update()
 
@@ -745,7 +747,7 @@ async def test_an_ordinary_write_failure_is_not_retried(
         patch.object(
             fake_client, "write_gatt_char", side_effect=BleakError("nope")
         ) as write,
-        pytest.raises(VolcanoConnectionError),
+        pytest.raises(DeviceConnectionError),
     ):
         await device.async_turn_fan_on()
 
@@ -763,7 +765,7 @@ async def test_status_without_temperatures_is_a_stale_table(
 
     del fake_client.reads[CHAR_CURRENT_TEMP]
     del fake_client.reads[CHAR_TARGET_TEMP]
-    with pytest.raises(VolcanoConnectionError, match="no temperature") as err:
+    with pytest.raises(DeviceConnectionError, match="no temperature") as err:
         await device.async_update()
 
     assert err.value.kind is ConnectionFailure.STALE_GATT

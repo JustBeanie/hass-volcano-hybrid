@@ -9,29 +9,18 @@ from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.storzandbickel_ble.ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+)
 from custom_components.storzandbickel_ble.const import (
     DOMAIN,
     ISSUE_CONNECTION_REFUSED,
     ISSUE_CONNECTION_UNRESPONSIVE,
 )
 from custom_components.storzandbickel_ble.repairs import async_create_fix_flow
-from custom_components.storzandbickel_ble.volcano import (
-    ConnectionFailure,
-    VolcanoConnectionError,
-)
 
 from .conftest import FakeBleakClient
-
-
-@pytest.fixture
-async def loaded_entry(
-    hass: HomeAssistant, mock_bluetooth: AsyncMock, config_entry: MockConfigEntry
-) -> MockConfigEntry:
-    """Return a fully set up config entry."""
-    config_entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
-    return config_entry
 
 
 async def test_fix_flow_reloads_the_entry(
@@ -79,7 +68,7 @@ async def test_repair_round_trip(
         patch.object(
             coordinator.device,
             "async_update",
-            side_effect=VolcanoConnectionError(
+            side_effect=DeviceConnectionError(
                 "refused", ConnectionFailure.CONNECT_FAILED
             ),
         ),

@@ -12,7 +12,6 @@ LEGACY_DOMAIN = "volcano_hybrid"
 
 DEFAULT_NAME = "Volcano Hybrid"
 MANUFACTURER = "Storz & Bickel"
-MODEL = "Volcano Hybrid"
 
 # Storz & Bickel's Bluetooth SIG company identifier, as advertised by the device
 # and matched in manifest.json.

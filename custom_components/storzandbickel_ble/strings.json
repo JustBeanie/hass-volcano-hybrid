@@ -2,16 +2,6 @@
   "config": {
     "flow_title": "{name}",
     "step": {
-      "user": {
-        "title": "Add your Volcano Hybrid",
-        "description": "Pick the vaporizer you want to add. Only devices Home Assistant can currently see over Bluetooth are listed.",
-        "data": {
-          "address": "Device"
-        },
-        "data_description": {
-          "address": "The Volcano Hybrid to control. If yours is missing, switch it on and wait a few seconds for it to advertise."
-        }
-      },
       "bluetooth_confirm": {
         "title": "Add your Volcano Hybrid",
         "description": "Do you want to set up {name}?"
@@ -42,6 +32,24 @@
         "data_description": {
           "address": "Six pairs of hex digits separated by colons, for example DD:BA:AA:DE:1F:F9.",
           "model": "Which Storz & Bickel device this is. The Crafty, Venty and Veazy are experimental: they are decoded from the vendor's app and have not been tested on hardware."
+        }
+      },
+      "user": {
+        "title": "Add a Storz & Bickel device",
+        "description": "Pick one Home Assistant can already see over Bluetooth, or type its address.",
+        "menu_options": {
+          "pick_device": "Pick a discovered device",
+          "manual": "Enter an address manually"
+        }
+      },
+      "pick_device": {
+        "title": "Pick your vaporizer",
+        "description": "Pick the vaporizer you want to add. Only devices Home Assistant can currently see over Bluetooth are listed.",
+        "data": {
+          "address": "Device"
+        },
+        "data_description": {
+          "address": "The device to control. If yours is missing, switch it on and wait a few seconds for it to advertise."
         }
       }
     },
@@ -452,6 +460,16 @@
           "name": "Device",
           "description": "The vaporizer. Can be left out when there is only one."
         }
+      }
+    }
+  },
+  "selector": {
+    "model": {
+      "options": {
+        "volcano_hybrid": "Volcano Hybrid",
+        "crafty": "Crafty or Crafty+ (experimental)",
+        "venty": "Venty (experimental)",
+        "veazy": "Veazy (experimental)"
       }
     }
   }

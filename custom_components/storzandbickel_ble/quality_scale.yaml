@@ -27,7 +27,7 @@ rules:
       owns device_info and availability, lives in entity.py.
   config-flow-test-coverage:
     status: done
-    comment: config_flow.py is at 100% line coverage, enforced in CI.
+    comment: The whole package is at 100% line and branch coverage, enforced in CI.
   config-flow:
     status: done
     comment: |
@@ -120,8 +120,9 @@ rules:
   test-coverage:
     status: done
     comment: |
-      99% overall and above 95% for every module individually, which is the
-      actual bar. Enforced in CI with --cov-fail-under=95.
+      100% of lines and branches in every module, enforced in CI with
+      --cov-branch --cov-fail-under=100. Warnings from the integration and
+      never-awaited coroutines fail the test run.
 
   # Gold
   devices:

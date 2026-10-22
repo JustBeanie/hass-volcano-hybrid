@@ -13,6 +13,10 @@ from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.storzandbickel_ble.ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+)
 from custom_components.storzandbickel_ble.const import (
     ACTIVE_INTERVAL,
     DOMAIN,
@@ -23,24 +27,11 @@ from custom_components.storzandbickel_ble.const import (
 from custom_components.storzandbickel_ble.coordinator import UNRESPONSIVE_THRESHOLD
 from custom_components.storzandbickel_ble.volcano import (
     CHAR_STATUS_REGISTER,
-    ConnectionFailure,
-    VolcanoConnectionError,
 )
 
 from .conftest import RAW_STATUS_HEATING, FakeBleakClient, make_service_info
 
 CLIMATE = "climate.s_b_volcano_h"
-
-
-@pytest.fixture
-async def loaded_entry(
-    hass: HomeAssistant, mock_bluetooth: AsyncMock, config_entry: MockConfigEntry
-) -> MockConfigEntry:
-    """Return a fully set up config entry."""
-    config_entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
-    return config_entry
 
 
 async def test_command_failure_raises_a_translated_error(
@@ -53,7 +44,7 @@ async def test_command_failure_raises_a_translated_error(
         patch.object(
             coordinator.device,
             "async_turn_heater_on",
-            side_effect=VolcanoConnectionError("nope", ConnectionFailure.WRITE_FAILED),
+            side_effect=DeviceConnectionError("nope", ConnectionFailure.WRITE_FAILED),
         ),
         pytest.raises(HomeAssistantError) as err,
     ):
@@ -82,7 +73,7 @@ async def test_unavailable_is_logged_once_and_recovery_once(
         patch.object(
             coordinator.device,
             "async_update",
-            side_effect=VolcanoConnectionError("gone", ConnectionFailure.NOT_VISIBLE),
+            side_effect=DeviceConnectionError("gone", ConnectionFailure.NOT_VISIBLE),
         ),
     ):
         for _ in range(4):
@@ -119,7 +110,7 @@ async def test_contention_raises_a_repair_issue(
         patch.object(
             coordinator.device,
             "async_update",
-            side_effect=VolcanoConnectionError(
+            side_effect=DeviceConnectionError(
                 "refused", ConnectionFailure.CONNECT_FAILED
             ),
         ),
@@ -153,7 +144,7 @@ async def test_no_repair_issue_when_the_device_is_simply_away(
         patch.object(
             coordinator.device,
             "async_update",
-            side_effect=VolcanoConnectionError("gone", ConnectionFailure.NOT_VISIBLE),
+            side_effect=DeviceConnectionError("gone", ConnectionFailure.NOT_VISIBLE),
         ),
     ):
         for _ in range(5):
@@ -188,7 +179,7 @@ async def test_an_unresponsive_device_is_never_called_contention(
         patch.object(
             coordinator.device,
             "async_update",
-            side_effect=VolcanoConnectionError("answered no reads", kind),
+            side_effect=DeviceConnectionError("answered no reads", kind),
         ),
     ):
         # Contention would already have been declared by now.
@@ -232,7 +223,7 @@ async def test_contention_can_be_raised_more_than_once(
             patch.object(
                 coordinator.device,
                 "async_update",
-                side_effect=VolcanoConnectionError(
+                side_effect=DeviceConnectionError(
                     "refused", ConnectionFailure.CONNECT_FAILED
                 ),
             ),

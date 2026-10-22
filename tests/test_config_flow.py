@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 from homeassistant.config_entries import SOURCE_BLUETOOTH, SOURCE_USER
@@ -11,14 +12,15 @@ from homeassistant.data_entry_flow import FlowResultType
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.storzandbickel_ble.ble_device import (
+    ConnectionFailure,
+    DeviceConnectionError,
+)
+from custom_components.storzandbickel_ble.config_flow import _family_of
 from custom_components.storzandbickel_ble.const import (
     CONF_FAN_ON_CONNECT,
     CONF_INITIAL_TEMP,
     DOMAIN,
-)
-from custom_components.storzandbickel_ble.volcano import (
-    ConnectionFailure,
-    VolcanoConnectionError,
 )
 
 from .conftest import (
@@ -27,7 +29,20 @@ from .conftest import (
     FORMATTED_MAC,
     NOT_VOLCANO_SERVICE_INFO,
     SERVICE_INFO,
+    make_service_info,
 )
+
+
+async def _open_picker(hass: HomeAssistant) -> dict[str, Any]:
+    """Start the user flow and choose the list of discovered devices."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert result["menu_options"] == ["pick_device", "manual"]
+    return await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "pick_device"}
+    )
 
 
 async def test_bluetooth_discovery_creates_entry(
@@ -109,7 +124,7 @@ async def test_bluetooth_confirm_handles_a_failed_connection(
 
     with patch(
         "custom_components.storzandbickel_ble.ble_device.StorzBickelDevice.async_connect",
-        side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
+        side_effect=DeviceConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
 
@@ -144,11 +159,9 @@ async def test_user_flow_creates_entry(
     hass: HomeAssistant, mock_bluetooth: AsyncMock
 ) -> None:
     """The manual flow lists devices Home Assistant already sees."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
+    result = await _open_picker(hass)
     assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "user"
+    assert result["step_id"] == "pick_device"
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ADDRESS: ADDRESS}
@@ -195,20 +208,18 @@ async def test_user_flow_handles_a_failed_connection(
     hass: HomeAssistant, mock_bluetooth: AsyncMock
 ) -> None:
     """A connection failure in the manual flow re-shows the picker."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
+    result = await _open_picker(hass)
 
     with patch(
         "custom_components.storzandbickel_ble.ble_device.StorzBickelDevice.async_connect",
-        side_effect=VolcanoConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
+        side_effect=DeviceConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_ADDRESS: ADDRESS}
         )
 
     assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "user"
+    assert result["step_id"] == "pick_device"
     assert result["errors"] == {"base": "cannot_connect"}
 
 
@@ -216,9 +227,7 @@ async def test_user_flow_aborts_on_duplicate(
     hass: HomeAssistant, mock_bluetooth: AsyncMock
 ) -> None:
     """Selecting a device that got configured mid-flow aborts cleanly."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
+    result = await _open_picker(hass)
 
     MockConfigEntry(
         domain=DOMAIN, unique_id=FORMATTED_MAC, data={CONF_ADDRESS: ADDRESS}
@@ -247,8 +256,4 @@ async def test_user_flow_aborts_on_duplicate(
 )
 def test_family_of(name: str, expected: str | None) -> None:
     """The name picks the family, case-insensitively; anything else is not ours."""
-    from custom_components.storzandbickel_ble.config_flow import _family_of
-
-    from .conftest import make_service_info
-
     assert _family_of(make_service_info(name=name)) == expected

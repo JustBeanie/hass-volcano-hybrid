@@ -21,7 +21,7 @@ from homeassistant.helpers.service import verify_domain_control
 import voluptuous as vol
 
 from .const import DOMAIN, MAX_TEMP, MIN_TEMP
-from .coordinator import VolcanoConfigEntry, VolcanoDataUpdateCoordinator
+from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
 
 SERVICE_SET_TEMPERATURE = "set_temperature"
 SERVICE_CONNECT = "connect"
@@ -56,15 +56,13 @@ CONNECT_SCHEMA = DEVICE_SCHEMA.extend(
 )
 
 
-def _coordinator(
-    hass: HomeAssistant, call: ServiceCall
-) -> VolcanoDataUpdateCoordinator:
+def _coordinator(hass: HomeAssistant, call: ServiceCall) -> StorzBickelCoordinator:
     """Return the coordinator the call is for.
 
     With a single vaporizer the device can be left out; with more, the call
     has to say which, rather than guess.
     """
-    loaded: list[VolcanoConfigEntry] = [
+    loaded: list[StorzBickelConfigEntry] = [
         entry
         for entry in hass.config_entries.async_entries(DOMAIN)
         if entry.state is ConfigEntryState.LOADED

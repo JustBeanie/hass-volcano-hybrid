@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from homeassistant.core import HomeAssistant
-import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.storzandbickel_ble.diagnostics import (
@@ -13,17 +12,6 @@ from custom_components.storzandbickel_ble.diagnostics import (
 )
 
 from .conftest import ADDRESS, SERVICE_INFO, make_service_info
-
-
-@pytest.fixture
-async def loaded_entry(
-    hass: HomeAssistant, mock_bluetooth: AsyncMock, config_entry: MockConfigEntry
-) -> MockConfigEntry:
-    """Return a fully set up config entry."""
-    config_entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
-    return config_entry
 
 
 async def test_diagnostics_include_the_raw_wire_values(
