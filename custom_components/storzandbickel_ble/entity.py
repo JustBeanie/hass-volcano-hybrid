@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from homeassistant.helpers.device_registry import (
     CONNECTION_BLUETOOTH,
     DeviceInfo,
@@ -11,8 +9,11 @@ from homeassistant.helpers.device_registry import (
 )
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER, MODEL
+from .ble_device import DeviceState
+from .const import DOMAIN, MANUFACTURER
 from .coordinator import StorzBickelCoordinator
+from .crafty import CraftyState
+from .families import FAMILY_NAMES
 
 
 class StorzBickelEntity(CoordinatorEntity[StorzBickelCoordinator]):
@@ -33,7 +34,7 @@ class StorzBickelEntity(CoordinatorEntity[StorzBickelCoordinator]):
             identifiers={(DOMAIN, formatted_mac)},
             connections={(CONNECTION_BLUETOOTH, coordinator.address)},
             manufacturer=MANUFACTURER,
-            model=MODEL,
+            model=FAMILY_NAMES[coordinator.family],
             # The device's own name for its model class, e.g. "HYBRID".
             model_id=coordinator.data.model,
             name=coordinator.config_entry.title,
@@ -42,7 +43,7 @@ class StorzBickelEntity(CoordinatorEntity[StorzBickelCoordinator]):
         )
 
     @property
-    def data(self) -> Any:
+    def data(self) -> DeviceState:
         """Return the current state, as the device family's own dataclass."""
         return self.coordinator.data
 
@@ -51,18 +52,31 @@ class StorzBickelEntity(CoordinatorEntity[StorzBickelCoordinator]):
         """Return whether the device is reachable, or can be reached on demand."""
         if not super().available:
             return False
-        # Some controls depend on the device: a Crafty on old firmware takes
-        # no commands, and only a Crafty+ can be told to buzz.
-        description = getattr(self, "entity_description", None)
-        if (supported := getattr(description, "available_fn", None)) and not (
-            supported(self.data)
-        ):
+        if not self._device_supports():
             return False
         if self.coordinator.data.connected:
             return True
         return self._controls_device and not self.coordinator.auto_connect
 
+    def _device_supports(self) -> bool:
+        """Return whether this particular device can use the entity at all.
 
-def always(_state: Any) -> bool:
+        Description-driven entities answer from ``available_fn``: a Crafty on
+        old firmware takes no commands, and only a Crafty+ can be told to buzz.
+        """
+        return True
+
+
+def always(_state: DeviceState) -> bool:
     """Return True: the default for an entity every device of its family has."""
     return True
+
+
+def controllable(state: DeviceState) -> bool:
+    """Return whether the device accepts commands; old Crafty firmware does not."""
+    return not isinstance(state, CraftyState) or state.controllable
+
+
+def findable(state: DeviceState) -> bool:
+    """Return whether the device can be told to signal; of Craftys, only a +."""
+    return not isinstance(state, CraftyState) or state.is_plus

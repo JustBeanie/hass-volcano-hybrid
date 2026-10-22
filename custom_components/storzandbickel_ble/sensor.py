@@ -25,6 +25,7 @@ from homeassistant.helpers.typing import StateType
 
 from .ble_device import (
     ConnectionFailure,
+    DeviceState,
 )
 from .coordinator import (
     HEALTH_AUTO_CONNECT_OFF,
@@ -56,7 +57,7 @@ class StorzBickelSensorEntityDescription(SensorEntityDescription):
     # Which device families have this entity, and whether a given device of
     # them can use it right now.
     families: frozenset[Family] = VOLCANO_ONLY
-    available_fn: Callable[[Any], bool] = always
+    available_fn: Callable[[DeviceState], bool] = always
 
 
 LINK_HEALTH_OPTIONS = [
@@ -389,6 +390,10 @@ class StorzBickelSensor(StorzBickelEntity, SensorEntity):
         """Initialise the sensor."""
         super().__init__(coordinator, description.key)
         self.entity_description = description
+
+    def _device_supports(self) -> bool:
+        """Return whether this device can use the entity."""
+        return self.entity_description.available_fn(self.data)
 
     @property
     def available(self) -> bool:

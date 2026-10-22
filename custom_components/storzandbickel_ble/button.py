@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
 
 from homeassistant.components.button import (
     ButtonDeviceClass,
@@ -20,8 +19,9 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .ble_device import DeviceState
 from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
-from .entity import StorzBickelEntity, always
+from .entity import StorzBickelEntity, always, findable
 from .families import ALL_FAMILIES, PORTABLE, VOLCANO_ONLY, Family
 
 # The coordinator serialises everything these do, so no throttling is needed.
@@ -36,7 +36,7 @@ class StorzBickelButtonEntityDescription(ButtonEntityDescription):
     # Which device families have this entity, and whether a given device of
     # them can use it right now.
     families: frozenset[Family] = VOLCANO_ONLY
-    available_fn: Callable[[Any], bool] = always
+    available_fn: Callable[[DeviceState], bool] = always
 
 
 BUTTONS: tuple[StorzBickelButtonEntityDescription, ...] = (
@@ -65,9 +65,9 @@ BUTTONS: tuple[StorzBickelButtonEntityDescription, ...] = (
         translation_key="find",
         device_class=ButtonDeviceClass.IDENTIFY,
         families=PORTABLE,
-        available_fn=lambda state: getattr(state, "is_plus", True),
+        available_fn=findable,
         press_fn=lambda coordinator: coordinator.async_command(
-            coordinator.family_device.async_find()
+            coordinator.portable.async_find()
         ),
     ),
 )

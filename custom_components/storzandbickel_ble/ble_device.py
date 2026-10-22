@@ -228,7 +228,7 @@ class StorzBickelDevice:
         self._client: BleakClientWithServiceCache | None = None
         self._lock = asyncio.Lock()
         self._state = state
-        self._callbacks: list[Callable[[Any], None]] = []
+        self._callbacks: list[Callable[[DeviceState], None]] = []
         self._static_info_read = False
         self._notifications_started = False
         self._last_read_error: str | None = None
@@ -240,7 +240,7 @@ class StorzBickelDevice:
 
     # -- what a family provides --------------------------------------------
 
-    async def async_update(self) -> Any:
+    async def async_update(self) -> DeviceState:
         """Refresh and return the device state."""
         raise NotImplementedError
 
@@ -285,7 +285,7 @@ class StorzBickelDevice:
     # -- plumbing ----------------------------------------------------------
 
     @property
-    def state(self) -> Any:
+    def state(self) -> DeviceState:
         """Return the last known state, as the family's own dataclass."""
         return self._state
 
@@ -304,7 +304,9 @@ class StorzBickelDevice:
         """
         self._ble_device = ble_device
 
-    def register_callback(self, callback: Callable[[Any], None]) -> Callable[[], None]:
+    def register_callback(
+        self, callback: Callable[[DeviceState], None]
+    ) -> Callable[[], None]:
         """Register a listener for pushed state updates."""
         self._callbacks.append(callback)
 

@@ -20,7 +20,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import MAX_TEMP, MIN_TEMP, TEMP_STEP
-from .coordinator import StorzBickelConfigEntry
+from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
 from .entity import StorzBickelEntity
 from .families import Family
 
@@ -57,7 +57,7 @@ class StorzBickelClimate(StorzBickelEntity, ClimateEntity):
     _attr_max_temp = MAX_TEMP
     _attr_target_temperature_step = TEMP_STEP
 
-    def __init__(self, coordinator: Any) -> None:
+    def __init__(self, coordinator: StorzBickelCoordinator) -> None:
         """Initialise the climate entity."""
         super().__init__(coordinator, "climate")
         self._attr_max_temp = coordinator.device.max_temp

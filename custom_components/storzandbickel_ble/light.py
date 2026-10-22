@@ -17,6 +17,7 @@ from .const import DEFAULT_BRIGHTNESS
 from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
 from .entity import StorzBickelEntity
 from .families import Family
+from .volcano import VolcanoHybrid, VolcanoState
 
 # The device takes 0-100; Home Assistant lights are 0-255.
 BRIGHTNESS_SCALE = (1, 100)
@@ -52,16 +53,21 @@ class VolcanoScreenLight(StorzBickelEntity, LightEntity):
         super().__init__(coordinator, "screen")
 
     @property
+    def _volcano(self) -> VolcanoState:
+        """Return the Volcano's own state; only a Volcano has this light."""
+        return self.coordinator.device_as(VolcanoHybrid).state
+
+    @property
     def brightness(self) -> int | None:
         """Return the brightness on Home Assistant's 0-255 scale."""
-        if (percent := self.data.brightness) is None:
+        if (percent := self._volcano.brightness) is None:
             return None
         return value_to_brightness(BRIGHTNESS_SCALE, percent)
 
     @property
     def is_on(self) -> bool | None:
         """Return whether the screen is lit."""
-        percent: int | None = self.data.brightness
+        percent = self._volcano.brightness
         if percent is None:
             return None
         return percent > 0
@@ -71,7 +77,7 @@ class VolcanoScreenLight(StorzBickelEntity, LightEntity):
         if (brightness := kwargs.get(ATTR_BRIGHTNESS)) is not None:
             percent = round(brightness_to_value(BRIGHTNESS_SCALE, brightness))
         else:
-            percent = self.data.brightness or DEFAULT_BRIGHTNESS
+            percent = self._volcano.brightness or DEFAULT_BRIGHTNESS
         await self.coordinator.async_set_brightness(percent)
 
     async def async_turn_off(self, **kwargs: Any) -> None:

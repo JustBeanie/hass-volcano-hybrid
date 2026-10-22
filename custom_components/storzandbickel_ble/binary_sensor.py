@@ -15,6 +15,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .ble_device import DeviceState
 from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
 from .entity import StorzBickelEntity, always
 from .families import ALL_FAMILIES, QVAP, VOLCANO_ONLY, Family
@@ -33,7 +34,7 @@ class StorzBickelBinarySensorEntityDescription(BinarySensorEntityDescription):
     # Which device families have this entity, and whether a given device of
     # them can use it right now.
     families: frozenset[Family] = VOLCANO_ONLY
-    available_fn: Callable[[Any], bool] = always
+    available_fn: Callable[[DeviceState], bool] = always
 
 
 BINARY_SENSORS: tuple[StorzBickelBinarySensorEntityDescription, ...] = (
@@ -168,6 +169,10 @@ class StorzBickelBinarySensor(StorzBickelEntity, BinarySensorEntity):
         """Initialise the binary sensor."""
         super().__init__(coordinator, description.key)
         self.entity_description = description
+
+    def _device_supports(self) -> bool:
+        """Return whether this device can use the entity."""
+        return self.entity_description.available_fn(self.data)
 
     @property
     def is_on(self) -> bool | None:
