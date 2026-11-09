@@ -10,7 +10,7 @@ from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.setup import async_setup_component
 import pytest
-from pytest_homeassistant_custom_component.common import (
+from pytest_homeassistant.common import (
     MockConfigEntry,
     async_get_device_automations,
     async_mock_service,
@@ -39,8 +39,9 @@ UPDATE = "custom_components.storzandbickel_ble.volcano.VolcanoHybrid.async_updat
 
 def _device_id(hass: HomeAssistant) -> str:
     """Return the registry id of the test vaporizer."""
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, FORMATTED_MAC)})
-    assert device is not None
+    (device,) = dr.async_get(hass).async_get_devices(
+        identifiers={(DOMAIN, FORMATTED_MAC)}
+    )
     return device.id
 
 

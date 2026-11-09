@@ -1,6 +1,7 @@
-# Test dependencies. pytest-homeassistant-custom-component pins the Home
-# Assistant version the suite runs against; bump it to test newer cores.
-pytest-homeassistant-custom-component==0.13.316
+# Test dependencies. pytest-homeassistant is Home Assistant's own test package
+# (it replaced pytest-homeassistant-custom-component); its version IS the Home
+# Assistant version the suite runs against, so bump it to test newer cores.
+pytest-homeassistant[bluetooth]==2026.11.0
 pytest-cov
 diff-cover
 bleak-retry-connector>=3.6.0

@@ -15,7 +15,7 @@ from homeassistant.helpers import (
 )
 from homeassistant.setup import async_setup_component
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.storzandbickel_ble.const import (
     CONF_MODEL,
@@ -180,7 +180,7 @@ async def test_a_savagenl_volcano_is_offered_then_moved(
     moved = dr.async_get(hass).async_get(device.id)
     assert moved is not None
     assert (DOMAIN, FORMATTED_MAC) in moved.identifiers
-    assert moved.config_entries == {entry.entry_id}
+    assert moved.config_entry_id == entry.entry_id
     assert moved.area_id == device.area_id
 
 
@@ -316,6 +316,24 @@ async def test_a_stale_offer_is_withdrawn(hass: HomeAssistant) -> None:
     async_offer_moves(hass)
 
     assert _issue(hass, "gone") is None
+
+
+async def test_removing_the_other_entry_withdraws_its_offer(
+    hass: HomeAssistant,
+) -> None:
+    """The offer is linked to the other integration's entry and goes with it."""
+    other = _chuffnugget_entry()
+    other.add_to_hass(hass)
+
+    async_offer_moves(hass)
+    issue = _issue(hass, other.entry_id)
+    assert issue is not None
+    assert issue.config_entry_id == other.entry_id
+
+    await hass.config_entries.async_remove(other.entry_id)
+    await hass.async_block_till_done()
+
+    assert _issue(hass, other.entry_id) is None
 
 
 # -- the move itself ------------------------------------------------------------------

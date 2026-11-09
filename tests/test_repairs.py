@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.storzandbickel_ble.ble_device import (
     ConnectionFailure,
@@ -101,3 +101,36 @@ async def test_the_unresponsive_issue_gets_a_flow_too(
 
     assert result["type"] == "create_entry"
     reload.assert_awaited_once_with(loaded_entry.entry_id)
+
+
+async def test_removing_the_entry_removes_its_issue(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """The issue is linked to its entry, so it does not outlive it."""
+    coordinator = loaded_entry.runtime_data
+    issue_id = f"{ISSUE_CONNECTION_REFUSED}_{loaded_entry.entry_id}"
+
+    with (
+        patch(
+            "custom_components.storzandbickel_ble.coordinator.async_address_present",
+            return_value=True,
+        ),
+        patch.object(
+            coordinator.device,
+            "async_update",
+            side_effect=DeviceConnectionError(
+                "refused", ConnectionFailure.CONNECT_FAILED
+            ),
+        ),
+    ):
+        for _ in range(3):
+            await coordinator.async_refresh()
+
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+    assert issue is not None
+    assert issue.config_entry_id == loaded_entry.entry_id
+
+    await hass.config_entries.async_remove(loaded_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None

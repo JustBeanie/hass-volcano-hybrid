@@ -17,7 +17,7 @@ from homeassistant.helpers import (
 from homeassistant.loader import IntegrationNotFound
 from homeassistant.setup import async_setup_component
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.storzandbickel_ble.const import (
     CONF_FAN_ON_CONNECT,
@@ -123,7 +123,7 @@ async def test_legacy_entry_is_adopted_with_its_entity_ids(
     moved = dr.async_get(hass).async_get(device.id)
     assert moved is not None
     assert moved.identifiers == {(DOMAIN, FORMATTED_MAC)}
-    assert moved.config_entries == {entry.entry_id}
+    assert moved.config_entry_id == entry.entry_id
     assert moved.area_id == device.area_id
 
     for domain, key, object_id in LEGACY_ENTITIES:
@@ -307,10 +307,10 @@ async def test_an_entity_whose_unique_id_is_taken_is_skipped(
     assert entity_registry.async_get("climate.s_b_volcano_h") is None
 
 
-async def test_a_device_already_on_the_new_domain_keeps_its_identifier(
+async def test_another_entrys_device_with_our_identifier_does_not_block_the_move(
     hass: HomeAssistant, mock_bluetooth: AsyncMock, legacy_v3_entry: MockConfigEntry
 ) -> None:
-    """Taking an identifier another device holds would raise; it is left alone."""
+    """Identifiers are unique per config entry, so another entry's is no clash."""
     device = _register_legacy(hass, legacy_v3_entry)
     holder = MockConfigEntry(domain="other")
     holder.add_to_hass(hass)
@@ -322,7 +322,7 @@ async def test_a_device_already_on_the_new_domain_keeps_its_identifier(
 
     moved = dr.async_get(hass).async_get(device.id)
     assert moved is not None
-    assert moved.identifiers == {(LEGACY_DOMAIN, FORMATTED_MAC)}
+    assert moved.identifiers == {(DOMAIN, FORMATTED_MAC)}
 
 
 async def test_import_of_an_already_configured_device_aborts(

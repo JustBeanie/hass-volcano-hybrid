@@ -20,7 +20,7 @@ from homeassistant.const import (
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.helpers.trigger import TriggerActionType, TriggerInfo
 from homeassistant.helpers.typing import ConfigType
-import voluptuous as vol
+import probatio as vol
 
 from .const import DOMAIN, EVENT_DEVICE, TRIGGER_TYPES
 

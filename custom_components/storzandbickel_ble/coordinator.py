@@ -384,6 +384,8 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
             self.hass,
             DOMAIN,
             f"{issue}_{self.config_entry.entry_id}",
+            # Removing the entry removes its issues with it.
+            config_entry_id=self.config_entry.entry_id,
             is_fixable=True,
             severity=ir.IssueSeverity.WARNING,
             translation_key=issue,
@@ -446,8 +448,8 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
     @callback
     def _async_fire(self, trigger_type: str, **data: Any) -> None:
         """Fire a device trigger event, if the device is registered yet."""
-        device = dr.async_get(self.hass).async_get_device(
-            identifiers={(DOMAIN, dr.format_mac(self.address))}
+        device = dr.async_get(self.hass).async_get_device_by_identifier(
+            (DOMAIN, dr.format_mac(self.address)), self.config_entry.entry_id
         )
         if device is None:
             return

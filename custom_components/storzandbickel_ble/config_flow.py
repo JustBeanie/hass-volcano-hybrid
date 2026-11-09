@@ -27,7 +27,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
 )
 from homeassistant.setup import async_setup_component
-import voluptuous as vol
+import probatio as vol
 
 from .ble_device import DeviceConnectionError
 from .const import (
@@ -385,7 +385,12 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
                     errors={"base": error},
                     description_placeholders={"name": entry.title, "address": address},
                 )
-            return self.async_update_reload_and_abort(entry, data_updates={})
+            # Nothing in the entry changes, so its update listener never fires;
+            # the reload is what picks the confirmed link up. Scheduled here
+            # rather than through async_update_reload_and_abort, which Home
+            # Assistant refuses alongside an update listener from 2026.12.
+            self.hass.config_entries.async_schedule_reload(entry.entry_id)
+            return self.async_abort(reason="reconfigure_successful")
 
         return self.async_show_form(
             step_id="reconfigure",

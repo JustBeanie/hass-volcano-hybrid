@@ -13,7 +13,7 @@ from homeassistant.components.bluetooth import (
     async_ble_device_from_address,
     async_register_callback,
 )
-from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -181,12 +181,3 @@ async def async_unload_entry(
     if unload_ok:
         await entry.runtime_data.async_shutdown_device()
     return unload_ok
-
-
-async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Refuse entries from a newer version than this code understands.
-
-    Pre-rename entries are not migrated here: they live under the old domain
-    and are adopted by migration.py instead.
-    """
-    return entry.version <= 1

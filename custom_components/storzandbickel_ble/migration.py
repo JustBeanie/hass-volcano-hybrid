@@ -200,27 +200,13 @@ def move_registry_rows(
     for one with no counterpart; those are left behind and go when ``source``
     is removed.
 
-    The order matters. Detaching the old entry from the device makes the
-    entity registry delete that entry's entities on the spot, so they have to
-    be moved off it first -- otherwise the platforms recreate them as new rows
-    and every area, label and disabled flag on them is lost.
+    The order matters. Moving the device to ``entry`` makes the entity
+    registry delete every entity of ``source`` still on it, on the spot, so
+    the entities have to be moved first -- otherwise the platforms recreate
+    them as new rows and every area, label and disabled flag on them is lost.
     """
     device_registry = dr.async_get(hass)
     devices = dr.async_entries_for_config_entry(device_registry, source.entry_id)
-    for device in devices:
-        identifier = (DOMAIN, mac)
-        # Only take the identifier if nothing holds it yet; a collision would
-        # raise and leave the adoption half done.
-        new_identifiers = (
-            {identifier}
-            if device_registry.async_get_device(identifiers={identifier}) is None
-            else device.identifiers
-        )
-        device_registry.async_update_device(
-            device.id,
-            add_config_entry_id=entry.entry_id,
-            new_identifiers=new_identifiers,
-        )
 
     entity_registry = er.async_get(hass)
     for row in er.async_entries_for_config_entry(entity_registry, source.entry_id):
@@ -243,7 +229,12 @@ def move_registry_rows(
             row.entity_id, DOMAIN, new_config_entry_id=entry.entry_id, **changes
         )
 
+    # Identifiers are only unique within a config entry, and entry has no
+    # device yet, so ours cannot collide with anything -- not even a device of
+    # another integration that happens to hold the same one.
     for device in devices:
         device_registry.async_update_device(
-            device.id, remove_config_entry_id=source.entry_id
+            device.id,
+            new_config_entry_id=entry.entry_id,
+            new_identifiers={(DOMAIN, mac)},
         )

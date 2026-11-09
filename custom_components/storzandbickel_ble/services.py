@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.service import verify_domain_control
-import voluptuous as vol
+import probatio as vol
 
 from .const import DOMAIN, MAX_TEMP, MIN_TEMP
 from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
@@ -78,7 +78,7 @@ def _coordinator(hass: HomeAssistant, call: ServiceCall) -> StorzBickelCoordinat
 
     device = dr.async_get(hass).async_get(device_id)
     for entry in loaded:
-        if device is not None and entry.entry_id in device.config_entries:
+        if device is not None and device.config_entry_id == entry.entry_id:
             return entry.runtime_data
     raise ServiceValidationError(
         translation_domain=DOMAIN,

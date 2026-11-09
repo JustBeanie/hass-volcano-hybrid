@@ -9,7 +9,7 @@ from homeassistant.components.bluetooth import BluetoothChange
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.storzandbickel_ble import PLATFORMS
 from custom_components.storzandbickel_ble.ble_device import (

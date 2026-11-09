@@ -100,7 +100,7 @@ device.
 
 ## Requirements
 
-- Home Assistant 2025.2 or newer
+- Home Assistant 2026.11 or newer
 - A Volcano Hybrid (the Bluetooth-equipped Hybrid model — the Classic has no radio)
 - Bluetooth reception where the vaporizer lives, from **either**:
   - a Bluetooth adapter on your Home Assistant host, **or**
