@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from homeassistant.components.repairs import RepairsFlow
+from homeassistant.components.repairs import RepairsFlow, RepairsFlowResult
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResult
 
 from .const import (
     ISSUE_CONNECTION_REFUSED,
@@ -28,13 +27,13 @@ class RetryRepairFlow(RepairsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, str] | None = None
-    ) -> FlowResult:
+    ) -> RepairsFlowResult:
         """Start the flow."""
         return await self.async_step_confirm()
 
     async def async_step_confirm(
         self, user_input: dict[str, str] | None = None
-    ) -> FlowResult:
+    ) -> RepairsFlowResult:
         """Retry the connection once the user says the link is free."""
         if user_input is not None:
             # Reload rather than waiting out the coordinator's backoff, so the
@@ -54,13 +53,13 @@ class MoveRepairFlow(RepairsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, str] | None = None
-    ) -> FlowResult:
+    ) -> RepairsFlowResult:
         """Start the flow."""
         return await self.async_step_confirm()
 
     async def async_step_confirm(
         self, user_input: dict[str, str] | None = None
-    ) -> FlowResult:
+    ) -> RepairsFlowResult:
         """Explain what moves and what does not, then do it."""
         if user_input is not None:
             if not await async_start_move(self.hass, self._entry_id):

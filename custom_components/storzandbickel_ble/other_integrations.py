@@ -217,36 +217,36 @@ def async_offer_moves(hass: HomeAssistant) -> None:
         dr.format_mac(entry.data[CONF_ADDRESS])
         for entry in hass.config_entries.async_entries(DOMAIN)
     }
-    offered: set[str] = set()
-    for other in OTHER_INTEGRATIONS:
-        for entry in hass.config_entries.async_entries(other.domain):
-            address = other.address(entry)
-            if not other.owns(entry) or not address or dr.format_mac(address) in ours:
-                continue
-            offered.add(_issue_id(entry.entry_id))
-            ir.async_create_issue(
-                hass,
-                DOMAIN,
-                _issue_id(entry.entry_id),
-                is_fixable=True,
-                is_persistent=False,
-                severity=ir.IssueSeverity.WARNING,
-                translation_key=ISSUE_MIGRATE_FROM_OTHER,
-                translation_placeholders={
-                    "name": entry.title,
-                    "integration": other.name,
-                },
-                data={"entry_id": entry.entry_id},
-            )
-
-    # An offer whose entry has gone, or was moved already, is withdrawn.
-    for domain, issue_id in list(ir.async_get(hass).issues):
-        if (
-            domain == DOMAIN
-            and issue_id.startswith(f"{ISSUE_MIGRATE_FROM_OTHER}_")
-            and issue_id not in offered
-        ):
-            ir.async_delete_issue(hass, DOMAIN, issue_id)
+    # An offer not raised again -- its device was moved already, or it is
+    # ours now -- is withdrawn when the refresh ends. Each offer is linked to
+    # the other integration's entry, so removing that entry withdraws it too.
+    with ir.async_refresh_issues(
+        hass, DOMAIN, issue_id_pattern=f"{ISSUE_MIGRATE_FROM_OTHER}_"
+    ):
+        for other in OTHER_INTEGRATIONS:
+            for entry in hass.config_entries.async_entries(other.domain):
+                address = other.address(entry)
+                if (
+                    not other.owns(entry)
+                    or not address
+                    or dr.format_mac(address) in ours
+                ):
+                    continue
+                ir.async_create_issue(
+                    hass,
+                    DOMAIN,
+                    _issue_id(entry.entry_id),
+                    config_entry_id=entry.entry_id,
+                    is_fixable=True,
+                    is_persistent=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key=ISSUE_MIGRATE_FROM_OTHER,
+                    translation_placeholders={
+                        "name": entry.title,
+                        "integration": other.name,
+                    },
+                    data={"entry_id": entry.entry_id},
+                )
 
 
 async def async_start_move(hass: HomeAssistant, entry_id: str) -> bool:

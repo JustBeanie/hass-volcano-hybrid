@@ -15,7 +15,7 @@ from homeassistant.helpers import (
     issue_registry as ir,
 )
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.storzandbickel_ble.ble_device import (
     ConnectionFailure,
@@ -197,8 +197,9 @@ async def test_the_device_page_names_the_right_model(
     entry = _entry(Family.CRAFTY)
     await _setup(hass, entry)
 
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, FORMATTED_MAC)})
-    assert device is not None
+    (device,) = dr.async_get(hass).async_get_devices(
+        identifiers={(DOMAIN, FORMATTED_MAC)}
+    )
     assert device.model == "Crafty"
 
 

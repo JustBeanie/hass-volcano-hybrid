@@ -59,8 +59,8 @@ rules:
   entity-unique-id:
     status: done
     comment: |
-      Every entity is keyed on the formatted MAC. async_migrate_entry rewrites
-      the old config-entry-id-based unique ids in place, preserving entity ids.
+      Every entity is keyed on the formatted MAC. migration.py moves the old
+      registry rows across in place, preserving entity ids.
   has-entity-name:
     status: done
   runtime-data:

@@ -15,7 +15,7 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers import device_registry as dr
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.storzandbickel_ble.ble_device import (
     ConnectionFailure,
@@ -40,8 +40,9 @@ UPDATE = "custom_components.storzandbickel_ble.volcano.VolcanoHybrid.async_updat
 
 def _device_id(hass: HomeAssistant) -> str:
     """Return the registry id of the test vaporizer."""
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, FORMATTED_MAC)})
-    assert device is not None
+    (device,) = dr.async_get(hass).async_get_devices(
+        identifiers={(DOMAIN, FORMATTED_MAC)}
+    )
     return device.id
 
 

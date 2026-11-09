@@ -1,7 +1,9 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--strict-markers"
+# Let Home Assistant install its httpx alias before respx is imported.
+addopts = "--strict-markers -p no:respx"
+pythonpath = ["."]
 filterwarnings = [
   # A coroutine nobody awaited is a bug, in the code or in a test's mock.
   "error::RuntimeWarning",
@@ -13,7 +15,7 @@ filterwarnings = [
 # typed integrations in a .strict-typing file; a custom integration has no
 # equivalent, so this config plus the CI job is the stand-in.
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 files = ["custom_components/storzandbickel_ble"]
 strict = true
 disallow_any_generics = true
@@ -25,7 +27,7 @@ extra_checks = false
 local_partial_types = true
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 88
 
 [tool.ruff.lint]

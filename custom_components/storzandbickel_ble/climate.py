@@ -44,7 +44,7 @@ class StorzBickelClimate(StorzBickelEntity, ClimateEntity):
     _controls_device = True
 
     _attr_name = None
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.TURN_ON
@@ -67,13 +67,13 @@ class StorzBickelClimate(StorzBickelEntity, ClimateEntity):
             self._attr_fan_modes = None
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         """Return the current temperature."""
         value: float | None = self.data.current_temperature
         return value
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         """Return the target temperature."""
         value: float | None = self.data.target_temperature
         return value

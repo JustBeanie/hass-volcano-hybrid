@@ -22,7 +22,7 @@ Thanks for considering a contribution.
 
 ## Development setup
 
-Home Assistant needs Python 3.13 or newer, and the test harness needs a C
+Home Assistant needs Python 3.14.2 or newer, and the test harness needs a C
 compiler for one of its dependencies. On Windows, use WSL.
 
 ```bash

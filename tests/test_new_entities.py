@@ -5,7 +5,7 @@ from __future__ import annotations
 from homeassistant.components.climate import ATTR_HVAC_ACTION
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.storzandbickel_ble.volcano import (
     CHAR_MAINS_VOLTAGE,

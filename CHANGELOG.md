@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] - 2026-11-09
+
+### Changed
+
+- **Home Assistant 2026.11 or newer is now required.** Everything below uses
+  APIs that older versions do not have.
+- **Reconfigure keeps working on Home Assistant 2026.12.** It reloaded the
+  entry through a helper that 2026.12 refuses for an entry with an update
+  listener, which this one has for its options. It now schedules the reload
+  itself.
+- **No more deprecation warnings in the log.** Home Assistant 2026.11 warned
+  about this integration on every start, and some of those calls stop working
+  between 2027.8 and 2027.11:
+  - The climate entity reports its temperatures under the new `native_*`
+    names.
+  - Device triggers and the actions find the device the way Home Assistant now
+    expects, now that a device belongs to exactly one config entry.
+  - Moving a device over from the pre-4.0 version or another integration moves
+    the device in one step, instead of the add-then-remove sequence Home
+    Assistant has deprecated. Entity IDs, areas and labels still come across.
+- **Repairs are tied to their config entry.** Removing a vaporizer now removes
+  its connection repairs too, and a "move this device" offer goes away when the
+  other integration's entry is removed.
+
+### Removed
+
+- `async_migrate_entry`. Home Assistant itself now refuses an entry from a
+  newer version before this would run, so it no longer did anything.
+
+### Development
+
+- Tests now use Home Assistant's own `pytest-homeassistant` package, which
+  replaces the retired `pytest-homeassistant-custom-component`, and run against
+  Home Assistant 2026.11 on Python 3.14.
+- Schemas import `probatio`, Home Assistant's validation library since 2026.10,
+  directly instead of through the `voluptuous` alias.
+
 ## [4.0.1] - 2026-10-22
 
 ### Fixed
