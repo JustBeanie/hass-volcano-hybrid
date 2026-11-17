@@ -29,6 +29,7 @@ from .const import (
     MANUFACTURER_ID,
 )
 from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
+from .dashboard import async_register_card
 from .families import Family, create_device
 from .migration import async_adopt_legacy, async_import_legacy_entries
 from .other_integrations import async_finish_move, async_offer_moves
@@ -84,6 +85,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     )
 
     async_setup_services(hass)
+    await async_register_card(hass)
 
     # Entries left under the pre-rename domain are brought across before
     # anything else, so their entity_ids survive.

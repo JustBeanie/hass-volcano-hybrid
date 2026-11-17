@@ -84,6 +84,25 @@ jobs:
             --compare-branch="origin/$BASE_REF" \
             --fail-under=100
 
+  # The dashboard card's logic. Plain modules run by Node's own test runner:
+  # nothing to install and nothing to build.
+  frontend:
+    name: Dashboard card
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Syntax check
+        run: |
+          for file in custom_components/storzandbickel_ble/frontend/*.js; do
+            node --check "$file"
+          done
+      - name: Run tests
+        run: node --test "tests/frontend/*.test.mjs"
+
   # An early warning, not a gate. requirements_test.txt pins the Home
   # Assistant the suite is held to; this runs the same tests against the
   # newest one published, betas included, so an API that is about to be

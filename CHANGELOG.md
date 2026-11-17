@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - 2026-11-16
+
+### Added
+
+- **A dashboard card** made for a vaporizer rather than a thermostat. It shows
+  the temperature the device is at, a bar that fills as it heats to the
+  target, Heat and Fan buttons, and one-tap presets for the temperatures you
+  use. Add it from the card picker and choose the device; there is no resource
+  to install, and it follows your theme.
+- **A status card feature**: *Heating*, *Ready*, or the reason the device is
+  not connected, plus battery and *Find device* on a Crafty, Venty or Veazy.
+  It can be added to any tile or thermostat card for the device.
+
 ## [4.1.2] - 2026-11-16
 
 ### Fixed
