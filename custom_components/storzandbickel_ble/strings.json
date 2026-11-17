@@ -3,7 +3,7 @@
     "flow_title": "{name}",
     "step": {
       "bluetooth_confirm": {
-        "title": "Add your Volcano Hybrid",
+        "title": "Add your Storz & Bickel device",
         "description": "Do you want to set up {name}?"
       },
       "options": {
@@ -94,7 +94,7 @@
         "step": {
           "confirm": {
             "title": "{name} is refusing connections",
-            "description": "The vaporizer is advertising, so it is in range, but it will not accept a connection.\n\nA Volcano Hybrid allows only one Bluetooth connection at a time. The usual cause is the Storz & Bickel app on a phone or tablet holding the link.\n\nClose that app — or turn off Bluetooth on the device running it — and then select Submit to retry."
+            "description": "The vaporizer is advertising, so it is in range, but it will not accept a connection.\n\nA Storz & Bickel device allows only one Bluetooth connection at a time. The usual cause is the Storz & Bickel app on a phone or tablet holding the link.\n\nClose that app — or turn off Bluetooth on the device running it — and then select Submit to retry."
           }
         }
       }
@@ -386,10 +386,10 @@
   },
   "exceptions": {
     "not_in_range": {
-      "message": "The Volcano Hybrid at {address} is not visible to any Bluetooth adapter or proxy."
+      "message": "The device at {address} is not visible to any Bluetooth adapter or proxy."
     },
     "command_failed": {
-      "message": "The command could not be sent to the Volcano Hybrid: {error}"
+      "message": "The command could not be sent to the device: {error}"
     },
     "no_device": {
       "message": "No Volcano is set up and loaded."

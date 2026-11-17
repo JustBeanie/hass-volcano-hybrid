@@ -16,7 +16,7 @@ from homeassistant.components.bluetooth import (
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
@@ -122,6 +122,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: StorzBickelConfigEntry) 
     # here as well was a second round trip and a second, differently worded
     # failure path for the same problem.
     coordinator = StorzBickelCoordinator(hass, entry, device, family)
+    # Registered before anything connects, not left to async_unload_entry:
+    # Home Assistant runs these when setup fails as well, and a link opened by
+    # a setup that then failed would otherwise stay up with no owner, holding
+    # the only connection the device allows.
+    entry.async_on_unload(coordinator.async_shutdown_device)
     if device.sleeps:
         # Set up with whatever is known; the device connects when it wakes.
         coordinator.data = device.state
@@ -146,10 +151,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: StorzBickelConfigEntry) 
 
     # Applied once per entry setup rather than per BLE reconnect: a dropped
     # link used to silently restart the fan and reset the target temperature.
-    if entry.options.get(CONF_FAN_ON_CONNECT):
-        await coordinator.async_turn_fan_on()
-    if (initial_temp := entry.options.get(CONF_INITIAL_TEMP)) is not None:
-        await coordinator.async_set_temperature(initial_temp)
+    try:
+        if entry.options.get(CONF_FAN_ON_CONNECT):
+            await coordinator.async_turn_fan_on()
+        if (initial_temp := entry.options.get(CONF_INITIAL_TEMP)) is not None:
+            await coordinator.async_set_temperature(initial_temp)
+    except HomeAssistantError as err:
+        # A convenience, not a condition of setup. Letting this through fails
+        # the entry for good -- Home Assistant does not retry it -- over a
+        # write that did not land, or a portable that is simply asleep.
+        _LOGGER.warning(
+            "Could not apply the startup options to %s: %s", entry.title, err
+        )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -176,8 +189,9 @@ async def _async_options_updated(
 async def async_unload_entry(
     hass: HomeAssistant, entry: StorzBickelConfigEntry
 ) -> bool:
-    """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
-        await entry.runtime_data.async_shutdown_device()
-    return unload_ok
+    """Unload a config entry.
+
+    The link is dropped by the callback async_setup_entry registered, which
+    runs once this has succeeded.
+    """
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

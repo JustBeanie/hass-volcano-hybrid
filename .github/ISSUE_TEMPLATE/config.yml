@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting
+    url: https://github.com/JustBeanie/hass-volcano-hybrid#troubleshooting
+    about: Discovery, setup that keeps retrying and dropped connections are covered here.
+  - name: Report a security problem
+    url: https://github.com/JustBeanie/hass-volcano-hybrid/security/advisories/new
+    about: Please report vulnerabilities privately rather than in a public issue.

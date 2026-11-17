@@ -1,0 +1,89 @@
+name: Bug report
+description: Something is not working
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Two things solve most reports before they are filed:
+
+        - The device accepts **one** Bluetooth connection at a time. If the Storz & Bickel app is connected, Home Assistant cannot be.
+        - The device should appear under **Settings → Devices & services → Bluetooth → ⋮ → Advertisement monitor**. If it does not, the problem is Bluetooth reception rather than this integration.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - Volcano Hybrid
+        - Crafty / Crafty+ (experimental)
+        - Venty (experimental)
+        - Veazy (experimental)
+    validations:
+      required: true
+  - type: input
+    id: integration-version
+    attributes:
+      label: Integration version
+      placeholder: "4.1.1"
+    validations:
+      required: true
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.11.2"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Device firmware version
+      description: The "Firmware version" sensor on the device page.
+      placeholder: "V01.03.00.00"
+  - type: dropdown
+    id: reached-through
+    attributes:
+      label: How the device is reached
+      options:
+        - Bluetooth adapter on the Home Assistant host
+        - ESPHome Bluetooth proxy
+        - Both / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        By far the most useful thing you can attach. **Settings → Devices & services → Storz & Bickel BLE → ⋮ → Download diagnostics**, then drag the file in here.
+
+        It holds the raw bytes read from the device, which is what identifies a decoding problem. The Bluetooth address and serial number are redacted, so it is safe to attach.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug log
+      description: |
+        Add this to `configuration.yaml`, restart, reproduce the problem, and paste the relevant lines:
+
+        ```yaml
+        logger:
+          logs:
+            custom_components.storzandbickel_ble: debug
+        ```
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: The Storz & Bickel app is not connected to the device
+          required: true
+        - label: I searched open and closed issues for this problem
+          required: true

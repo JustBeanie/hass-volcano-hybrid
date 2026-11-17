@@ -449,9 +449,9 @@ async def test_a_crafty_can_be_added_by_address(
 async def test_reconfigure_tests_with_the_right_protocol(
     hass: HomeAssistant, mock_bluetooth: AsyncMock, fake_client: FakeCraftyClient
 ) -> None:
-    """A Crafty entry is re-tested as a Crafty."""
+    """A Crafty entry that is not running is re-tested as a Crafty."""
     entry = _entry(Family.CRAFTY)
-    await _setup(hass, entry)
+    entry.add_to_hass(hass)
 
     with patch.object(CraftyDevice, "async_connect") as connect:
         result = await entry.start_reconfigure_flow(hass)
@@ -459,3 +459,6 @@ async def test_reconfigure_tests_with_the_right_protocol(
 
     connect.assert_awaited_once()
     assert result["reason"] == "reconfigure_successful"
+    # The confirmed link is picked up by loading the entry.
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED

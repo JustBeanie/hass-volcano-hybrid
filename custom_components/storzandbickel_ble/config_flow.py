@@ -45,6 +45,7 @@ from .const import (
     MIN_TEMP,
     TEMP_STEP,
 )
+from .coordinator import StorzBickelConfigEntry
 from .families import FAMILY_NAMES, Family, create_device, detect_family
 from .other_integrations import CONF_MOVE_FROM, held_elsewhere
 
@@ -379,17 +380,24 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
         self._family = Family(entry.data.get(CONF_MODEL, Family.VOLCANO_HYBRID))
 
         if user_input is not None:
-            if error := await self._async_test_connection(address):
+            loaded = entry.state is ConfigEntryState.LOADED
+            if error := (
+                await self._async_retest_loaded(entry, address)
+                if loaded
+                else await self._async_test_connection(address)
+            ):
                 return self.async_show_form(
                     step_id="reconfigure",
                     errors={"base": error},
                     description_placeholders={"name": entry.title, "address": address},
                 )
-            # Nothing in the entry changes, so its update listener never fires;
-            # the reload is what picks the confirmed link up. Scheduled here
-            # rather than through async_update_reload_and_abort, which Home
-            # Assistant refuses alongside an update listener from 2026.12.
-            self.hass.config_entries.async_schedule_reload(entry.entry_id)
+            if not loaded:
+                # Nothing in the entry changes, so its update listener never
+                # fires; the reload is what picks the confirmed link up.
+                # Scheduled here rather than through
+                # async_update_reload_and_abort, which Home Assistant refuses
+                # alongside an update listener from 2026.12.
+                self.hass.config_entries.async_schedule_reload(entry.entry_id)
             return self.async_abort(reason="reconfigure_successful")
 
         return self.async_show_form(
@@ -416,6 +424,23 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
         """
         if DOMAIN not in self.hass.config.components:
             await async_setup_component(self.hass, DOMAIN, {})
+
+    async def _async_retest_loaded(
+        self, entry: StorzBickelConfigEntry, address: str
+    ) -> str | None:
+        """Re-test a device whose entry is running; return an error key.
+
+        The running entry usually holds the one connection the device allows,
+        so a second client cannot test anything: through a proxy it is turned
+        away from a vaporizer that is working, and on a local adapter closing
+        it takes the live link down too. The entry's own link is rebuilt
+        instead, which is the same proof and leaves it connected.
+        """
+        if async_ble_device_from_address(self.hass, address, connectable=True) is None:
+            return "not_in_range"
+        coordinator = entry.runtime_data
+        await coordinator.async_reconnect()
+        return None if coordinator.device.connected else "cannot_connect"
 
     async def _async_test_connection(self, address: str) -> str | None:
         """Prove we can talk to the device; return an error key on failure."""

@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.1] - 2026-11-16
+
+### Fixed
+
+- **A setup that failed part-way no longer keeps the vaporizer's connection.**
+  If anything went wrong after Home Assistant had connected, the link stayed
+  open with nothing left to close it, so neither the phone app nor a retry
+  could get in until Home Assistant was restarted.
+- **A startup option that cannot be applied no longer fails the whole device.**
+  If *Start the fan on startup* or the initial temperature could not be written, the
+  entry failed and stayed failed until it was reloaded by hand. A portable that
+  was asleep at startup hit this every time. It is now logged as a warning and
+  setup carries on.
+- **Reconfigure no longer reports a working vaporizer as unreachable.** It
+  tested with a second connection while the device's only connection was
+  already in use by the integration itself. A running device is now re-tested
+  by rebuilding its own link, and is left connected rather than reloaded.
+- **Reconnect after delay waits its full time with auto-connect on.** The
+  first advertisement after the link dropped used to reconnect about a second
+  later, so the configured delay never ran.
+- **Turning auto-connect off in the moment before a reconnect no longer stops
+  later reconnects.** Advertisements were ignored from then on until the entry
+  was reloaded.
+- **A replaced link reporting its disconnect late no longer drops the new
+  one.** The live connection was forgotten while still open.
+- **A link is always closed when it is thrown away**, including when clearing
+  its cached service table fails first.
+- Waiting for a temperature no longer logs "Future exception was never
+  retrieved" when the wait is aborted and times out at the same moment.
+
+### Changed
+
+- Error messages say "the device" instead of "the Volcano Hybrid", since they
+  are also shown for a Crafty, Venty or Veazy.
+- The GitHub workflows run with a read-only token, which closes the five
+  open code-scanning alerts, and Dependabot keeps the actions they use current.
+- Bug reports and feature requests are now forms, and there is a security
+  policy.
+
 ## [4.1.0] - 2026-11-09
 
 ### Changed

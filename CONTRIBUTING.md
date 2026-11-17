@@ -33,7 +33,7 @@ pip install -r requirements_test.txt
 
 ## Checks
 
-All three run in CI on every push and pull request:
+All four run in CI on every push and pull request:
 
 ```bash
 python -m pytest tests/
@@ -45,6 +45,10 @@ python -m ruff check .
 
 ```bash
 python -m ruff format --check .
+```
+
+```bash
+python -m mypy
 ```
 
 CI holds every pull request to these, and so should you before pushing:
@@ -80,15 +84,19 @@ core's test-layout rules.
   exactly one level.** The public coroutines take it; the private `_read` and
   `_write` helpers assume it is already held. `asyncio.Lock` is not reentrant,
   and re-entering it is what deadlocked the pre-2.0 implementation.
-- Background work goes through `ConfigEntry.async_create_background_task` so it
-  is cancelled on unload. A bare `asyncio.create_task` can be garbage collected
-  mid-flight and will happily keep driving the device after the integration is
-  gone.
+- Background work goes through `ConfigEntry.async_create_task`, so the entry
+  owns it and waits for it on unload. A bare `asyncio.create_task` can be
+  garbage collected mid-flight and will happily keep driving the device after
+  the integration is gone.
+- Anything that has to be undone when the entry goes away is registered with
+  `entry.async_on_unload` as soon as it exists. Home Assistant runs those when
+  setup fails part-way as well as on unload, which is what stops a failed setup
+  from leaving the Bluetooth link open.
 - Entity names, action descriptions and error messages live in `strings.json`;
   regenerate `translations/en.json` from it rather than editing both.
 - Changing an entity's `unique_id` breaks people's automations. If it is
   genuinely necessary, bump the config entry version and migrate the registry in
-  place in `async_migrate_entry`, the way the 1 → 2 migration does.
+  place in `async_migrate_entry`.
 
 ## Quality scale
 

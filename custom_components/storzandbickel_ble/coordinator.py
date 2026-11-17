@@ -233,11 +233,18 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
         # already started, so a reconnect could sit behind it for the remainder
         # -- measured at 10-15s on real hardware, against under a second when
         # the cooldown happened to have expired.
+        # Nor while a reconnect is already scheduled. That includes the delayed
+        # reconnect button's: the first advertisement after it dropped the
+        # link used to replace its timer with this shorter one, so the
+        # configured wait never ran.
         if (
             self.auto_connect
             and not self.device.connected
             and not self._reconnect_pending
+            and self._cancel_reconnect is None
         ):
+            # Set first: with no delay the reconnect can run to completion
+            # inside this call, and it clears the flag when it ends.
             self._reconnect_pending = True
             self._async_schedule_reconnect(self.auto_connect_delay)
 
@@ -274,6 +281,10 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
         if self._cancel_reconnect is not None:
             self._cancel_reconnect()
             self._cancel_reconnect = None
+            # The reconnect that would have cleared this will not run now.
+            # Left set, it made every later advertisement look like one
+            # already being acted on, so nothing reconnected until a reload.
+            self._reconnect_pending = False
 
     async def _async_reconnect(self) -> None:
         """Reconnect on an advertisement, then let the next one try again.
@@ -528,6 +539,9 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
         well; ``timeout_key`` the one for running out of time.
         """
         done: asyncio.Future[None] = self.hass.loop.create_future()
+        # An abort recorded just as the timeout fires is never awaited; read
+        # it here so asyncio does not log it as an exception nobody retrieved.
+        done.add_done_callback(lambda future: future.cancelled() or future.exception())
 
         @callback
         def _check() -> None:

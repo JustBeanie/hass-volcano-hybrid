@@ -432,3 +432,62 @@ async def test_startup_options_still_apply_with_auto_connect_off(
     await hass.async_block_till_done()
 
     assert fake_client.writes
+
+
+async def test_a_cancelled_reconnect_does_not_block_the_next_advertisement(
+    hass: HomeAssistant,
+    mock_bluetooth: AsyncMock,
+    config_entry: MockConfigEntry,
+    fake_client: FakeBleakClient,
+) -> None:
+    """Cancelling a scheduled reconnect forgets that one was pending.
+
+    Left set, the flag made every later advertisement look like one already
+    being acted on, so the link stayed down until the entry was reloaded.
+    """
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry, options={CONF_AUTO_CONNECT_DELAY: 5.0}
+    )
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = config_entry.runtime_data
+    advertisement = (make_service_info(), BluetoothChange.ADVERTISEMENT)
+
+    coordinator.device._handle_disconnect(fake_client)
+    coordinator.async_set_ble_device(*advertisement)
+    assert coordinator._reconnect_pending is True
+
+    await coordinator.async_set_auto_connect(False)
+    assert coordinator._reconnect_pending is False
+
+    await coordinator.async_set_auto_connect(True)
+    await hass.async_block_till_done()
+    coordinator.device._handle_disconnect(fake_client)
+    coordinator.async_set_ble_device(*advertisement)
+
+    assert coordinator._cancel_reconnect is not None
+
+
+async def test_an_advertisement_does_not_cut_a_delayed_reconnect_short(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """The delayed reconnect waits its full time with auto-connect on.
+
+    The vaporizer advertises as soon as the link drops, and that used to
+    replace the button's timer with the much shorter auto-connect one.
+    """
+    coordinator = loaded_entry.runtime_data
+    await coordinator.async_delayed_reconnect()
+
+    with patch.object(coordinator, "async_refresh") as refresh:
+        coordinator.async_set_ble_device(
+            make_service_info(), BluetoothChange.ADVERTISEMENT
+        )
+        await hass.async_block_till_done()
+        refresh.assert_not_called()
+
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=12))
+        await hass.async_block_till_done()
+
+    refresh.assert_called_once()

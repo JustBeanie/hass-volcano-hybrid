@@ -6,10 +6,20 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
+# Read-only: nothing here writes to the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch supersedes the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ruff:
     name: Ruff
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,6 +34,7 @@ jobs:
   mypy:
     name: Mypy (strict)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,6 +50,7 @@ jobs:
   test:
     name: Pytest
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,7 +76,10 @@ jobs:
       # Lists exactly which changed lines a pull request leaves uncovered.
       # On a push to master there is no diff, so this passes trivially.
       - name: Report coverage of changed lines
+        env:
+          # Passed through the environment, never interpolated into the script.
+          BASE_REF: ${{ github.base_ref || 'master' }}
         run: |
           diff-cover coverage.xml \
-            --compare-branch=origin/${{ github.base_ref || 'master' }} \
+            --compare-branch="origin/$BASE_REF" \
             --fail-under=100

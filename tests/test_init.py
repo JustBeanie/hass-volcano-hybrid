@@ -9,6 +9,7 @@ from homeassistant.components.bluetooth import BluetoothChange
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
+import pytest
 from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.storzandbickel_ble import PLATFORMS
@@ -233,3 +234,56 @@ async def test_platforms_are_all_declared() -> None:
         Platform.SWITCH,
         Platform.UPDATE,
     }
+
+
+async def test_a_failed_startup_option_does_not_fail_setup(
+    hass: HomeAssistant,
+    mock_bluetooth: AsyncMock,
+    fake_client: FakeBleakClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A startup write that does not land is logged; the entry still loads.
+
+    Home Assistant does not retry a setup that raised, so letting the error
+    through left the entry failed until someone reloaded it by hand.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title=DEVICE_NAME,
+        version=1,
+        unique_id=FORMATTED_MAC,
+        data={CONF_ADDRESS: ADDRESS},
+        options={CONF_FAN_ON_CONNECT: True, CONF_INITIAL_TEMP: 180},
+    )
+    entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.storzandbickel_ble.volcano.VolcanoHybrid.async_turn_fan_on",
+        side_effect=DeviceConnectionError("nope", ConnectionFailure.WRITE_FAILED),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert "Could not apply the startup options" in caplog.text
+    assert hass.states.get("climate.s_b_volcano_h") is not None
+
+
+async def test_a_setup_that_fails_after_connecting_lets_go_of_the_link(
+    hass: HomeAssistant,
+    mock_bluetooth: AsyncMock,
+    config_entry: MockConfigEntry,
+    fake_client: FakeBleakClient,
+) -> None:
+    """A link opened by a setup that then failed is not left without an owner."""
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+        side_effect=RuntimeError("a platform would not load"),
+    ):
+        assert not await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert config_entry.state is ConfigEntryState.SETUP_ERROR
+    assert fake_client.is_connected is False
