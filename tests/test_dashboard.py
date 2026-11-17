@@ -68,7 +68,8 @@ def test_every_file_the_card_needs_is_in_the_package() -> None:
     """The card and the module it imports ship inside the integration."""
     card = (FRONTEND_DIR / CARD_FILE).read_text(encoding="utf-8")
     assert (FRONTEND_DIR / "card-logic.js").is_file()
-    assert 'from "./card-logic.js"' in card
+    # Imported next to the card, carrying the card's own ?v=<version>.
+    assert "new URL(`./card-logic.js${new URL(import.meta.url).search}`" in card
     # Nothing is fetched from anywhere else.
     assert "http://" not in card.replace("https://github.com/JustBeanie", "")
     assert "https://" not in card.replace("https://github.com/JustBeanie", "")

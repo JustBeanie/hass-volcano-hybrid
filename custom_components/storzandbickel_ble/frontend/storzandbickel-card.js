@@ -2,11 +2,11 @@
  * The Storz & Bickel dashboard card.
  *
  * A card for a vaporizer rather than a thermostat: the temperature it is at,
- * a bar that fills as it heats towards the target, one button each for heat
+ * a bar that fills as it heats toward the target, one button each for heat
  * and air, and the temperatures you actually use as one-tap presets.
  *
  * It is drawn with Home Assistant's own building blocks and nothing else:
- * `ha-card` for the surface, theme variables for every colour, and the same
+ * `ha-card` for the surface, theme variables for every color, and the same
  * height, radius and spacing the built-in card features use for controls. So
  * it sits on a dashboard like a native card, in any theme, without looking
  * like the thermostat card.
@@ -17,7 +17,11 @@
  * What to show is decided in card-logic.js; this file only builds elements.
  */
 
-import {
+// The logic is imported with this file's own `?v=<version>`. A plain
+// "./card-logic.js" has the same URL in every release, so Home Assistant's
+// service worker went on serving the old one beside a new card after an
+// update.
+const {
   CARD_TYPE,
   DOMAIN,
   STATUS_TYPE,
@@ -29,7 +33,10 @@ import {
   statusSupported,
   stepTarget,
   stubConfig,
-} from "./card-logic.js";
+} = await import(
+  new URL(`./card-logic.js${new URL(import.meta.url).search}`, import.meta.url)
+    .href
+);
 
 const TONES = {
   success: "var(--success-color)",
@@ -208,6 +215,29 @@ const CARD_STYLE = `
     color: var(--tone);
   }
 
+  .lists {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin-bottom: -8px;
+  }
+  .list {
+    flex: none;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: none;
+    color: var(--secondary-text-color);
+    font-size: var(--ha-font-size-s, 12px);
+    white-space: nowrap;
+  }
+  .list[aria-selected="true"] {
+    background: var(--idle-fill);
+    color: var(--primary-text-color);
+    font-weight: var(--ha-font-weight-medium, 500);
+  }
+
   .presets {
     flex-wrap: wrap;
     gap: 8px;
@@ -264,6 +294,22 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+// How often an element showing the auto-off countdown redraws by itself. The
+// label is in whole minutes; nothing else would move it between state changes.
+const TICK_INTERVAL = 15000;
+
+/** Keep `element._update` running on a timer while `ticking`, and only then. */
+function keepTicking(element, ticking) {
+  if (ticking && element.isConnected && !element._tick) {
+    element._tick = setInterval(() => element._update(), TICK_INTERVAL);
+  } else if ((!ticking || !element.isConnected) && element._tick) {
+    clearInterval(element._tick);
+    element._tick = undefined;
+  }
+}
+
+const hasTimer = (items) => items.some((item) => item.kind === "auto_off");
+
 function moreInfo(source, entityId) {
   source.dispatchEvent(
     new CustomEvent("hass-more-info", {
@@ -297,6 +343,7 @@ class StorzBickelCard extends HTMLElement {
     }
     this._config = config;
     this._key = undefined;
+    this._list = undefined;
     this._update();
   }
 
@@ -305,8 +352,13 @@ class StorzBickelCard extends HTMLElement {
     this._update();
   }
 
+  connectedCallback() {
+    this._update();
+  }
+
   disconnectedCallback() {
     clearTimeout(this._sendTimer);
+    keepTicking(this, false);
   }
 
   // Redraws only when what is shown has changed: `hass` is set on every
@@ -315,8 +367,11 @@ class StorzBickelCard extends HTMLElement {
     if (!this._hass || !this._config) return;
     const resolved = resolveDevice(this._hass, this._config.device_id);
     const model = resolved
-      ? cardModel(this._hass, resolved, this._config)
+      ? cardModel(this._hass, resolved, this._config, {
+          list: this._chosenList(),
+        })
       : null;
+    keepTicking(this, Boolean(model && hasTimer(model.extras)));
     // A target being stepped is shown as stepped until the device catches up.
     if (model && this._pendingTarget !== undefined) {
       const sent = !this._sendTimer;
@@ -405,7 +460,7 @@ class StorzBickelCard extends HTMLElement {
     const fraction = model.progress ?? 0;
     const fill = el("div");
     fill.style.width = `${Math.round(fraction * 100)}%`;
-    // Heat colour while it is heating, the "reached" colour once it is
+    // Heat color while it is heating, the "reached" color once it is
     // there, and muted when the heater is off and it is only cooling.
     fill.style.setProperty(
       "--fill",
@@ -428,7 +483,7 @@ class StorzBickelCard extends HTMLElement {
       fill
     );
 
-    const toggle = (control, toneColour, icon, onclick) => {
+    const toggle = (control, toneColor, icon, onclick) => {
       const button = el(
         "button",
         {
@@ -442,7 +497,7 @@ class StorzBickelCard extends HTMLElement {
         el("ha-icon", { icon }),
         el("span", { textContent: control.label })
       );
-      button.style.setProperty("--tone", toneColour);
+      button.style.setProperty("--tone", toneColor);
       return button;
     };
     const buttons = el(
@@ -460,6 +515,26 @@ class StorzBickelCard extends HTMLElement {
     );
 
     const rows = [header, readout, bar, buttons];
+
+    if (model.lists.length > 0) {
+      rows.push(
+        el(
+          "div",
+          { class: "lists", role: "tablist" },
+          ...model.lists.map((list, index) =>
+            el("button", {
+              class: "list",
+              "data-key": `list${index}`,
+              type: "button",
+              role: "tab",
+              "aria-selected": String(list.active),
+              textContent: list.name,
+              onclick: () => this._chooseList(index),
+            })
+          )
+        )
+      );
+    }
 
     if (model.presets.length > 0) {
       rows.push(
@@ -516,6 +591,35 @@ class StorzBickelCard extends HTMLElement {
     }
   }
 
+  // The preset list picked on this card is remembered per browser and
+  // device, so it survives a reload. Storage can be missing or refuse, and
+  // then the choice lasts as long as the page.
+  _storageKey() {
+    return `${CARD_TYPE}:list:${this._config.device_id ?? ""}`;
+  }
+
+  _chosenList() {
+    if (this._list === undefined) {
+      try {
+        const saved = window.localStorage.getItem(this._storageKey());
+        this._list = saved === null ? null : Number.parseInt(saved, 10);
+      } catch {
+        this._list = null;
+      }
+    }
+    return this._list ?? undefined;
+  }
+
+  _chooseList(index) {
+    this._list = index;
+    try {
+      window.localStorage.setItem(this._storageKey(), String(index));
+    } catch {
+      // Remembered for this page only.
+    }
+    this._update();
+  }
+
   _call(service, data) {
     this._hass.callService("climate", service, {
       entity_id: this._model.entity,
@@ -566,6 +670,19 @@ class StorzBickelCard extends HTMLElement {
         },
         { name: "name", selector: { text: {} } },
         { name: "presets", selector: { text: { multiple: true } } },
+        {
+          name: "preset_lists",
+          selector: {
+            object: {
+              multiple: true,
+              label_field: "name",
+              fields: {
+                name: { required: true, selector: { text: {} } },
+                presets: { selector: { text: { multiple: true } } },
+              },
+            },
+          },
+        },
       ],
       computeLabel: (schema, localize) =>
         ({
@@ -575,11 +692,15 @@ class StorzBickelCard extends HTMLElement {
             "Device",
           name: localize("ui.panel.lovelace.editor.card.generic.name") || "Name",
           presets: "Temperature presets",
+          preset_lists: "Preset lists",
         })[schema.name],
       computeHelper: (schema) =>
-        schema.name === "presets"
-          ? "One-tap targets, in the temperature unit Home Assistant uses. Leave empty for the defaults."
-          : undefined,
+        ({
+          presets:
+            "One-tap targets, in the temperature unit Home Assistant uses. Leave empty for the defaults.",
+          preset_lists:
+            "Optional named sets of presets. With two or more, the card shows a tab for each; they replace the presets above.",
+        })[schema.name],
     };
   }
 }
@@ -645,11 +766,20 @@ class StorzBickelStatus extends HTMLElement {
     this._update();
   }
 
+  connectedCallback() {
+    this._update();
+  }
+
+  disconnectedCallback() {
+    keepTicking(this, false);
+  }
+
   _update() {
     if (!this._hass || !this._context?.entity_id) return;
     const deviceId = deviceOf(this._hass, this._context.entity_id);
     const resolved = resolveDevice(this._hass, deviceId);
     const items = resolved ? statusItems(this._hass, resolved) : [];
+    keepTicking(this, hasTimer(items));
     const key = JSON.stringify(items);
     if (key === this._key) return;
     this._key = key;

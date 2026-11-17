@@ -95,7 +95,7 @@ def _fault_log_attributes(state: VolcanoState) -> dict[str, Any]:
             {
                 "code": code,
                 "hex": f"0x{code:02X}",
-                "fault": FAULT_CODES.get(code, (None, "Unrecognised fault"))[1],
+                "fault": FAULT_CODES.get(code, (None, "Unrecognized fault"))[1],
             }
             for code in state.fault_log or []
         ],

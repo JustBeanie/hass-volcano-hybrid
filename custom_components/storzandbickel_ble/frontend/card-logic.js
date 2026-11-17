@@ -27,6 +27,8 @@ const ROLES = {
   linkHealth: ["sensor", "link_health"],
   battery: ["sensor", "battery"],
   find: ["button", "find"],
+  autoOffTime: ["number", "auto_off_time"],
+  autoOffCountdown: ["sensor", "auto_off_countdown"],
 };
 
 const domainOf = (entityId) => entityId.split(".", 1)[0];
@@ -87,13 +89,66 @@ const entityName = (hass, domain, key, fallback) =>
   fallback;
 
 /**
+ * How long until the device switches its heater off by itself, while it heats.
+ *
+ * A portable reports the time left, and that is used as it stands. The
+ * Volcano Hybrid reports only the delay it is set to, so the time left is
+ * worked out from when the heater was turned on and marked `estimated`. The
+ * device's own timer may restart when it is used, so the real switch-off is
+ * at or after the estimate, not before -- unless Home Assistant restarted
+ * while it was heating, which moves "turned on" to the restart.
+ *
+ * Undefined while the heater is off or nothing says how long is left.
+ */
+export function autoOff(hass, resolved, now = Date.now()) {
+  const climate = stateOf(hass, resolved.climate);
+  if (!known(climate) || climate.state !== "heat") return undefined;
+
+  const countdown = stateOf(hass, resolved.autoOffCountdown);
+  const left = known(countdown) ? Number.parseFloat(countdown.state) : NaN;
+  if (Number.isFinite(left)) {
+    return {
+      entity: resolved.autoOffCountdown,
+      seconds: Math.max(0, left),
+      estimated: false,
+    };
+  }
+
+  const delay = stateOf(hass, resolved.autoOffTime);
+  const minutes = known(delay) ? Number.parseFloat(delay.state) : NaN;
+  const since = Date.parse(climate.last_changed);
+  if (!Number.isFinite(minutes) || !Number.isFinite(since)) return undefined;
+  const elapsed = Math.max(0, (now - since) / 1000);
+  return {
+    entity: resolved.autoOffTime,
+    seconds: Math.max(0, minutes * 60 - elapsed),
+    estimated: true,
+  };
+}
+
+/** "Auto-off in 42 min", "Auto-off in ~1 h 5 min", in whole minutes, rounded up. */
+export function autoOffLabel(timer) {
+  const total = Math.ceil(timer.seconds / 60);
+  if (total <= 0) return "Auto-off due";
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  const text =
+    hours === 0
+      ? `${minutes} min`
+      : minutes === 0
+        ? `${hours} h`
+        : `${hours} h ${minutes} min`;
+  return `Auto-off in ${timer.estimated ? "~" : ""}${text}`;
+}
+
+/**
  * What the status row shows, left to right.
  *
  * Each item names the entity it speaks for, so the row can open that
  * entity's own dialog and show its own icon. `tone` is one of `success`,
- * `active`, `warning` or `neutral`; the element maps it to a theme colour.
+ * `active`, `warning` or `neutral`; the element maps it to a theme color.
  */
-export function statusItems(hass, resolved) {
+export function statusItems(hass, resolved, now = Date.now()) {
   const items = [];
   const climate = stateOf(hass, resolved.climate);
   const connection = stateOf(hass, resolved.connection);
@@ -132,6 +187,16 @@ export function statusItems(hass, resolved) {
       label: action
         ? hass.formatEntityAttributeValue(climate, "hvac_action")
         : hass.formatEntityState(climate),
+    });
+  }
+
+  const timer = autoOff(hass, resolved, now);
+  if (timer) {
+    items.push({
+      kind: "auto_off",
+      tone: "neutral",
+      entity: timer.entity,
+      label: autoOffLabel(timer),
     });
   }
 
@@ -195,15 +260,56 @@ export function temperatureUnit(hass) {
  * dropped rather than shown as a button that cannot work. Sorted, without
  * repeats, and limited to what the device accepts.
  */
-export function presets(config, unit, min, max) {
-  const given = Array.isArray(config?.presets) ? config.presets : [];
+export function presets(config, unit, min, max, fallback = true) {
+  const raw = config?.presets;
+  // A list from the editor, or "175, 185" written by hand in YAML.
+  const given = Array.isArray(raw)
+    ? raw
+    : typeof raw === "string"
+      ? raw.split(/[\s,;]+/)
+      : [];
   const parsed = given
     .map((value) => Number.parseFloat(value))
     .filter((value) => Number.isFinite(value));
-  const values = parsed.length > 0 ? parsed : DEFAULT_PRESETS[unit];
+  const values =
+    parsed.length > 0 ? parsed : fallback ? DEFAULT_PRESETS[unit] : [];
   return [...new Set(values)]
     .filter((value) => value >= min && value <= max)
     .sort((left, right) => left - right);
+}
+
+/**
+ * The preset lists to offer, each `{ name, values }`.
+ *
+ * A card can carry several named lists under `preset_lists` and switch
+ * between them; a list with nothing usable in it is left out. Without any,
+ * there is one unnamed list: the card's `presets`, or the defaults.
+ * `presets: false` turns presets off altogether, named lists included.
+ */
+export function presetLists(config, unit, min, max) {
+  if (config?.presets === false) return [];
+  const given = Array.isArray(config?.preset_lists) ? config.preset_lists : [];
+  const named = given
+    .map((list, index) => ({
+      name: String(list?.name ?? "").trim() || `Presets ${index + 1}`,
+      values: presets(list, unit, min, max, false),
+    }))
+    .filter((list) => list.values.length > 0);
+  return named.length > 0
+    ? named
+    : [{ name: undefined, values: presets(config, unit, min, max) }];
+}
+
+/**
+ * Which list to show: the one asked for if it exists, else the first that
+ * holds the current target, else the first.
+ */
+export function chosenList(lists, requested, target) {
+  if (Number.isInteger(requested) && requested >= 0 && requested < lists.length) {
+    return requested;
+  }
+  const holding = lists.findIndex((list) => list.values.includes(target));
+  return holding === -1 ? 0 : holding;
 }
 
 /** A target moved by ``delta``, kept inside what the device accepts. */
@@ -212,7 +318,7 @@ export function stepTarget(target, delta, min, max) {
 }
 
 /**
- * How far the block is towards the target, from 0 to 1.
+ * How far the block is toward the target, from 0 to 1.
  *
  * Measured from the lowest temperature the device can be set to, which is
  * the nearest thing to "cold" it reports. Undefined when either temperature
@@ -228,10 +334,15 @@ export function progress(current, target, min) {
  * Everything the card draws for one device, as plain data.
  *
  * `available` is false while the device cannot be reached; the card then
- * shows the last known numbers greyed out and disables its controls, apart
+ * shows the last known numbers grayed out and disables its controls, apart
  * from the ones the integration keeps usable to bring the link back.
  */
-export function cardModel(hass, resolved, config = {}) {
+export function cardModel(
+  hass,
+  resolved,
+  config = {},
+  { now = Date.now(), list } = {}
+) {
   const climate = stateOf(hass, resolved.climate);
   const attributes = climate?.attributes ?? {};
   const available = Boolean(known(climate));
@@ -243,7 +354,9 @@ export function cardModel(hass, resolved, config = {}) {
   const heating = available && climate.state === "heat";
   const fanModes = attributes.fan_modes;
   const hasAir = Array.isArray(fanModes) && fanModes.includes("on");
-  const [status, ...extras] = statusItems(hass, resolved);
+  const [status, ...extras] = statusItems(hass, resolved, now);
+  const lists = presetLists(config, unit, min, max);
+  const chosen = chosenList(lists, list, target);
 
   return {
     entity: resolved.climate,
@@ -270,7 +383,15 @@ export function cardModel(hass, resolved, config = {}) {
           label: entityName(hass, "switch", "fan", "Air"),
         }
       : undefined,
-    presets: presets(config, unit, min, max).map((value) => ({
+    // Tabs to switch lists, only when there is more than one to switch to.
+    lists:
+      lists.length > 1
+        ? lists.map((entry, index) => ({
+            name: entry.name,
+            active: index === chosen,
+          }))
+        : [],
+    presets: (lists[chosen]?.values ?? []).map((value) => ({
       value,
       active: value === target,
     })),

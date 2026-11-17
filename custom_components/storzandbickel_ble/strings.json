@@ -7,7 +7,7 @@
         "description": "Do you want to set up {name}?"
       },
       "options": {
-        "title": "Startup behaviour",
+        "title": "Startup behavior",
         "description": "Optional settings applied to {name} ({address}) whenever Home Assistant starts up or reloads this integration. You can change these later without re-adding the device.",
         "data": {
           "initial_temperature": "Initial temperature",
@@ -70,7 +70,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Startup behaviour",
+        "title": "Startup behavior",
         "description": "These are applied whenever Home Assistant starts up or reloads this integration.",
         "data": {
           "initial_temperature": "Initial temperature",
@@ -236,7 +236,7 @@
           "heater_feedback_low": "Heater feedback too low",
           "heater_feedback_high": "Heater feedback too high",
           "heater_feedback_deviation": "Heater feedback outside its band",
-          "unrecognised": "Unrecognised fault"
+          "unrecognised": "Unrecognized fault"
         }
       },
       "status_register_2": {
@@ -314,7 +314,7 @@
         "name": "Total charging time"
       },
       "colour": {
-        "name": "Colour"
+        "name": "Color"
       },
       "heater_mode": {
         "name": "Heater mode",
@@ -352,7 +352,7 @@
         "name": "Automatic Bluetooth shutdown"
       },
       "charge_optimisation": {
-        "name": "Charge optimisation"
+        "name": "Charge optimization"
       },
       "charge_limit": {
         "name": "Charge limit"

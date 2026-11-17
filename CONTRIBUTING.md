@@ -61,7 +61,7 @@ node --test "tests/frontend/*.test.mjs"
 CI holds every pull request to these, and so should you before pushing:
 
 - **100% line and branch coverage** of the whole integration
-  (`--cov-branch --cov-fail-under=100`). A branch nobody tests is a behaviour
+  (`--cov-branch --cov-fail-under=100`). A branch nobody tests is a behavior
   nobody has checked.
 - **No warnings** from the integration's own code, and no coroutine left
   un-awaited, in the test run. Both are errors (`filterwarnings` in
@@ -112,9 +112,9 @@ core's test-layout rules.
   dependencies. Keep it that way: what ships is what is in the repository.
 - Decisions go in `card-logic.js`, which has no DOM in it and is what the
   tests cover. `storzandbickel-card.js` only turns its results into elements.
-- Draw with Home Assistant's own building blocks: `ha-card`, theme colour
+- Draw with Home Assistant's own building blocks: `ha-card`, theme color
   variables, and the control height, radius and spacing the built-in card
-  features use. No colour or size of its own, so it matches every theme.
+  features use. No color or size of its own, so it matches every theme.
 - Find entities by `translation_key` and device, never by entity ID.
 
 ## Quality scale

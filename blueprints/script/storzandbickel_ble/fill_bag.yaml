@@ -64,7 +64,7 @@ blueprint:
           max: 30
           unit_of_measurement: min
     heat_off_after:
-      name: Turn the heat off afterwards
+      name: Turn the heat off afterward
       default: true
       selector:
         boolean:

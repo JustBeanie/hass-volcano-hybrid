@@ -392,7 +392,7 @@ async def test_a_veazy_adds_its_extras(
     ids = _entity_ids(hass, entry)
     assert "switch.permanent_bluetooth" in ids
     assert "sensor.colour" in ids
-    assert hass.states.get("sensor.my_veazy_colour").state == "pink"
+    assert hass.states.get("sensor.my_veazy_color").state == "pink"
 
 
 # -- adding one ------------------------------------------------------------------
