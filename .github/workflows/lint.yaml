@@ -83,3 +83,27 @@ jobs:
           diff-cover coverage.xml \
             --compare-branch="origin/$BASE_REF" \
             --fail-under=100
+
+  # An early warning, not a gate. requirements_test.txt pins the Home
+  # Assistant the suite is held to; this runs the same tests against the
+  # newest one published, betas included, so an API that is about to be
+  # removed shows up here a month before it reaches a release.
+  test-prerelease:
+    name: Pytest (newest Home Assistant, betas included)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_test.txt
+          pip install --upgrade --pre "pytest-homeassistant[bluetooth]"
+      - name: Show the Home Assistant under test
+        run: pip show homeassistant | grep -i '^version'
+      - name: Run tests
+        run: python -m pytest tests/

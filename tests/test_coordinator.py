@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from homeassistant.components.bluetooth import BluetoothChange
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import device_registry as dr, issue_registry as ir
 import pytest
 from pytest_homeassistant.common import MockConfigEntry
 
@@ -440,3 +440,44 @@ async def test_a_command_restores_the_fast_interval(
     await coordinator.async_turn_heater_on()
 
     assert coordinator.update_interval == ACTIVE_INTERVAL
+
+
+async def test_the_device_page_follows_a_firmware_change(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """Details an entity wrote at setup are kept current by later polls.
+
+    They used to be written once, so a firmware update, or a portable that
+    was asleep when Home Assistant started, left the device page stale until
+    the entry was reloaded.
+    """
+    registry = dr.async_get(hass)
+    coordinator = loaded_entry.runtime_data
+    (device,) = dr.async_entries_for_config_entry(registry, loaded_entry.entry_id)
+    assert device.sw_version == "V01.03.00.00"
+
+    coordinator.device.state.firmware_version = "V01.04.00.00"
+    await coordinator.async_refresh()
+
+    updated = registry.async_get(device.id)
+    assert updated is not None
+    assert updated.sw_version == "V01.04.00.00"
+    assert updated.serial_number == "VH38NHG700"
+
+
+async def test_a_detail_the_device_has_not_reported_is_not_blanked(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """A value that is unknown right now never overwrites a known one."""
+    registry = dr.async_get(hass)
+    coordinator = loaded_entry.runtime_data
+    (device,) = dr.async_entries_for_config_entry(registry, loaded_entry.entry_id)
+
+    state = coordinator.device.state
+    state.serial_number = state.firmware_version = state.model = None
+    coordinator._async_sync_device_details()
+
+    updated = registry.async_get(device.id)
+    assert updated is not None
+    assert updated.sw_version == "V01.03.00.00"
+    assert updated.serial_number == "VH38NHG700"

@@ -392,6 +392,10 @@ These are design constraints, not bugs:
 
 ## Entities
 
+<p align="center">
+  <img src="assets/device-page.png" alt="The Volcano Hybrid's device page in Home Assistant: climate control, fan, heater and screen switches, target temperature, fault and ready sensors, auto-connect and auto-off time" width="340">
+</p>
+
 | Entity | Notes |
 | --- | --- |
 | `climate.<name>` | Target temperature, heater mode and fan mode |
