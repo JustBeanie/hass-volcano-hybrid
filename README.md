@@ -23,8 +23,9 @@ they can be used in automations, scripts and dashboards like anything else.
 
 ## Features
 
-- **Dashboard card** — Home Assistant's own thermostat dial with heat and air
-  switches and a status row, added from the card picker with nothing to install
+- **Dashboard card** — the temperature, a bar that fills as it heats, heat and
+  air buttons and one-tap presets, added from the card picker with nothing to
+  install
 - **Climate entity** — target temperature, heater on/off and fan on/off in one card
 - **Individual switches** for the heater and the fan
 - **Screen backlight** as a dimmable light
@@ -415,23 +416,26 @@ These are design constraints, not bugs:
 ## Dashboard card
 
 <p align="center">
-  <img src="assets/dashboard-card.png" alt="The Storz &amp; Bickel dashboard card: Home Assistant's thermostat dial showing the target and current temperature, a heat switch, an air switch and a status row" width="340">
+  <img src="assets/dashboard-card.png" alt="The Storz &amp; Bickel dashboard card, heating and then ready: the current temperature, the target with plus and minus, a bar that fills as it heats, Heat and Fan buttons, and four temperature presets" width="640">
 </p>
 
-The integration comes with a card. **Edit dashboard → Add card → Storz &
-Bickel**, pick the device, and that is the whole setup. There is no resource to
-add; the integration serves the card itself.
+The integration comes with a card made for a vaporizer rather than a
+thermostat. **Edit dashboard → Add card → Storz & Bickel**, pick the device,
+and that is the whole setup. There is no resource to add; the integration
+serves the card itself.
 
-It is built from Home Assistant's own parts, so it follows your theme and
-behaves like every other card on the dashboard:
+- **The temperature it is at**, large, with the target beside it and plus and
+  minus to nudge it a degree at a time.
+- **A heat-up bar** that fills as the block climbs to the target, in the heat
+  colour while heating and green once the device reports it is ready.
+- **Heat** and, on a Volcano, **Fan** as one button each.
+- **Presets** for the temperatures you actually use, one tap each.
+- **Status** in the corner: *Heating*, *Ready*, or why it is not connected. On
+  a Crafty, Venty or Veazy the battery and a *Find device* button are added
+  underneath.
 
-- **The dial** is the built-in thermostat card: target temperature, current
-  temperature, and the same plus and minus buttons.
-- **Heat** and, on a Volcano, **air** are the built-in climate switches.
-- **The status row** says what the device is doing: *Heating*, *Ready* once it
-  reports it has reached the target, or why it is not connected. On a Crafty,
-  Venty or Veazy it also shows the battery and a *Find device* button. Select
-  an item to open that entity.
+It uses your theme's colours and Home Assistant's own control sizes, so it
+sits on a dashboard like any built-in card.
 
 In YAML:
 
@@ -439,11 +443,15 @@ In YAML:
 type: custom:storzandbickel-card
 device_id: <the device's ID>
 name: Volcano # optional
+presets: [175, 185, 195, 205] # optional, in Home Assistant's temperature unit
 ```
 
-The status row is also available on its own. On any tile or thermostat card
-for the device's climate entity, choose **Add feature → Storz & Bickel
-status**.
+Without `presets` the card offers 175, 185, 195 and 205 °C, or 350, 365, 380
+and 400 °F.
+
+The status is also available as a card feature of its own. On any tile or
+thermostat card for the device's climate entity, choose **Add feature → Storz
+& Bickel status**.
 
 ## Entities
 
