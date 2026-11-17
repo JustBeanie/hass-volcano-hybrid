@@ -48,14 +48,14 @@ they can be used in automations, scripts and dashboards like anything else.
 
 ## Supported devices
 
-| Device | Supported | Notes |
-| --- | --- | --- |
-| Volcano Hybrid | Yes | The device this integration is built and tested on |
-| Crafty, Crafty+ | **Experimental** | Below firmware V02.51 a Crafty can only be watched, not controlled |
-| Venty | **Experimental** | |
-| Veazy | **Experimental** | |
-| Volcano Classic | No | No Bluetooth radio — nothing to talk to |
-| Mighty, Mighty+ | No | Storz & Bickel's own app does not connect to it, and no Bluetooth protocol for it is known |
+| Device | Supported | Tested on hardware | Notes |
+| --- | --- | --- | --- |
+| Volcano Hybrid | Yes | Yes | The device this integration is built and tested on |
+| Crafty, Crafty+ | **Experimental** | Not yet | Below firmware V02.51 a Crafty can only be watched, not controlled |
+| Venty | **Experimental** | Not yet | |
+| Veazy | **Experimental** | Not yet | |
+| Volcano Classic | No | | No Bluetooth radio — nothing to talk to |
+| Mighty, Mighty+ | No | | Storz & Bickel's own app does not connect to it, and no Bluetooth protocol for it is known |
 
 The Volcano Hybrid was developed against firmware `V01.03.00.00` with BLE firmware
 `V01.00.00.00`; the protocol has been stable.
@@ -381,6 +381,26 @@ actions:
 
 More, including the full session script this was originally built around, are in
 [`examples/`](examples/).
+
+## Safety
+
+**Do not leave the device heating unattended.** This integration can switch a
+heating element on from an automation, and Bluetooth is not a link to trust
+with that on its own.
+
+What it does to fail safe, and what it does not:
+
+- **An "off" is checked and re-sent.** After heat off or air off on a Volcano,
+  the integration reads the device back a second later and sends the command
+  once more if it is still running.
+- **An "on" is never repeated.** If a heat-on or air-on command fails, it
+  fails; it will not arrive later, after you have walked away.
+- **A failed command is an error**, in the dashboard and in a script, so a
+  script stops instead of carrying on as if it had worked.
+- **If the connection drops, Home Assistant cannot switch anything off.** The
+  device's own auto-off timer is what protects you then, and it runs on the
+  device whether or not Home Assistant is connected. Leave it set to something
+  you are comfortable with (the **Auto-off time** entity).
 
 ## Known limitations
 

@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The scripts turn the air and the heat off if the temperature is not reached
   or the connection drops.
 
+### Changed
+
+- Releases now carry a zip built by a workflow, which is what HACS installs
+  from. Publishing a release whose tag does not match the integration's
+  version fails instead of shipping the mismatch.
+- The README has a safety section: what the integration re-sends, what it
+  never repeats, and why the device's own auto-off timer still matters.
+
 ## [4.1.2] - 2026-11-16
 
 ### Fixed
