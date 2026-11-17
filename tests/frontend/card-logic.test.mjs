@@ -563,6 +563,13 @@ test("the list shown is the one picked, else the one holding the target", () => 
   assert.equal(chosenList(lists, Number.NaN, 175), 0);
 });
 
+test("in °F the list holding the target is found by device setting", () => {
+  const lists = [{ values: [350, 365] }, { values: [380, 400] }];
+  // 379 °F and 380 °F are both 193 °C on the device.
+  assert.equal(chosenList(lists, undefined, 379, "°F"), 1);
+  assert.equal(chosenList(lists, undefined, 379), 0);
+});
+
 test("the card shows tabs for two or more lists, and the chosen list's presets", () => {
   const hass = volcano({
     states: [state("climate.s_b_volcano_h", "heat", { temperature: 210 })],

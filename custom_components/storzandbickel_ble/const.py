@@ -70,6 +70,11 @@ ISSUE_MIGRATE_FROM_OTHER = "migrate_from_other_integration"
 # Device limits.
 MIN_TEMP = 40
 MAX_TEMP = 230
+# The Crafty, Venty and Veazy stop lower than the Volcano.
+PORTABLE_MAX_TEMP = 210
+# The boost offsets a portable accepts on top of its target, in °C.
+MIN_BOOST = 1
+MAX_BOOST = 99
 TEMP_STEP = 5
 # The lowest auto-off delay offered. The device itself accepts less, so a value
 # set lower elsewhere is still read back and shown -- it just cannot be chosen.
@@ -83,7 +88,7 @@ DEFAULT_BRIGHTNESS = 70
 ACTIVE_INTERVAL = timedelta(seconds=10)
 
 # Once the heater and fan are both off there is nothing left to watch ramp, and
-# polling a cooling vaporiser six times a minute is pure BLE traffic and recorder
+# polling a cooling vaporizer six times a minute is pure BLE traffic and recorder
 # rows. Backing off is only safe because the status register is a notification
 # subscription: pressing heat or fan on the device itself still pushes a state
 # change straight away, whatever the poll interval says.

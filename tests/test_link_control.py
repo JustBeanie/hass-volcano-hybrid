@@ -440,7 +440,7 @@ async def test_a_cancelled_reconnect_does_not_block_the_next_advertisement(
     config_entry: MockConfigEntry,
     fake_client: FakeBleakClient,
 ) -> None:
-    """Cancelling a scheduled reconnect forgets that one was pending.
+    """Canceling a scheduled reconnect forgets that one was pending.
 
     Left set, the flag made every later advertisement look like one already
     being acted on, so the link stayed down until the entry was reloaded.

@@ -25,7 +25,6 @@ from homeassistant.helpers.typing import StateType
 
 from .ble_device import (
     ConnectionFailure,
-    DeviceState,
 )
 from .coordinator import (
     HEALTH_AUTO_CONNECT_OFF,
@@ -33,31 +32,34 @@ from .coordinator import (
     StorzBickelConfigEntry,
     StorzBickelCoordinator,
 )
-from .entity import StorzBickelEntity, always
-from .families import ALL_FAMILIES, PORTABLE, QVAP, VOLCANO_ONLY, Family
+from .entity import (
+    StorzBickelDescribedEntity,
+    StorzBickelEntity,
+    StorzBickelEntityDescription,
+    descriptions_for,
+)
+from .families import ALL_FAMILIES, PORTABLE, QVAP, Family
 from .qvap import HEATER_MODES
 from .volcano import (
     FAULT_CODES,
     VolcanoState,
 )
 
-# The coordinator owns every read, and writes are already serialised by the
-# single GATT lock in volcano.py, so Home Assistant does not need to throttle.
+# The coordinator owns every read, and writes are already serialized by the
+# single GATT lock in ble_device.py, so Home Assistant does not need to throttle.
 PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
-class StorzBickelSensorEntityDescription(SensorEntityDescription):
+class StorzBickelSensorEntityDescription(
+    SensorEntityDescription, StorzBickelEntityDescription
+):
     """Describes a sensor."""
 
     value_fn: Callable[[Any], StateType]
     # Diagnostic sensors must stay readable while the device is unreachable.
     available_when_disconnected: bool = False
     attributes_fn: Callable[[Any], dict[str, Any]] | None = None
-    # Which device families have this entity, and whether a given device of
-    # them can use it right now.
-    families: frozenset[Family] = VOLCANO_ONLY
-    available_fn: Callable[[DeviceState], bool] = always
 
 
 LINK_HEALTH_OPTIONS = [
@@ -67,11 +69,13 @@ LINK_HEALTH_OPTIONS = [
 ]
 
 LAST_FAULT_NONE = "none"
-LAST_FAULT_UNRECOGNISED = "unrecognised"
+# The state value keeps its original spelling: it is recorded in history and
+# keys the translations. Only the label reads "Unrecognized".
+LAST_FAULT_UNRECOGNIZED = "unrecognised"
 LAST_FAULT_OPTIONS = [
     LAST_FAULT_NONE,
     *(slug for slug, _ in FAULT_CODES.values()),
-    LAST_FAULT_UNRECOGNISED,
+    LAST_FAULT_UNRECOGNIZED,
 ]
 
 
@@ -84,7 +88,7 @@ def _last_fault(state: VolcanoState) -> str | None:
         return LAST_FAULT_NONE
     if code in FAULT_CODES:
         return FAULT_CODES[code][0]
-    return LAST_FAULT_UNRECOGNISED
+    return LAST_FAULT_UNRECOGNIZED
 
 
 def _fault_log_attributes(state: VolcanoState) -> dict[str, Any]:
@@ -306,12 +310,13 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         value_fn=lambda state: state.charge_minutes,
     ),
     StorzBickelSensorEntityDescription(
+        # British spelling kept: the key is part of the unique_id.
         key="colour",
         translation_key="colour",
         entity_category=EntityCategory.DIAGNOSTIC,
         available_when_disconnected=True,
         families=frozenset({Family.VEAZY}),
-        value_fn=lambda state: state.colour,
+        value_fn=lambda state: state.color,
     ),
 )
 
@@ -328,8 +333,7 @@ async def async_setup_entry(
             StorzBickelLinkHealthSensor(coordinator),
             *(
                 StorzBickelSensor(coordinator, description)
-                for description in SENSORS
-                if coordinator.family in description.families
+                for description in descriptions_for(coordinator, SENSORS)
             ),
         ]
     )
@@ -348,7 +352,7 @@ class StorzBickelLinkHealthSensor(StorzBickelEntity, SensorEntity):
     _attr_options = LINK_HEALTH_OPTIONS
 
     def __init__(self, coordinator: StorzBickelCoordinator) -> None:
-        """Initialise the sensor."""
+        """Initialize the sensor."""
         super().__init__(coordinator, "link_health")
 
     @property
@@ -377,23 +381,10 @@ class StorzBickelLinkHealthSensor(StorzBickelEntity, SensorEntity):
         }
 
 
-class StorzBickelSensor(StorzBickelEntity, SensorEntity):
+class StorzBickelSensor(StorzBickelDescribedEntity, SensorEntity):
     """A sensor."""
 
     entity_description: StorzBickelSensorEntityDescription
-
-    def __init__(
-        self,
-        coordinator: StorzBickelCoordinator,
-        description: StorzBickelSensorEntityDescription,
-    ) -> None:
-        """Initialise the sensor."""
-        super().__init__(coordinator, description.key)
-        self.entity_description = description
-
-    def _device_supports(self) -> bool:
-        """Return whether this device can use the entity."""
-        return self.entity_description.available_fn(self.data)
 
     @property
     def available(self) -> bool:

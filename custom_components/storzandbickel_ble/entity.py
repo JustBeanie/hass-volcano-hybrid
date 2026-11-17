@@ -2,18 +2,58 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+
 from homeassistant.helpers.device_registry import (
     CONNECTION_BLUETOOTH,
     DeviceInfo,
     format_mac,
 )
+from homeassistant.helpers.entity import EntityDescription
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .ble_device import DeviceState
 from .const import DOMAIN, MANUFACTURER
 from .coordinator import StorzBickelCoordinator
 from .crafty import CraftyState
-from .families import FAMILY_NAMES
+from .families import FAMILY_NAMES, VOLCANO_ONLY, Family
+
+
+def always(_state: DeviceState) -> bool:
+    """Return True: the default for an entity every device of its family has."""
+    return True
+
+
+def controllable(state: DeviceState) -> bool:
+    """Return whether the device accepts commands; old Crafty firmware does not."""
+    return not isinstance(state, CraftyState) or state.controllable
+
+
+def findable(state: DeviceState) -> bool:
+    """Return whether the device can be told to signal; of Craftys, only a +."""
+    return not isinstance(state, CraftyState) or state.is_plus
+
+
+@dataclass(frozen=True, kw_only=True)
+class StorzBickelEntityDescription(EntityDescription):
+    """What every description-driven entity of this integration adds."""
+
+    # Which device families have this entity, and whether a given device of
+    # them can use it right now.
+    families: frozenset[Family] = VOLCANO_ONLY
+    available_fn: Callable[[DeviceState], bool] = always
+
+
+def descriptions_for[D: StorzBickelEntityDescription](
+    coordinator: StorzBickelCoordinator, descriptions: Iterable[D]
+) -> list[D]:
+    """Return the descriptions the coordinator's device family has."""
+    return [
+        description
+        for description in descriptions
+        if coordinator.family in description.families
+    ]
 
 
 class StorzBickelEntity(CoordinatorEntity[StorzBickelCoordinator]):
@@ -26,7 +66,7 @@ class StorzBickelEntity(CoordinatorEntity[StorzBickelCoordinator]):
     _controls_device = False
 
     def __init__(self, coordinator: StorzBickelCoordinator, key: str) -> None:
-        """Initialise the entity and attach it to the device."""
+        """Initialize the entity and attach it to the device."""
         super().__init__(coordinator)
         formatted_mac = format_mac(coordinator.address)
         self._attr_unique_id = f"{formatted_mac}_{key}"
@@ -67,16 +107,20 @@ class StorzBickelEntity(CoordinatorEntity[StorzBickelCoordinator]):
         return True
 
 
-def always(_state: DeviceState) -> bool:
-    """Return True: the default for an entity every device of its family has."""
-    return True
+class StorzBickelDescribedEntity(StorzBickelEntity):
+    """An entity built from a :class:`StorzBickelEntityDescription`."""
 
+    entity_description: StorzBickelEntityDescription
 
-def controllable(state: DeviceState) -> bool:
-    """Return whether the device accepts commands; old Crafty firmware does not."""
-    return not isinstance(state, CraftyState) or state.controllable
+    def __init__(
+        self,
+        coordinator: StorzBickelCoordinator,
+        description: StorzBickelEntityDescription,
+    ) -> None:
+        """Initialize the entity from its description."""
+        super().__init__(coordinator, description.key)
+        self.entity_description = description
 
-
-def findable(state: DeviceState) -> bool:
-    """Return whether the device can be told to signal; of Craftys, only a +."""
-    return not isinstance(state, CraftyState) or state.is_plus
+    def _device_supports(self) -> bool:
+        """Return whether this device can use the entity."""
+        return self.entity_description.available_fn(self.data)

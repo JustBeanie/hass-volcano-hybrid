@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.2] - 2026-11-17
+
+### Fixed
+
+- **Boost and superboost set in °F landed a degree low**, the same way targets
+  did before 4.3.1. A boost of 19 °F (10.56 °C) was stored as 10 °C; it is
+  now rounded to 11 °C on the Crafty, Venty and Veazy.
+- **A fractional initial temperature in the options was truncated.** It is
+  rounded to the nearest degree.
+- **The `set_temperature` action no longer clamps a portable's target in
+  silence.** Above 210 °C on a Crafty, Venty or Veazy it now fails with a
+  message saying the device's highest target.
+- **The card opens on the right preset tab in °F.** With no tab picked yet,
+  it chose the list holding the exact target, so at 379 °F the list holding
+  380 was not found. It now matches by device setting.
+
+### Changed
+
+- Internal cleanup: one clamp for targets and boosts shared by every device,
+  one base class for the description-driven entities, one reconnect timer,
+  and American spelling in code comments. Entity IDs, unique IDs and
+  translation keys are unchanged.
+- The card's plus and minus buttons are labeled "Raise target" and "Lower
+  target" for screen readers, since a step in °F is about 2 °F.
+
 ## [4.3.1] - 2026-11-17
 
 ### Fixed

@@ -20,35 +20,39 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .ble_device import DeviceState
 from .const import (
     MAX_AUTO_OFF_MINUTES,
+    MAX_BOOST,
     MAX_TEMP,
     MIN_AUTO_OFF_MINUTES,
+    MIN_BOOST,
     MIN_TEMP,
     TEMP_STEP,
 )
 from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
 from .crafty import CraftyDevice
-from .entity import StorzBickelEntity, always, controllable
-from .families import ALL_FAMILIES, PORTABLE, QVAP, VOLCANO_ONLY, Family
+from .entity import (
+    StorzBickelDescribedEntity,
+    StorzBickelEntityDescription,
+    controllable,
+    descriptions_for,
+)
+from .families import ALL_FAMILIES, PORTABLE, QVAP, Family
 from .qvap import QvapDevice
 
-# The coordinator owns every read, and writes are already serialised by the
-# single GATT lock in volcano.py, so Home Assistant does not need to throttle.
+# The coordinator owns every read, and writes are already serialized by the
+# single GATT lock in ble_device.py, so Home Assistant does not need to throttle.
 PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
-class StorzBickelNumberEntityDescription(NumberEntityDescription):
+class StorzBickelNumberEntityDescription(
+    NumberEntityDescription, StorzBickelEntityDescription
+):
     """Describes a number."""
 
     value_fn: Callable[[Any], float | None]
     set_fn: Callable[[StorzBickelCoordinator, float], Awaitable[None]]
-    # Which device families have this entity, and whether a given device of
-    # them can use it right now.
-    families: frozenset[Family] = VOLCANO_ONLY
-    available_fn: Callable[[DeviceState], bool] = always
 
 
 NUMBERS: tuple[StorzBickelNumberEntityDescription, ...] = (
@@ -84,8 +88,8 @@ NUMBERS: tuple[StorzBickelNumberEntityDescription, ...] = (
         translation_key="boost_temperature",
         device_class=NumberDeviceClass.TEMPERATURE_DELTA,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        native_min_value=1,
-        native_max_value=99,
+        native_min_value=MIN_BOOST,
+        native_max_value=MAX_BOOST,
         native_step=1,
         entity_category=EntityCategory.CONFIG,
         families=PORTABLE,
@@ -100,8 +104,8 @@ NUMBERS: tuple[StorzBickelNumberEntityDescription, ...] = (
         translation_key="superboost_temperature",
         device_class=NumberDeviceClass.TEMPERATURE_DELTA,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        native_min_value=1,
-        native_max_value=99,
+        native_min_value=MIN_BOOST,
+        native_max_value=MAX_BOOST,
         native_step=1,
         entity_category=EntityCategory.CONFIG,
         families=QVAP,
@@ -149,30 +153,16 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     async_add_entities(
         StorzBickelNumber(coordinator, description)
-        for description in NUMBERS
-        if coordinator.family in description.families
+        for description in descriptions_for(coordinator, NUMBERS)
     )
 
 
-class StorzBickelNumber(StorzBickelEntity, NumberEntity):
+class StorzBickelNumber(StorzBickelDescribedEntity, NumberEntity):
     """A number."""
 
     _controls_device = True
 
     entity_description: StorzBickelNumberEntityDescription
-
-    def __init__(
-        self,
-        coordinator: StorzBickelCoordinator,
-        description: StorzBickelNumberEntityDescription,
-    ) -> None:
-        """Initialise the number."""
-        super().__init__(coordinator, description.key)
-        self.entity_description = description
-
-    def _device_supports(self) -> bool:
-        """Return whether this device can use the entity."""
-        return self.entity_description.available_fn(self.data)
 
     @property
     def native_max_value(self) -> float:

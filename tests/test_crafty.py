@@ -126,7 +126,7 @@ async def test_a_fahrenheit_target_is_converted(
     assert state.target_temperature == 185.0
 
 
-async def test_a_crafty_plus_is_recognised(
+async def test_a_crafty_plus_is_recognized(
     fake_client: FakeCraftyClient, mock_establish_connection: AsyncMock
 ) -> None:
     """Firmware major 3 and up is the Crafty+."""
@@ -228,6 +228,9 @@ async def test_the_boost_stays_inside_the_range(
     assert fake_client.writes[-1] == (CHAR_BOOST, _u16(250))
     await device.async_set_boost(0)
     assert fake_client.writes[-1] == (CHAR_BOOST, _u16(10))
+    # A delta of 19 °F arrives as 10.56 °C: rounded, not truncated.
+    await device.async_set_boost(10.56)
+    assert fake_client.writes[-1] == (CHAR_BOOST, _u16(110))
 
 
 async def test_led_brightness(

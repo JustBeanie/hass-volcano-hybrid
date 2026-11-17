@@ -311,6 +311,13 @@ function keepTicking(element, ticking) {
 
 const hasTimer = (items) => items.some((item) => item.kind === "auto_off");
 
+/** Press a status item's button entity, or open its entity's dialog. */
+function activate(source, hass, item) {
+  if (item.press) {
+    hass.callService("button", "press", { entity_id: item.entity });
+  } else moreInfo(source, item.entity);
+}
+
 function moreInfo(source, entityId) {
   source.dispatchEvent(
     new CustomEvent("hass-more-info", {
@@ -452,9 +459,9 @@ class StorzBickelCard extends HTMLElement {
       el(
         "div",
         { class: "target" },
-        step(-1, "−1", "−"),
+        step(-1, "Lower target", "−"),
         el("span", { class: "value" }, ...temperature(model.target)),
-        step(1, "+1", "+")
+        step(1, "Raise target", "+")
       )
     );
 
@@ -568,12 +575,7 @@ class StorzBickelCard extends HTMLElement {
               {
                 class: "extra",
                 type: "button",
-                onclick: () =>
-                  item.press
-                    ? hass.callService("button", "press", {
-                        entity_id: item.entity,
-                      })
-                    : moreInfo(this, item.entity),
+                onclick: () => activate(this, hass, item),
               },
               stateIcon(hass, item.entity),
               el("span", { textContent: item.label })
@@ -755,6 +757,8 @@ class StorzBickelStatus extends HTMLElement {
   setConfig(config) {
     if (!config) throw new Error("Invalid configuration");
     this._config = config;
+    this._key = undefined;
+    this._update();
   }
 
   set hass(hass) {
@@ -797,11 +801,7 @@ class StorzBickelStatus extends HTMLElement {
         onclick: (event) => {
           // Otherwise the card underneath opens its own dialog as well.
           event.stopPropagation();
-          if (item.press) {
-            this._hass.callService("button", "press", {
-              entity_id: item.entity,
-            });
-          } else moreInfo(this, item.entity);
+          activate(this, this._hass, item);
         },
       },
       stateIcon(this._hass, item.entity),

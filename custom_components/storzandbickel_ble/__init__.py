@@ -56,7 +56,7 @@ PLATFORMS: list[Platform] = [
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Watch for a device coming back while an entry is stuck retrying setup.
 
-    Setup needs the vaporiser to be reachable, so unplugging it and plugging it
+    Setup needs the vaporizer to be reachable, so unplugging it and plugging it
     back in around a restart leaves the entry in ``SETUP_RETRY`` waiting out an
     exponential backoff -- observed at 29 minutes on a real instance. Nothing
     else notices the device return: the per-entry advertisement callback below
@@ -182,7 +182,7 @@ def _reload_relevant(entry: StorzBickelConfigEntry) -> dict[str, Any]:
 async def _async_options_updated(
     hass: HomeAssistant, entry: StorzBickelConfigEntry
 ) -> None:
-    """Reload so changed startup behaviour takes effect immediately."""
+    """Reload so changed startup behavior takes effect immediately."""
     if entry.runtime_data.reload_options == _reload_relevant(entry):
         return
     await hass.config_entries.async_reload(entry.entry_id)

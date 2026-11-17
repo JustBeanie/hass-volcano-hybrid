@@ -385,7 +385,7 @@ async def test_a_venty_gets_its_entities(
 async def test_a_veazy_adds_its_extras(
     hass: HomeAssistant, mock_bluetooth: AsyncMock, fake_client: FakeQvapClient
 ) -> None:
-    """Permanent Bluetooth and colour are Veazy entities."""
+    """Permanent Bluetooth and color are Veazy entities."""
     entry = _entry(Family.VEAZY)
     await _setup(hass, entry)
 

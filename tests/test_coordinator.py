@@ -1,4 +1,4 @@
-"""Tests for coordinator behaviour that entity tests do not reach."""
+"""Tests for coordinator behavior that entity tests do not reach."""
 
 from __future__ import annotations
 
@@ -248,7 +248,7 @@ async def test_an_absent_device_is_not_reconnected_to(
     fake_client: FakeBleakClient,
     mock_establish_connection: AsyncMock,
 ) -> None:
-    """Losing sight of the vaporiser clears the cached BLEDevice.
+    """Losing sight of the vaporizer clears the cached BLEDevice.
 
     Keeping the last known one meant every poll of an unplugged Volcano worked
     through a full connection ladder against six proxies while holding the GATT
@@ -348,7 +348,7 @@ async def test_a_burst_of_advertisements_makes_one_attempt(
 
     assert calls == 1
 
-    # The flag clears afterwards, so a later advertisement can try again.
+    # The flag clears afterward, so a later advertisement can try again.
     assert coordinator._reconnect_pending is False
 
 

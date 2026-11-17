@@ -107,7 +107,7 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
         device: StorzBickelDevice,
         family: Family = Family.VOLCANO_HYBRID,
     ) -> None:
-        """Initialise the coordinator."""
+        """Initialize the coordinator."""
         super().__init__(
             hass,
             _LOGGER,
@@ -230,7 +230,7 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
         self.device.set_ble_device(service_info.device)
         self.device.state.rssi = service_info.rssi
 
-        # Hearing the vaporiser again is the earliest possible signal that it is
+        # Hearing the vaporizer again is the earliest possible signal that it is
         # back, so this reconnects rather than waiting for the next scheduled
         # poll. It deliberately does not go through async_request_refresh: that
         # debouncer has a ten second cooldown which any recent command has
@@ -253,24 +253,27 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
             self._async_schedule_reconnect(self.auto_connect_delay)
 
     @callback
-    def _async_schedule_reconnect(self, delay: float) -> None:
+    def _async_schedule_reconnect(self, delay: float, *, demand: bool = False) -> None:
         """Reconnect after ``delay`` seconds, or straight away for zero.
 
         A short wait lets every adapter and proxy that heard the advertisement
         report it, so the connection goes through the strongest rather than
-        whichever happened to be first.
+        whichever happened to be first. ``demand`` marks the reconnect as one
+        the user asked for, as a command does.
         """
-        if delay <= 0:
-            self._async_start_reconnect()
-            return
 
         @callback
-        def _fire(_now: datetime) -> None:
+        def _fire(_now: datetime | None = None) -> None:
             self._cancel_reconnect = None
+            if demand:
+                self._demanded_at = time.monotonic()
             self._async_start_reconnect()
 
         self._async_cancel_reconnect()
-        self._cancel_reconnect = async_call_later(self.hass, delay, _fire)
+        if delay <= 0:
+            _fire()
+        else:
+            self._cancel_reconnect = async_call_later(self.hass, delay, _fire)
 
     @callback
     def _async_start_reconnect(self) -> None:
@@ -474,7 +477,7 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
 
         Entities write these once, when they are created. A portable that was
         asleep at startup had none to write, and a firmware update changes one
-        afterwards; either way the device page kept the old value until the
+        afterward; either way the device page kept the old value until the
         entry was reloaded. Only what the device has actually reported is
         written, so a value never goes back to blank.
         """
@@ -525,17 +528,7 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
         """
         await self.device.async_disconnect()
         self.async_update_listeners()
-
-        @callback
-        def _fire(_now: datetime) -> None:
-            self._cancel_reconnect = None
-            self._demanded_at = time.monotonic()
-            self._async_start_reconnect()
-
-        self._async_cancel_reconnect()
-        self._cancel_reconnect = async_call_later(
-            self.hass, self.delayed_reconnect_delay, _fire
-        )
+        self._async_schedule_reconnect(self.delayed_reconnect_delay, demand=True)
 
     async def async_set_auto_connect(self, enabled: bool) -> None:
         """Turn automatic connecting on or off, and remember the choice."""
@@ -593,7 +586,7 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
                 )
 
         remove = self.async_add_listener(_check)
-        # Owned by the entry and shielded from the timeout below. Cancelling
+        # Owned by the entry and shielded from the timeout below. Canceling
         # a poll part-way makes Home Assistant record it as a failed update,
         # so a wait that ran out of time used to turn every entity
         # unavailable until the next poll.

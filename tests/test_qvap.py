@@ -19,9 +19,9 @@ from custom_components.storzandbickel_ble.qvap import (
     CMD_STATUS,
     CMD_USAGE,
     SETTING2_PERMANENT_BLUETOOTH,
-    SETTING_BOOST_VISUALISATION,
+    SETTING_BOOST_VISUALIZATION,
     SETTING_CHARGE_LIMIT,
-    SETTING_CHARGE_OPTIMISATION,
+    SETTING_CHARGE_OPTIMIZATION,
     SETTING_FAHRENHEIT,
     SETTING_TARGET_CHANGED,
     SETTING_TARGET_REACHED,
@@ -36,7 +36,7 @@ from .conftest import ADDRESS, FakeBleakClient, make_ble_device
 class FakeQvapClient(FakeBleakClient):
     """A Venty: answers every framed command through the notify callback."""
 
-    def __init__(self, *, bootloader: bool = False, colour: int = 3) -> None:
+    def __init__(self, *, bootloader: bool = False, color: int = 3) -> None:
         """Start idle at 180 C with 185 C set."""
         super().__init__(reads={})
         status = bytearray(20)
@@ -49,7 +49,7 @@ class FakeQvapClient(FakeBleakClient):
         flags = 0x00 if bootloader else 0x01
         self.firmware = bytes([CMD_FIRMWARE, flags]) + b"V01.09" + bytes(11)
         self.serial = (
-            bytes([CMD_SERIAL]) + bytes(8) + b"123456" + b"VY" + bytes([0, colour])
+            bytes([CMD_SERIAL]) + bytes(8) + b"123456" + b"VY" + bytes([0, color])
         )
         self.display = bytearray([CMD_DISPLAY, 0, 5, 0, 0, 1, 0])
         self.usage = (
@@ -138,7 +138,7 @@ async def test_a_poll_decodes_the_status_and_identity(
     assert state.heater_minutes == 120
     assert state.charge_minutes == 300
     assert state.model == "Venty"
-    assert state.colour is None  # only the Veazy reports it
+    assert state.color is None  # only the Veazy reports it
     assert [frame[0] for frame in _sent(fake_client)] == [
         CMD_FIRMWARE,
         CMD_SERIAL,
@@ -203,14 +203,20 @@ async def test_heater_and_target_writes(
     assert (frames[4][1], frames[4][11]) == (0x20, 0)
     assert device.state.heater_on is False
 
+    # A delta of 19 °F arrives as 10.56 °C: rounded, not truncated.
+    await device.async_set_boost(10.56)
+    await device.async_set_superboost(10.56)
+    frames = _sent(fake_client)
+    assert (frames[-2][6], frames[-1][7]) == (11, 11)
+
 
 @pytest.mark.parametrize(
     ("method", "enabled", "byte", "bit"),
     [
         ("async_set_display_fahrenheit", True, 14, SETTING_FAHRENHEIT),
-        ("async_set_charge_optimisation", True, 14, SETTING_CHARGE_OPTIMISATION),
+        ("async_set_charge_optimization", True, 14, SETTING_CHARGE_OPTIMIZATION),
         ("async_set_charge_limit", True, 14, SETTING_CHARGE_LIMIT),
-        ("async_set_boost_visualisation", True, 14, SETTING_BOOST_VISUALISATION),
+        ("async_set_boost_visualization", True, 14, SETTING_BOOST_VISUALIZATION),
         ("async_set_permanent_bluetooth", True, 16, SETTING2_PERMANENT_BLUETOOTH),
     ],
 )
@@ -242,7 +248,7 @@ async def test_settings_read_back(
         SETTING_FAHRENHEIT
         | SETTING_TARGET_REACHED
         | SETTING_TARGET_CHANGED
-        | SETTING_BOOST_VISUALISATION
+        | SETTING_BOOST_VISUALIZATION
     )
     fake_client.status[16] = SETTING2_PERMANENT_BLUETOOTH
     fake_client.status[13] = 1
@@ -253,31 +259,31 @@ async def test_settings_read_back(
     assert state.display_fahrenheit is True
     assert state.target_reached is True
     assert state.target_changed_on_device is True
-    assert state.boost_visualisation is True
-    assert state.charge_optimisation is False
+    assert state.boost_visualization is True
+    assert state.charge_optimization is False
     assert state.charge_limit is False
     assert state.permanent_bluetooth is True
     assert state.charging is True
     assert state.heater_mode == "superboost"
 
 
-async def test_the_veazy_inverts_boost_display_and_has_a_colour(
+async def test_the_veazy_inverts_boost_display_and_has_a_color(
     mock_establish_connection: AsyncMock, fake_client: FakeQvapClient
 ) -> None:
-    """Same protocol, one inverted bit, and a colour."""
-    fake_client.status[14] = SETTING_BOOST_VISUALISATION
+    """Same protocol, one inverted bit, and a color."""
+    fake_client.status[14] = SETTING_BOOST_VISUALIZATION
     device = VeazyDevice(ADDRESS)
     device.set_ble_device(make_ble_device())
 
     state = await device.async_update()
-    assert state.boost_visualisation is False
-    assert state.colour == "pink"
+    assert state.boost_visualization is False
+    assert state.color == "pink"
     assert state.model == "Veazy"
 
     fake_client.writes.clear()
-    await device.async_set_boost_visualisation(True)
+    await device.async_set_boost_visualization(True)
     (frame,) = _sent(fake_client)
-    assert (frame[14], frame[15]) == (0, SETTING_BOOST_VISUALISATION)
+    assert (frame[14], frame[15]) == (0, SETTING_BOOST_VISUALIZATION)
 
 
 async def test_display_settings_use_their_own_frame(
@@ -360,5 +366,5 @@ def test_empty_state_flags() -> None:
     """Nothing read yet is unknown, not off."""
     state = QvapState()
     assert state.target_reached is None
-    assert state.boost_visualisation is None
+    assert state.boost_visualization is None
     assert state.permanent_bluetooth is None

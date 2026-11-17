@@ -32,7 +32,7 @@ from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.storzandbickel_ble.sensor import (
     LAST_FAULT_NONE,
-    LAST_FAULT_UNRECOGNISED,
+    LAST_FAULT_UNRECOGNIZED,
     _last_fault,
 )
 from custom_components.storzandbickel_ble.volcano import (
@@ -432,7 +432,7 @@ async def test_light_brightness_is_none_without_a_reading(
         (None, None),
         ("0000000000000000", LAST_FAULT_NONE),
         ("6100000000000000", "heater_pump_timing_fault"),
-        ("9900000000000000", LAST_FAULT_UNRECOGNISED),
+        ("9900000000000000", LAST_FAULT_UNRECOGNIZED),
     ],
 )
 def test_last_fault_names_the_newest_code(

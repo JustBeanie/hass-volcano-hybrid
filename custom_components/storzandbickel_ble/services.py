@@ -93,7 +93,19 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
     async def _set_temperature(call: ServiceCall) -> None:
         coordinator = _coordinator(hass, call)
-        await coordinator.async_set_temperature(call.data[ATTR_TEMPERATURE])
+        temperature = call.data[ATTR_TEMPERATURE]
+        # The schema allows the Volcano's range; a portable stops lower, and
+        # would otherwise clamp without saying so.
+        if temperature > (max_temp := coordinator.device.max_temp):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="above_max_temp",
+                translation_placeholders={
+                    "temperature": f"{temperature:g}",
+                    "max_temp": str(max_temp),
+                },
+            )
+        await coordinator.async_set_temperature(temperature)
         if call.data[ATTR_WAIT_UNTIL_REACHED]:
             await coordinator.async_wait_until_reached(call.data[ATTR_TIMEOUT])
 

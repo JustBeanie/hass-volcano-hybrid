@@ -86,7 +86,7 @@ def test_captured_wire_values(raw: str, celsius: float, fahrenheit: float) -> No
 
     The 88.0 C and 185.0 C samples were read from a Volcano Hybrid at the same
     moment its Home Assistant card showed 190.4 F and 365 F, so these pin the
-    decoder to observed hardware behaviour rather than to our own assumptions.
+    decoder to observed hardware behavior rather than to our own assumptions.
     """
     decoded = _decode_temperature(bytes.fromhex(raw))
     assert decoded == celsius

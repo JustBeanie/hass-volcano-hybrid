@@ -44,11 +44,13 @@ async def test_options_flow_updates_and_reloads(
     fake_client.writes.clear()
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        {CONF_INITIAL_TEMP: 195, CONF_FAN_ON_CONNECT: False},
+        # Fractional, as a converted °F value would be: rounded, not truncated.
+        {CONF_INITIAL_TEMP: 194.6, CONF_FAN_ON_CONNECT: False},
     )
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert isinstance(config_entry.options[CONF_INITIAL_TEMP], int)
     assert config_entry.options == {
         CONF_INITIAL_TEMP: 195,
         CONF_FAN_ON_CONNECT: False,

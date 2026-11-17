@@ -25,7 +25,10 @@ from .ble_device import (
     DeviceState,
     StorzBickelDevice,
     _bit,
+    _clamp_boost,
+    _decode_string,
 )
+from .const import PORTABLE_MAX_TEMP
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,10 +55,10 @@ WRITE_SETTINGS = 0x80
 # Settings (status byte 14) and settings2 (byte 16).
 SETTING_FAHRENHEIT = 0x01
 SETTING_TARGET_REACHED = 0x02
-SETTING_CHARGE_OPTIMISATION = 0x08
+SETTING_CHARGE_OPTIMIZATION = 0x08
 SETTING_TARGET_CHANGED = 0x10
 SETTING_CHARGE_LIMIT = 0x20
-SETTING_BOOST_VISUALISATION = 0x40  # inverted on the Veazy
+SETTING_BOOST_VISUALIZATION = 0x40  # inverted on the Veazy
 SETTING2_PERMANENT_BLUETOOTH = 0x01
 
 # Display frame (command 0x06) write mask.
@@ -64,9 +67,8 @@ DISPLAY_VIBRATION = 0x08
 DISPLAY_BOOST_TIMEOUT = 0x10
 
 HEATER_MODES = ("off", "heating", "boost", "superboost")
-VEAZY_COLOURS = {2: "blue", 3: "pink", 4: "orange"}
+VEAZY_COLORS = {2: "blue", 3: "pink", 4: "orange"}
 
-MAX_TEMP = 210
 # A reply not arriving in this long is a dead link, the same as a Volcano read
 # that answers nothing.
 REPLY_TIMEOUT = 3.0
@@ -90,8 +92,8 @@ class QvapState(DeviceState):
     bootloader: bool | None = None
     heater_minutes: int | None = None
     charge_minutes: int | None = None
-    colour: str | None = None
-    # The Veazy inverts the boost-visualisation bit.
+    color: str | None = None
+    # The Veazy inverts the boost-visualization bit.
     veazy: bool = False
 
     @property
@@ -105,9 +107,9 @@ class QvapState(DeviceState):
         return _bit(self.settings, SETTING_FAHRENHEIT)
 
     @property
-    def charge_optimisation(self) -> bool | None:
+    def charge_optimization(self) -> bool | None:
         """Return whether charging is slowed to spare the battery."""
-        return _bit(self.settings, SETTING_CHARGE_OPTIMISATION)
+        return _bit(self.settings, SETTING_CHARGE_OPTIMIZATION)
 
     @property
     def charge_limit(self) -> bool | None:
@@ -120,9 +122,9 @@ class QvapState(DeviceState):
         return _bit(self.settings, SETTING_TARGET_CHANGED)
 
     @property
-    def boost_visualisation(self) -> bool | None:
+    def boost_visualization(self) -> bool | None:
         """Return whether boost is shown on the display."""
-        bit = _bit(self.settings, SETTING_BOOST_VISUALISATION)
+        bit = _bit(self.settings, SETTING_BOOST_VISUALIZATION)
         return None if bit is None else bit != self.veazy
 
     @property
@@ -138,12 +140,6 @@ def _frame(command: int, length: int = FRAME_LENGTH) -> bytearray:
     return frame
 
 
-def _text(data: bytes) -> str | None:
-    """Decode a fixed-width text field."""
-    text = data.decode("utf-8", errors="replace").replace("\x00", "").strip()
-    return text or None
-
-
 class QvapDevice(StorzBickelDevice):
     """Bluetooth LE client for the Venty and Veazy."""
 
@@ -152,11 +148,11 @@ class QvapDevice(StorzBickelDevice):
     active_interval: ClassVar[timedelta] = timedelta(seconds=5)
     idle_interval: ClassVar[timedelta] = timedelta(seconds=30)
     sleeps: ClassVar[bool] = True
-    max_temp: ClassVar[int] = MAX_TEMP
+    max_temp: ClassVar[int] = PORTABLE_MAX_TEMP
     veazy: ClassVar[bool] = False
 
     def __init__(self, address: str) -> None:
-        """Initialise the client for ``address``."""
+        """Initialize the client for ``address``."""
         super().__init__(address, QvapState(veazy=self.veazy))
         self._state: QvapState
         self._replies: dict[int, asyncio.Future[bytes]] = {}
@@ -229,16 +225,16 @@ class QvapDevice(StorzBickelDevice):
         state = self._state
         if len(data) >= 8:
             state.bootloader = not data[1] & 0x01
-            state.firmware_version = _text(data[2:8]) or state.firmware_version
+            state.firmware_version = _decode_string(data[2:8]) or state.firmware_version
         state.raw["firmware"] = data.hex()
 
     def _apply_serial(self, data: bytes) -> None:
-        """Apply a serial-and-colour reply."""
+        """Apply a serial-and-color reply."""
         state = self._state
         if len(data) >= 17:
-            state.serial_number = _text(data[15:17] + data[9:15])
+            state.serial_number = _decode_string(data[15:17] + data[9:15])
         if self.veazy and len(data) >= 19:
-            state.colour = VEAZY_COLOURS.get(data[18], "black")
+            state.color = VEAZY_COLORS.get(data[18], "black")
 
     def _apply_display(self, data: bytes) -> None:
         """Apply a brightness / vibration / boost-timeout reply."""
@@ -305,19 +301,19 @@ class QvapDevice(StorzBickelDevice):
         """Set the target temperature."""
         frame = _frame(CMD_STATUS)
         frame[1] = WRITE_TARGET
-        frame[4:6] = struct.pack("<H", round(max(40, min(MAX_TEMP, celsius))) * 10)
+        frame[4:6] = struct.pack("<H", self._clamp_target(celsius) * 10)
         await self._async_status_write(frame)
 
     async def async_set_boost(self, offset: float) -> None:
         """Set the boost offset."""
         frame = _frame(CMD_STATUS)
-        frame[1], frame[6] = WRITE_BOOST, int(max(1, min(99, offset)))
+        frame[1], frame[6] = WRITE_BOOST, _clamp_boost(offset)
         await self._async_status_write(frame)
 
     async def async_set_superboost(self, offset: float) -> None:
         """Set the superboost offset."""
         frame = _frame(CMD_STATUS)
-        frame[1], frame[7] = WRITE_SUPERBOOST, int(max(1, min(99, offset)))
+        frame[1], frame[7] = WRITE_SUPERBOOST, _clamp_boost(offset)
         await self._async_status_write(frame)
 
     async def _async_setting(
@@ -334,17 +330,17 @@ class QvapDevice(StorzBickelDevice):
         """Show Fahrenheit or Celsius on the display."""
         await self._async_setting(SETTING_FAHRENHEIT, enabled)
 
-    async def async_set_charge_optimisation(self, enabled: bool) -> None:
+    async def async_set_charge_optimization(self, enabled: bool) -> None:
         """Slow charging to spare the battery, or not."""
-        await self._async_setting(SETTING_CHARGE_OPTIMISATION, enabled)
+        await self._async_setting(SETTING_CHARGE_OPTIMIZATION, enabled)
 
     async def async_set_charge_limit(self, enabled: bool) -> None:
         """Stop charging short of full, or not."""
         await self._async_setting(SETTING_CHARGE_LIMIT, enabled)
 
-    async def async_set_boost_visualisation(self, enabled: bool) -> None:
+    async def async_set_boost_visualization(self, enabled: bool) -> None:
         """Show boost on the display, or not. The Veazy's bit is inverted."""
-        await self._async_setting(SETTING_BOOST_VISUALISATION, enabled != self.veazy)
+        await self._async_setting(SETTING_BOOST_VISUALIZATION, enabled != self.veazy)
 
     async def async_set_permanent_bluetooth(self, enabled: bool) -> None:
         """Keep Bluetooth on while asleep (Veazy only)."""

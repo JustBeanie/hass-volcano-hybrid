@@ -127,7 +127,7 @@ async def test_an_advertisement_rescues_an_entry_stuck_in_setup_retry(
 ) -> None:
     """Hearing the device again reloads the entry instead of waiting out backoff.
 
-    Setup needs the vaporiser reachable, so unplugging it around a restart parks
+    Setup needs the vaporizer reachable, so unplugging it around a restart parks
     the entry in SETUP_RETRY behind an exponential backoff -- 29 minutes on a
     real instance. The component-scope watcher has to do this because the
     per-entry callback is torn down along with the failed setup.

@@ -23,8 +23,8 @@ from .volcano import VolcanoHybrid, VolcanoState
 BRIGHTNESS_SCALE = (1, 100)
 
 
-# The coordinator owns every read, and writes are already serialised by the
-# single GATT lock in volcano.py, so Home Assistant does not need to throttle.
+# The coordinator owns every read, and writes are already serialized by the
+# single GATT lock in ble_device.py, so Home Assistant does not need to throttle.
 PARALLEL_UPDATES = 0
 
 
@@ -49,7 +49,7 @@ class VolcanoScreenLight(StorzBickelEntity, LightEntity):
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
 
     def __init__(self, coordinator: StorzBickelCoordinator) -> None:
-        """Initialise the light."""
+        """Initialize the light."""
         super().__init__(coordinator, "screen")
 
     @property
