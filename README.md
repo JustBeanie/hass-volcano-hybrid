@@ -472,10 +472,12 @@ type: custom:storzandbickel-card
 device_id: <the device's ID>
 name: Volcano # optional
 presets: [175, 185, 195, 205] # optional, in Home Assistant's temperature unit
+hide_presets: false # optional; true shows no presets at all
 ```
 
 Without `presets` the card offers 175, 185, 195 and 205 °C, or 350, 365, 380
-and 400 °F. `presets: false` hides presets altogether.
+and 400 °F. To show no presets at all, turn on **Hide presets** in the card
+editor, or set `hide_presets: true` (`presets: false` works too).
 
 For more than one set, name them under `preset_lists`, or use **Preset lists**
 in the card editor. With two or more, the card shows a tab for each and
