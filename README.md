@@ -23,6 +23,8 @@ they can be used in automations, scripts and dashboards like anything else.
 
 ## Features
 
+- **Dashboard card** — Home Assistant's own thermostat dial with heat and air
+  switches and a status row, added from the card picker with nothing to install
 - **Climate entity** — target temperature, heater on/off and fan on/off in one card
 - **Individual switches** for the heater and the fan
 - **Screen backlight** as a dimmable light
@@ -389,6 +391,39 @@ These are design constraints, not bugs:
 - **No control the device itself does not expose.** There is no bag-volume sensor, no
   remaining-auto-off countdown and no way to read the physical dial position — the
   vaporizer does not publish them.
+
+## Dashboard card
+
+<p align="center">
+  <img src="assets/dashboard-card.png" alt="The Storz &amp; Bickel dashboard card: Home Assistant's thermostat dial showing the target and current temperature, a heat switch, an air switch and a status row" width="340">
+</p>
+
+The integration comes with a card. **Edit dashboard → Add card → Storz &
+Bickel**, pick the device, and that is the whole setup. There is no resource to
+add; the integration serves the card itself.
+
+It is built from Home Assistant's own parts, so it follows your theme and
+behaves like every other card on the dashboard:
+
+- **The dial** is the built-in thermostat card: target temperature, current
+  temperature, and the same plus and minus buttons.
+- **Heat** and, on a Volcano, **air** are the built-in climate switches.
+- **The status row** says what the device is doing: *Heating*, *Ready* once it
+  reports it has reached the target, or why it is not connected. On a Crafty,
+  Venty or Veazy it also shows the battery and a *Find device* button. Select
+  an item to open that entity.
+
+In YAML:
+
+```yaml
+type: custom:storzandbickel-card
+device_id: <the device's ID>
+name: Volcano # optional
+```
+
+The status row is also available on its own. On any tile or thermostat card
+for the device's climate entity, choose **Add feature → Storz & Bickel
+status**.
 
 ## Entities
 

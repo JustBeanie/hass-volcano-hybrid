@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - 2026-11-16
+
+### Added
+
+- **A dashboard card.** Add it from the card picker and choose the device;
+  there is no resource to install. It is Home Assistant's own thermostat card
+  set up for the device, with the built-in heat switch and, on a Volcano, the
+  built-in air switch, so it follows your theme like any other card.
+- **A status row** under the dial: *Heating*, *Ready*, or the reason the
+  device is not connected, plus battery and *Find device* on a Crafty, Venty
+  or Veazy. It is a card feature, so it can also be added to any tile or
+  thermostat card for the device.
+
 ## [4.1.2] - 2026-11-16
 
 ### Fixed

@@ -51,6 +51,13 @@ python -m ruff format --check .
 python -m mypy
 ```
 
+The dashboard card has its own tests, which need Node 22 or newer and nothing
+else:
+
+```bash
+node --test "tests/frontend/*.test.mjs"
+```
+
 CI holds every pull request to these, and so should you before pushing:
 
 - **100% line and branch coverage** of the whole integration
@@ -97,6 +104,18 @@ core's test-layout rules.
 - Changing an entity's `unique_id` breaks people's automations. If it is
   genuinely necessary, bump the config entry version and migrate the registry in
   place in `async_migrate_entry`.
+
+## The dashboard card
+
+- The card is plain JavaScript modules in
+  `custom_components/storzandbickel_ble/frontend/`, with no build step and no
+  dependencies. Keep it that way: what ships is what is in the repository.
+- Decisions go in `card-logic.js`, which has no DOM in it and is what the
+  tests cover. `storzandbickel-card.js` only turns its results into elements.
+- Reuse Home Assistant's own cards and card features before drawing anything.
+  The card is the built-in thermostat card for a reason: it then matches every
+  theme and every future restyle without any work here.
+- Find entities by `translation_key` and device, never by entity ID.
 
 ## Quality scale
 
