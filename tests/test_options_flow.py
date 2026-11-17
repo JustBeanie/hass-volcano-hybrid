@@ -4,15 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+from bleak.exc import BleakError
 from homeassistant.config_entries import SOURCE_BLUETOOTH, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant.common import MockConfigEntry
 
-from custom_components.storzandbickel_ble.ble_device import (
-    ConnectionFailure,
-    DeviceConnectionError,
-)
 from custom_components.storzandbickel_ble.const import (
     CONF_AUTO_CONNECT_DELAY,
     CONF_DELAYED_RECONNECT_DELAY,
@@ -96,7 +93,10 @@ async def test_reconfigure_confirms_the_device_is_reachable(
 
 
 async def test_reconfigure_reports_an_unreachable_device(
-    hass: HomeAssistant, mock_bluetooth: AsyncMock, config_entry: MockConfigEntry
+    hass: HomeAssistant,
+    mock_bluetooth: AsyncMock,
+    mock_establish_connection: AsyncMock,
+    config_entry: MockConfigEntry,
 ) -> None:
     """A device that will not answer shows the error instead of aborting."""
     config_entry.add_to_hass(hass)
@@ -104,14 +104,60 @@ async def test_reconfigure_reports_an_unreachable_device(
     await hass.async_block_till_done()
 
     result = await config_entry.start_reconfigure_flow(hass)
+    mock_establish_connection.side_effect = BleakError("boom")
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+async def test_reconfigure_retests_a_running_entry_on_its_own_link(
+    hass: HomeAssistant,
+    mock_bluetooth: AsyncMock,
+    mock_establish_connection: AsyncMock,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A running entry is re-tested by rebuilding its link, not with a second.
+
+    It holds the one connection the vaporizer allows, so a second client
+    proves nothing: a proxy turns it away from a device that is working.
+    """
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = config_entry.runtime_data
+    before = mock_establish_connection.call_count
+
+    result = await config_entry.start_reconfigure_flow(hass)
+    with patch.object(hass.config_entries, "async_schedule_reload") as reload:
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+
+    assert result["reason"] == "reconfigure_successful"
+    # One connect, on the entry's own device, which is left connected...
+    assert mock_establish_connection.call_count == before + 1
+    assert config_entry.runtime_data is coordinator
+    assert coordinator.device.connected is True
+    # ...so there is nothing for a reload to pick up.
+    reload.assert_not_called()
+
+
+async def test_reconfigure_reports_a_running_entry_out_of_range(
+    hass: HomeAssistant, mock_bluetooth: AsyncMock, config_entry: MockConfigEntry
+) -> None:
+    """A vaporizer nothing can hear is reported as that, not as a refusal."""
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await config_entry.start_reconfigure_flow(hass)
     with patch(
-        "custom_components.storzandbickel_ble.ble_device.StorzBickelDevice.async_connect",
-        side_effect=DeviceConnectionError("boom", ConnectionFailure.CONNECT_FAILED),
+        "custom_components.storzandbickel_ble.config_flow.async_ble_device_from_address",
+        return_value=None,
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
 
     assert result["type"] is FlowResultType.FORM
-    assert result["errors"] == {"base": "cannot_connect"}
+    assert result["errors"] == {"base": "not_in_range"}
 
 
 async def test_rediscovery_reloads_a_retrying_entry(

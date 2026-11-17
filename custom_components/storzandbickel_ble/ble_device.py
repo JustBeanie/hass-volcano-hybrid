@@ -317,11 +317,19 @@ class StorzBickelDevice:
         return _unregister
 
     def _notify_listeners(self) -> None:
-        for callback in self._callbacks:
+        # A copy: a listener may unregister itself while being told.
+        for callback in tuple(self._callbacks):
             callback(self._state)
 
-    def _handle_disconnect(self, _client: BleakClientWithServiceCache) -> None:
+    def _handle_disconnect(self, client: BleakClientWithServiceCache) -> None:
         """Handle the device dropping the link."""
+        if self._client is not None and client is not self._client:
+            # A client that was already replaced. Its disconnect can be
+            # reported after the new link is up, and acting on it would forget
+            # a client that is still connected -- which then holds the
+            # device's only connection with nothing left to close it.
+            _LOGGER.debug("%s: a replaced link reported its disconnect", self.address)
+            return
         _LOGGER.debug("%s: disconnected", self.address)
         self._client = None
         self._notifications_started = False
@@ -418,9 +426,16 @@ class StorzBickelDevice:
             # Clears the cached service table this client resolved against,
             # local adapter or proxy, so the reconnect rediscovers GATT.
             await client.clear_cache()
-            await client.disconnect()
         except (BleakError, TimeoutError, EOFError) as err:
-            _LOGGER.debug("%s: resetting the link failed: %s", self.address, err)
+            _LOGGER.debug("%s: clearing the cache failed: %s", self.address, err)
+        finally:
+            # Whatever happened to the clear, cancellation included: nothing
+            # refers to this client any more, so a disconnect skipped here
+            # leaves it holding the device's only connection for good.
+            try:
+                await client.disconnect()
+            except (BleakError, TimeoutError, EOFError) as err:
+                _LOGGER.debug("%s: disconnect failed: %s", self.address, err)
 
     async def async_connect(self) -> None:
         """Connect to the device, raising DeviceConnectionError on failure."""
@@ -465,19 +480,24 @@ class StorzBickelDevice:
             self._client = None
             if client is None:
                 return
-            if self._notifications_started:
+            notifying = self._notifications_started
+            # Set here rather than left to the disconnect callback, which a
+            # link that is already gone may never deliver. The next link
+            # reads the device's details again.
+            self._notifications_started = False
+            self._static_info_read = False
+            self._state.connected = False
+            self._state.connected_via = None
+            if notifying:
                 for uuid in self.notify_characteristics:
                     try:
                         await client.stop_notify(uuid)
                     except (BleakError, TimeoutError, EOFError) as err:
                         _LOGGER.debug("%s: stop_notify failed: %s", self.address, err)
-                self._notifications_started = False
             try:
                 await client.disconnect()
             except (BleakError, TimeoutError, EOFError) as err:
                 _LOGGER.debug("%s: disconnect failed: %s", self.address, err)
-            self._state.connected = False
-            self._state.connected_via = None
 
     # -- GATT primitives (lock must already be held) -----------------------
 

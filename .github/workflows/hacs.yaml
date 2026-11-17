@@ -6,9 +6,19 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
+# Read-only: nothing here writes to the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch supersedes the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     runs-on: "ubuntu-latest"
+    timeout-minutes: 15
     steps:
       - uses: "actions/checkout@v4"
       - name: HACS validation

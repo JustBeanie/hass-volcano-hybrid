@@ -60,3 +60,6 @@ pids
 .coverage
 htmlcov/
 coverage.xml
+
+# Written by the Home Assistant test harness
+tests/testing_config/

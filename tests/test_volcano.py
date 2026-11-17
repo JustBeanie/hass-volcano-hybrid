@@ -800,3 +800,86 @@ async def test_resetting_a_link_tolerates_a_failing_client() -> None:
     await VolcanoHybrid(ADDRESS)._async_drop_client(client)  # type: ignore[arg-type]
 
     client.clear_cache.assert_awaited_once()
+
+
+async def test_a_failed_cache_clear_still_disconnects() -> None:
+    """Nothing else refers to a dropped client, so it must not stay connected."""
+    client = FakeBleakClient()
+    client.clear_cache = AsyncMock(side_effect=BleakError("gone"))  # type: ignore[method-assign]
+
+    await VolcanoHybrid(ADDRESS)._async_drop_client(client)  # type: ignore[arg-type]
+
+    assert client.is_connected is False
+
+
+async def test_dropping_a_link_tolerates_a_failing_disconnect() -> None:
+    """A client that cannot even disconnect does not abort the reset."""
+    client = FakeBleakClient()
+    client.disconnect = AsyncMock(side_effect=BleakError("gone"))  # type: ignore[method-assign]
+
+    await VolcanoHybrid(ADDRESS)._async_drop_client(client)  # type: ignore[arg-type]
+
+    assert client.caches_cleared == 1
+    client.disconnect.assert_awaited_once()
+
+
+async def test_a_replaced_links_disconnect_is_ignored(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """A late disconnect from an old client must not forget the live one.
+
+    Forgetting it leaves a connected client nothing will ever close, holding
+    the only connection the vaporizer allows.
+    """
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+    pushed: list[bool] = []
+    device.register_callback(lambda state: pushed.append(state.connected))
+
+    device._handle_disconnect(FakeBleakClient())  # type: ignore[arg-type]
+
+    assert device.connected is True
+    assert device.state.connected is True
+    assert pushed == []
+
+    device._handle_disconnect(fake_client)  # type: ignore[arg-type]
+
+    assert device.connected is False
+    assert pushed == [False]
+
+
+async def test_disconnecting_does_not_rely_on_the_callback(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """A link that is already gone may never report its own disconnect."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+    assert device._static_info_read is True
+    assert device._notifications_started is True
+
+    await device.async_disconnect()
+
+    assert device._static_info_read is False
+    assert device._notifications_started is False
+    assert device.state.connected is False
+    assert fake_client.notify_callbacks == {}
+
+
+def test_a_listener_may_unregister_itself_while_being_told() -> None:
+    """Removing a listener mid-notification must not skip the next one."""
+    device = VolcanoHybrid(ADDRESS)
+    told: list[str] = []
+
+    def _first(_state: VolcanoState) -> None:
+        told.append("first")
+        unregister_first()
+
+    unregister_first = device.register_callback(_first)  # type: ignore[arg-type]
+    device.register_callback(lambda _state: told.append("second"))
+
+    device._notify_listeners()
+    device._notify_listeners()
+
+    assert told == ["first", "second", "second"]

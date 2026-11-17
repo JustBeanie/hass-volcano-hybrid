@@ -533,7 +533,7 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
 the development workflow and run the checks before opening one:
 
 ```bash
-python -m pytest tests/ && python -m ruff check . && python -m ruff format --check .
+python -m pytest tests/ && python -m ruff check . && python -m ruff format --check . && python -m mypy
 ```
 
 ## Disclaimer

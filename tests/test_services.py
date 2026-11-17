@@ -242,6 +242,27 @@ async def test_a_dropped_link_ends_the_wait(
     assert err.value.translation_key == "wait_disconnected"
 
 
+async def test_an_abort_that_loses_to_the_timeout_is_not_left_unread(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """The timeout wins, and the abort it overtook is not logged as lost."""
+    coordinator = loaded_entry.runtime_data
+
+    async def _abort_then_stall() -> None:
+        # The heater is off, so this reading aborts the wait...
+        coordinator.async_update_listeners()
+        # ...but the refresh is still running when the time is up.
+        await asyncio.sleep(1)
+
+    with (
+        patch.object(coordinator, "async_refresh", _abort_then_stall),
+        pytest.raises(HomeAssistantError) as err,
+    ):
+        await coordinator.async_wait_until_reached(0.01)
+
+    assert err.value.translation_key == "wait_timeout"
+
+
 # -- connect and disconnect -------------------------------------------------
 
 
