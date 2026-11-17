@@ -436,7 +436,7 @@ These are design constraints, not bugs:
 ## Dashboard card
 
 <p align="center">
-  <img src="assets/dashboard-card.png" alt="The Storz &amp; Bickel dashboard card, heating and then ready: the current temperature, the target with plus and minus, a bar that fills as it heats, Heat and Fan buttons, and four temperature presets" width="640">
+  <img src="assets/dashboard-card.png" alt="The Storz &amp; Bickel dashboard card, heating and then ready: the current temperature, the target with plus and minus, a bar that fills as it heats, Heat and Fan buttons, Flavor and Clouds preset tabs, and the time until auto-off" width="640">
 </p>
 
 The integration comes with a card made for a vaporizer rather than a
