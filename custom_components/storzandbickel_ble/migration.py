@@ -48,7 +48,7 @@ LEGACY_CODEOWNER = "@JustBeanie"
 # installed -- exactly the state the rename leaves the old entries in.
 CORE_NOT_FOUND_ISSUE = f"integration_not_found.{LEGACY_DOMAIN}"
 
-BEHAVIOUR_KEYS = (CONF_INITIAL_TEMP, CONF_FAN_ON_CONNECT)
+BEHAVIOR_KEYS = (CONF_INITIAL_TEMP, CONF_FAN_ON_CONNECT)
 
 
 def is_own_legacy_entry(entry: ConfigEntry) -> bool:
@@ -72,21 +72,21 @@ def legacy_address(entry: ConfigEntry) -> str | None:
 
 
 def legacy_options(entry: ConfigEntry) -> dict[str, Any]:
-    """Return an old entry's startup behaviour as options.
+    """Return an old entry's startup behavior as options.
 
     Version 3 already keeps it in options; versions 1 and 2 kept it in data,
     and version 1 stored an unset initial temperature as an explicit None,
     which must not come across as a populated-but-empty option.
     """
     options = dict(entry.options)
-    for key in BEHAVIOUR_KEYS:
+    for key in BEHAVIOR_KEYS:
         if key not in options and entry.data.get(key) is not None:
             options[key] = entry.data[key]
     options.setdefault(CONF_FAN_ON_CONNECT, False)
     return options
 
 
-def normalise_unique_id(unique_id: str, legacy_entry_id: str, mac: str) -> str:
+def normalize_unique_id(unique_id: str, legacy_entry_id: str, mac: str) -> str:
     """Return the unique_id an old entity has under the new domain.
 
     Version 1 keyed unique_ids on the config entry id; every later version
@@ -173,7 +173,7 @@ async def async_adopt_legacy(hass: HomeAssistant, entry: ConfigEntry) -> None:
         old_entry_id = legacy.entry_id
 
         def _unique_id_for(row: er.RegistryEntry, old: str = old_entry_id) -> str:
-            return normalise_unique_id(row.unique_id, old, mac)
+            return normalize_unique_id(row.unique_id, old, mac)
 
         move_registry_rows(hass, legacy, entry, mac, _unique_id_for)
         await hass.config_entries.async_remove(legacy.entry_id)

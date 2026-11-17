@@ -134,7 +134,7 @@ FAULT_CODES: dict[int, tuple[str, str]] = {
 
 # The device reports -18.0 C on the temperature characteristic when the probe
 # has no valid reading (idle / powered down). Anything below freezing is not a
-# real reading from a vaporiser, so treat it as "unknown" rather than surfacing
+# real reading from a vaporizer, so treat it as "unknown" rather than surfacing
 # a nonsense number.
 TEMP_INVALID_BELOW = 0.0
 
@@ -298,7 +298,7 @@ class VolcanoHybrid(StorzBickelDevice):
     notify_characteristics: ClassVar[tuple[str, ...]] = (CHAR_STATUS_REGISTER,)
 
     def __init__(self, address: str) -> None:
-        """Initialise the client for ``address``."""
+        """Initialize the client for ``address``."""
         super().__init__(address, VolcanoState())
         self._state: VolcanoState
         self._optimistic: dict[str, bool] = {}
@@ -555,7 +555,7 @@ class VolcanoHybrid(StorzBickelDevice):
 
     async def async_set_target_temperature(self, celsius: float) -> None:
         """Set the target temperature in degrees Celsius."""
-        value = round(max(MIN_TEMP, min(MAX_TEMP, celsius)))
+        value = self._clamp_target(celsius)
         async with self._lock:
             await self._write(CHAR_TARGET_TEMP, struct.pack("<I", value * 10))
         self._state.target_temperature = float(value)

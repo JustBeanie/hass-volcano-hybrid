@@ -57,7 +57,7 @@ class VolcanoFirmwareUpdate(StorzBickelEntity, UpdateEntity):
     _attr_release_url = FIRMWARE_UPDATE_URL
 
     def __init__(self, coordinator: StorzBickelCoordinator) -> None:
-        """Initialise the update entity."""
+        """Initialize the update entity."""
         super().__init__(coordinator, FIRMWARE.key)
 
     @property

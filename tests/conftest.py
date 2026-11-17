@@ -130,7 +130,7 @@ class FakeBleakClient:
     """A stand-in for a connected BleakClient."""
 
     def __init__(self, reads: dict[str, bytes] | None = None) -> None:
-        """Initialise with a characteristic map."""
+        """Initialize with a characteristic map."""
         self.reads = dict(DEFAULT_READS if reads is None else reads)
         self.writes: list[tuple[str, bytes]] = []
         self.is_connected = True
@@ -344,7 +344,7 @@ def legacy_v3_entry() -> MockConfigEntry:
 
 @pytest.fixture
 def legacy_v2_entry() -> MockConfigEntry:
-    """Return a version 2 old-domain entry, behaviour settings still in data."""
+    """Return a version 2 old-domain entry, behavior settings still in data."""
     return MockConfigEntry(
         domain=LEGACY_DOMAIN,
         title=DEVICE_NAME,

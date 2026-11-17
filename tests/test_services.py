@@ -31,6 +31,7 @@ from custom_components.storzandbickel_ble.volcano import (
     MASK_FAN,
     MASK_HEATER,
     MASK_TARGET_REACHED,
+    VolcanoHybrid,
 )
 
 from .conftest import ADDRESS, FORMATTED_MAC, FakeBleakClient
@@ -79,6 +80,25 @@ async def test_the_device_can_be_named(
     )
 
     assert (CHAR_TARGET_TEMP, (1850).to_bytes(4, "little")) in fake_client.writes
+
+
+async def test_a_target_above_the_device_maximum_is_refused(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry, fake_client: FakeBleakClient
+) -> None:
+    """A portable stops at 210 °C; the action says so instead of clamping."""
+    fake_client.writes.clear()
+    with (
+        patch.object(VolcanoHybrid, "max_temp", 210),
+        pytest.raises(ServiceValidationError) as err,
+    ):
+        await _call(hass, "set_temperature", **{ATTR_TEMPERATURE: 220})
+
+    assert err.value.translation_key == "above_max_temp"
+    assert err.value.translation_placeholders == {
+        "temperature": "220",
+        "max_temp": "210",
+    }
+    assert not fake_client.writes
 
 
 async def test_an_unknown_device_is_refused(
@@ -268,7 +288,7 @@ async def test_a_wait_that_times_out_does_not_cancel_the_poll(
 ) -> None:
     """The poll a wait started finishes even though the wait gave up on it.
 
-    Cancelled part-way, it was recorded as a failed update and every entity
+    Canceled part-way, it was recorded as a failed update and every entity
     went unavailable until the next poll.
     """
     coordinator = loaded_entry.runtime_data

@@ -33,7 +33,7 @@ from custom_components.storzandbickel_ble.migration import (
     async_import_legacy_entries,
     is_own_legacy_entry,
     legacy_options,
-    normalise_unique_id,
+    normalize_unique_id,
 )
 
 from .conftest import ADDRESS, DEVICE_NAME, FORMATTED_MAC
@@ -144,7 +144,7 @@ async def test_legacy_entry_is_adopted_with_its_entity_ids(
 async def test_startup_options_survive_adoption(
     hass: HomeAssistant, mock_bluetooth: AsyncMock, legacy_v2_entry: MockConfigEntry
 ) -> None:
-    """Behaviour kept in data by a version 2 entry arrives as options."""
+    """Behavior kept in data by a version 2 entry arrives as options."""
     _register_legacy(hass, legacy_v2_entry)
 
     await _start(hass)
@@ -384,11 +384,11 @@ def test_legacy_options_drop_an_explicit_none() -> None:
     assert legacy_options(entry) == {CONF_FAN_ON_CONNECT: False}
 
 
-def test_normalise_unique_id() -> None:
+def test_normalize_unique_id() -> None:
     """Entry-id prefixes become the MAC; MAC-keyed ids pass through."""
-    assert normalise_unique_id("abc_heater", "abc", FORMATTED_MAC) == (
+    assert normalize_unique_id("abc_heater", "abc", FORMATTED_MAC) == (
         f"{FORMATTED_MAC}_heater"
     )
-    assert normalise_unique_id(f"{FORMATTED_MAC}_fan", "abc", FORMATTED_MAC) == (
+    assert normalize_unique_id(f"{FORMATTED_MAC}_fan", "abc", FORMATTED_MAC) == (
         f"{FORMATTED_MAC}_fan"
     )

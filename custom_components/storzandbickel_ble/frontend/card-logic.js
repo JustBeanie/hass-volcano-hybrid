@@ -302,13 +302,16 @@ export function presetLists(config, unit, min, max) {
 
 /**
  * Which list to show: the one asked for if it exists, else the first that
- * holds the current target, else the first.
+ * holds the current target, else the first. "Holds" is by device setting, so
+ * in °F a target of 379 is found in a list with 380.
  */
-export function chosenList(lists, requested, target) {
+export function chosenList(lists, requested, target, unit = "°C") {
   if (Number.isInteger(requested) && requested >= 0 && requested < lists.length) {
     return requested;
   }
-  const holding = lists.findIndex((list) => list.values.includes(target));
+  const holding = lists.findIndex((list) =>
+    list.values.some((value) => sameSetting(value, target, unit))
+  );
   return holding === -1 ? 0 : holding;
 }
 
@@ -383,7 +386,7 @@ export function cardModel(
   const hasAir = Array.isArray(fanModes) && fanModes.includes("on");
   const [status, ...extras] = statusItems(hass, resolved, now);
   const lists = presetLists(config, unit, min, max);
-  const chosen = chosenList(lists, list, target);
+  const chosen = chosenList(lists, list, target, unit);
 
   return {
     entity: resolved.climate,

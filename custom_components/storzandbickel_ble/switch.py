@@ -11,28 +11,31 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .ble_device import DeviceState
 from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
 from .crafty import CraftyDevice
-from .entity import StorzBickelEntity, always, controllable
-from .families import ALL_FAMILIES, PORTABLE, QVAP, VOLCANO_ONLY, Family
+from .entity import (
+    StorzBickelDescribedEntity,
+    StorzBickelEntity,
+    StorzBickelEntityDescription,
+    controllable,
+    descriptions_for,
+)
+from .families import ALL_FAMILIES, PORTABLE, QVAP, Family
 from .qvap import QvapDevice
 
-# The coordinator owns every read, and writes are already serialised by the
-# single GATT lock in volcano.py, so Home Assistant does not need to throttle.
+# The coordinator owns every read, and writes are already serialized by the
+# single GATT lock in ble_device.py, so Home Assistant does not need to throttle.
 PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
-class StorzBickelSwitchEntityDescription(SwitchEntityDescription):
+class StorzBickelSwitchEntityDescription(
+    SwitchEntityDescription, StorzBickelEntityDescription
+):
     """Describes a switch."""
 
     is_on_fn: Callable[[Any], bool | None]
     set_fn: Callable[[StorzBickelCoordinator, bool], Awaitable[None]]
-    # Which device families have this entity, and whether a given device of
-    # them can use it right now.
-    families: frozenset[Family] = VOLCANO_ONLY
-    available_fn: Callable[[DeviceState], bool] = always
 
 
 SWITCHES: tuple[StorzBickelSwitchEntityDescription, ...] = (
@@ -116,13 +119,14 @@ SWITCHES: tuple[StorzBickelSwitchEntityDescription, ...] = (
         ),
     ),
     StorzBickelSwitchEntityDescription(
+        # British spelling kept: the key is part of the unique_id.
         key="charge_optimisation",
         translation_key="charge_optimisation",
         entity_category=EntityCategory.CONFIG,
         families=QVAP,
-        is_on_fn=lambda state: state.charge_optimisation,
+        is_on_fn=lambda state: state.charge_optimization,
         set_fn=lambda coordinator, on: coordinator.async_command(
-            coordinator.device_as(QvapDevice).async_set_charge_optimisation(on)
+            coordinator.device_as(QvapDevice).async_set_charge_optimization(on)
         ),
     ),
     StorzBickelSwitchEntityDescription(
@@ -136,13 +140,14 @@ SWITCHES: tuple[StorzBickelSwitchEntityDescription, ...] = (
         ),
     ),
     StorzBickelSwitchEntityDescription(
+        # British spelling kept: the key is part of the unique_id.
         key="boost_visualisation",
         translation_key="boost_visualisation",
         entity_category=EntityCategory.CONFIG,
         families=QVAP,
-        is_on_fn=lambda state: state.boost_visualisation,
+        is_on_fn=lambda state: state.boost_visualization,
         set_fn=lambda coordinator, on: coordinator.async_command(
-            coordinator.device_as(QvapDevice).async_set_boost_visualisation(on)
+            coordinator.device_as(QvapDevice).async_set_boost_visualization(on)
         ),
     ),
     StorzBickelSwitchEntityDescription(
@@ -180,8 +185,7 @@ async def async_setup_entry(
             StorzBickelAutoConnectSwitch(coordinator),
             *(
                 StorzBickelSwitch(coordinator, description)
-                for description in SWITCHES
-                if coordinator.family in description.families
+                for description in descriptions_for(coordinator, SWITCHES)
             ),
         ]
     )
@@ -199,7 +203,7 @@ class StorzBickelAutoConnectSwitch(StorzBickelEntity, SwitchEntity):
     _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: StorzBickelCoordinator) -> None:
-        """Initialise the switch."""
+        """Initialize the switch."""
         super().__init__(coordinator, "auto_connect")
 
     @property
@@ -223,25 +227,12 @@ class StorzBickelAutoConnectSwitch(StorzBickelEntity, SwitchEntity):
         self.async_write_ha_state()
 
 
-class StorzBickelSwitch(StorzBickelEntity, SwitchEntity):
+class StorzBickelSwitch(StorzBickelDescribedEntity, SwitchEntity):
     """A switch."""
 
     _controls_device = True
 
     entity_description: StorzBickelSwitchEntityDescription
-
-    def __init__(
-        self,
-        coordinator: StorzBickelCoordinator,
-        description: StorzBickelSwitchEntityDescription,
-    ) -> None:
-        """Initialise the switch."""
-        super().__init__(coordinator, description.key)
-        self.entity_description = description
-
-    def _device_supports(self) -> bool:
-        """Return whether this device can use the entity."""
-        return self.entity_description.available_fn(self.data)
 
     @property
     def is_on(self) -> bool | None:

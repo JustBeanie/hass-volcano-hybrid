@@ -54,7 +54,10 @@ _LOGGER = logging.getLogger(__name__)
 OPTIONS_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_INITIAL_TEMP): vol.All(
-            vol.Coerce(int), vol.Range(min=MIN_TEMP, max=MAX_TEMP)
+            # Rounded rather than truncated to the whole degree stored.
+            vol.Coerce(float),
+            vol.Range(min=MIN_TEMP, max=MAX_TEMP),
+            round,
         ),
         vol.Optional(CONF_FAN_ON_CONNECT, default=False): bool,
     }
@@ -83,7 +86,7 @@ def _family_of(service_info: BluetoothServiceInfoBleak) -> Family | None:
 
 
 def _clean_options(user_input: dict[str, Any]) -> dict[str, Any]:
-    """Normalise the options form, dropping a blank initial temperature."""
+    """Normalize the options form, dropping a blank initial temperature."""
     options: dict[str, Any] = {
         CONF_FAN_ON_CONNECT: user_input.get(CONF_FAN_ON_CONNECT, False)
     }
@@ -96,7 +99,7 @@ def _clean_options(user_input: dict[str, Any]) -> dict[str, Any]:
 
 
 class StorzBickelOptionsFlow(OptionsFlow):
-    """Let the startup behaviour be changed without re-adding the device."""
+    """Let the startup behavior be changed without re-adding the device."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -130,7 +133,7 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
-        """Initialise the flow."""
+        """Initialize the flow."""
         self._discovery_info: BluetoothServiceInfoBleak | None = None
         self._discovered: dict[str, BluetoothServiceInfoBleak] = {}
         # What the entry is created for; from discovery or typed by hand.
@@ -339,7 +342,7 @@ class StorzBickelConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_options(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Collect the optional startup behaviour and create the entry."""
+        """Collect the optional startup behavior and create the entry."""
         if self._discovery_info is not None:
             self._address = self._discovery_info.address
             self._name = self._discovery_info.name

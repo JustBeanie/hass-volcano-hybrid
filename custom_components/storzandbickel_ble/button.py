@@ -19,24 +19,26 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .ble_device import DeviceState
 from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
-from .entity import StorzBickelEntity, always, findable
-from .families import ALL_FAMILIES, PORTABLE, VOLCANO_ONLY, Family
+from .entity import (
+    StorzBickelDescribedEntity,
+    StorzBickelEntityDescription,
+    descriptions_for,
+    findable,
+)
+from .families import ALL_FAMILIES, PORTABLE
 
-# The coordinator serialises everything these do, so no throttling is needed.
+# The coordinator serializes everything these do, so no throttling is needed.
 PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
-class StorzBickelButtonEntityDescription(ButtonEntityDescription):
+class StorzBickelButtonEntityDescription(
+    ButtonEntityDescription, StorzBickelEntityDescription
+):
     """Describes a button."""
 
     press_fn: Callable[[StorzBickelCoordinator], Awaitable[None]]
-    # Which device families have this entity, and whether a given device of
-    # them can use it right now.
-    families: frozenset[Family] = VOLCANO_ONLY
-    available_fn: Callable[[DeviceState], bool] = always
 
 
 BUTTONS: tuple[StorzBickelButtonEntityDescription, ...] = (
@@ -82,24 +84,14 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     async_add_entities(
         StorzBickelButton(coordinator, description)
-        for description in BUTTONS
-        if coordinator.family in description.families
+        for description in descriptions_for(coordinator, BUTTONS)
     )
 
 
-class StorzBickelButton(StorzBickelEntity, ButtonEntity):
+class StorzBickelButton(StorzBickelDescribedEntity, ButtonEntity):
     """A button."""
 
     entity_description: StorzBickelButtonEntityDescription
-
-    def __init__(
-        self,
-        coordinator: StorzBickelCoordinator,
-        description: StorzBickelButtonEntityDescription,
-    ) -> None:
-        """Initialise the button."""
-        super().__init__(coordinator, description.key)
-        self.entity_description = description
 
     @property
     def available(self) -> bool:

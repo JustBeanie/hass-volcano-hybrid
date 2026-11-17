@@ -65,7 +65,7 @@ async def test_bluetooth_discovery_creates_entry(
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == DEVICE_NAME
-    # Behaviour settings live in options so they stay editable afterwards.
+    # Behavior settings live in options so they stay editable afterward.
     assert result["data"] == {CONF_ADDRESS: ADDRESS, "model": "volcano_hybrid"}
     assert result["options"] == {
         CONF_INITIAL_TEMP: 185,

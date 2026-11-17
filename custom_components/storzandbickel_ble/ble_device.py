@@ -1,12 +1,12 @@
 """The Bluetooth link every Storz & Bickel device shares.
 
 Connecting, rebuilding a dead link, rediscovering a half-resolved service
-table and serialising GATT traffic are the same whatever the device, so they
+table and serializing GATT traffic are the same whatever the device, so they
 live here and each family only says what to read and how to decode it. The
 Volcano is where all of this was learned; see ``volcano.py`` for why each
 piece exists.
 
-All GATT traffic is serialised through a single lock held at exactly one level:
+All GATT traffic is serialized through a single lock held at exactly one level:
 the public coroutines acquire it, the private ``_read``/``_write`` helpers
 assume it is already held. Nothing below the lock may re-enter a public
 coroutine -- ``asyncio.Lock`` is not reentrant.
@@ -31,7 +31,14 @@ from bleak_retry_connector import (
     establish_connection,
 )
 
-from .const import ACTIVE_INTERVAL, IDLE_INTERVAL, MAX_TEMP
+from .const import (
+    ACTIVE_INTERVAL,
+    IDLE_INTERVAL,
+    MAX_BOOST,
+    MAX_TEMP,
+    MIN_BOOST,
+    MIN_TEMP,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +60,7 @@ class ConnectionFailure(StrEnum):
     """Why the device could not be reached.
 
     The shapes are not interchangeable and the coordinator acts on the
-    difference. A vaporiser that accepts a connection and then answers nothing
+    difference. A vaporizer that accepts a connection and then answers nothing
     was reported as a *refused* connection for a while, which sent users looking
     for a phone app holding a link that Home Assistant itself held.
     """
@@ -167,6 +174,15 @@ def _decode_string(raw: bytes | None) -> str | None:
     return text or None
 
 
+def _clamp_boost(offset: float, ceiling: float = MAX_BOOST) -> int:
+    """Return a boost offset as the whole degree the device stores, in range.
+
+    Rounded, not truncated: Home Assistant converts a delta set in °F to a
+    fractional °C, and 19 °F (10.56 °C) is 11 °C, not 10.
+    """
+    return round(max(MIN_BOOST, min(MAX_BOOST, ceiling, offset)))
+
+
 def _decode_firmware(raw: bytes | None) -> str | None:
     """Decode a firmware version, which may be text or packed bytes."""
     if not raw:
@@ -222,7 +238,7 @@ class StorzBickelDevice:
     max_temp: ClassVar[int] = MAX_TEMP
 
     def __init__(self, address: str, state: DeviceState) -> None:
-        """Initialise the link for ``address``."""
+        """Initialize the link for ``address``."""
         self.address = address
         self._ble_device: BLEDevice | None = None
         self._client: BleakClientWithServiceCache | None = None
@@ -237,6 +253,14 @@ class StorzBickelDevice:
         # sensor so the self-healing can be seen working.
         self.link_resets = 0
         self.adapter_cache_resets = 0
+
+    def _clamp_target(self, celsius: float) -> int:
+        """Return a target as the whole degree the device stores, in range.
+
+        Rounded, not truncated: a target set in °F arrives as a fractional
+        °C, and 379 °F (192.78 °C) is 193 °C, not 192.
+        """
+        return round(max(MIN_TEMP, min(self.max_temp, celsius)))
 
     # -- what a family provides --------------------------------------------
 
@@ -384,7 +408,7 @@ class StorzBickelDevice:
                 await client.start_notify(uuid, self._notification_callback(uuid))
             self._notifications_started = bool(self.notify_characteristics)
         except (BleakError, TimeoutError) as err:
-            # Notifications are an optimisation where a family also polls; a
+            # Notifications are an optimization where a family also polls; a
             # family that cannot work without them fails its first read.
             _LOGGER.debug("%s: could not subscribe: %s", self.address, err)
 
@@ -430,7 +454,7 @@ class StorzBickelDevice:
             _LOGGER.debug("%s: clearing the cache failed: %s", self.address, err)
         finally:
             # Whatever happened to the clear, cancellation included: nothing
-            # refers to this client any more, so a disconnect skipped here
+            # refers to this client anymore, so a disconnect skipped here
             # leaves it holding the device's only connection for good.
             try:
                 await client.disconnect()

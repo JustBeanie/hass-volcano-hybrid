@@ -21,10 +21,12 @@ from .ble_device import (
     DeviceState,
     StorzBickelDevice,
     _bit,
+    _clamp_boost,
     _decode_firmware,
     _decode_int,
     _decode_string,
 )
+from .const import PORTABLE_MAX_TEMP
 from .firmware import parse_firmware_version
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,7 +67,6 @@ MASK_TARGET_REACHED = 0x0004
 MASK_FIND = 0x0008  # buzzes for 30 s, then clears itself
 MASK_AUTO_BLE_SHUTDOWN = 0x1000
 
-MAX_TEMP = 210
 # Below this firmware the heater cannot be switched over Bluetooth at all, and
 # the settings are not exposed: the device can only be watched.
 CONTROL_FIRMWARE = (2, 51)
@@ -75,7 +76,7 @@ PLUS_FIRMWARE_MAJOR = 3
 # A Crafty set to show Fahrenheit reports its target in tenths of a degree
 # Fahrenheit, on the same characteristic. Anything above the Celsius range is
 # read as that.
-FAHRENHEIT_ABOVE = MAX_TEMP * 10
+FAHRENHEIT_ABOVE = PORTABLE_MAX_TEMP * 10
 
 
 @dataclass
@@ -185,10 +186,10 @@ class CraftyDevice(StorzBickelDevice):
     active_interval: ClassVar[timedelta] = timedelta(seconds=10)
     idle_interval: ClassVar[timedelta] = timedelta(seconds=30)
     sleeps: ClassVar[bool] = True
-    max_temp: ClassVar[int] = MAX_TEMP
+    max_temp: ClassVar[int] = PORTABLE_MAX_TEMP
 
     def __init__(self, address: str) -> None:
-        """Initialise the client for ``address``."""
+        """Initialize the client for ``address``."""
         super().__init__(address, CraftyState())
         self._state: CraftyState
 
@@ -304,7 +305,7 @@ class CraftyDevice(StorzBickelDevice):
         firmware most likely re-derives the boost from the target, so leaving
         it out could lose the user's boost setting.
         """
-        value = round(max(40, min(MAX_TEMP, celsius)))
+        value = self._clamp_target(celsius)
         async with self._lock:
             await self._write(CHAR_TARGET_TEMP, struct.pack("<H", value * 10))
             if (boost := self._state.boost_offset) is not None:
@@ -313,8 +314,8 @@ class CraftyDevice(StorzBickelDevice):
 
     async def async_set_boost(self, offset: float) -> None:
         """Set the boost offset added to the target while boosting."""
-        headroom = MAX_TEMP - (self._state.target_temperature or 0)
-        value = int(max(1, min(99, offset, headroom)))
+        headroom = self.max_temp - (self._state.target_temperature or 0)
+        value = _clamp_boost(offset, headroom)
         async with self._lock:
             await self._write(CHAR_BOOST, struct.pack("<H", value * 10))
         self._state.boost_offset = float(value)

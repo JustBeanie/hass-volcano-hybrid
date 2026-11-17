@@ -15,26 +15,28 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .ble_device import DeviceState
 from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
-from .entity import StorzBickelEntity, always
-from .families import ALL_FAMILIES, QVAP, VOLCANO_ONLY, Family
+from .entity import (
+    StorzBickelDescribedEntity,
+    StorzBickelEntity,
+    StorzBickelEntityDescription,
+    descriptions_for,
+)
+from .families import ALL_FAMILIES, QVAP, Family
 
-# The coordinator owns every read, and writes are already serialised by the
-# single GATT lock in volcano.py, so Home Assistant does not need to throttle.
+# The coordinator owns every read, and writes are already serialized by the
+# single GATT lock in ble_device.py, so Home Assistant does not need to throttle.
 PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
-class StorzBickelBinarySensorEntityDescription(BinarySensorEntityDescription):
+class StorzBickelBinarySensorEntityDescription(
+    BinarySensorEntityDescription, StorzBickelEntityDescription
+):
     """Describes a binary sensor decoded from a device's status."""
 
     is_on_fn: Callable[[Any], bool | None]
     attributes_fn: Callable[[Any], dict[str, Any]] | None = None
-    # Which device families have this entity, and whether a given device of
-    # them can use it right now.
-    families: frozenset[Family] = VOLCANO_ONLY
-    available_fn: Callable[[DeviceState], bool] = always
 
 
 BINARY_SENSORS: tuple[StorzBickelBinarySensorEntityDescription, ...] = (
@@ -127,8 +129,7 @@ async def async_setup_entry(
             StorzBickelConnectivitySensor(coordinator),
             *(
                 StorzBickelBinarySensor(coordinator, description)
-                for description in BINARY_SENSORS
-                if coordinator.family in description.families
+                for description in descriptions_for(coordinator, BINARY_SENSORS)
             ),
         ]
     )
@@ -142,7 +143,7 @@ class StorzBickelConnectivitySensor(StorzBickelEntity, BinarySensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: StorzBickelCoordinator) -> None:
-        """Initialise the connectivity sensor."""
+        """Initialize the connectivity sensor."""
         super().__init__(coordinator, "connection")
 
     @property
@@ -156,23 +157,10 @@ class StorzBickelConnectivitySensor(StorzBickelEntity, BinarySensorEntity):
         return bool(self.coordinator.data.connected)
 
 
-class StorzBickelBinarySensor(StorzBickelEntity, BinarySensorEntity):
+class StorzBickelBinarySensor(StorzBickelDescribedEntity, BinarySensorEntity):
     """A binary sensor decoded from the device's status registers."""
 
     entity_description: StorzBickelBinarySensorEntityDescription
-
-    def __init__(
-        self,
-        coordinator: StorzBickelCoordinator,
-        description: StorzBickelBinarySensorEntityDescription,
-    ) -> None:
-        """Initialise the binary sensor."""
-        super().__init__(coordinator, description.key)
-        self.entity_description = description
-
-    def _device_supports(self) -> bool:
-        """Return whether this device can use the entity."""
-        return self.entity_description.available_fn(self.data)
 
     @property
     def is_on(self) -> bool | None:

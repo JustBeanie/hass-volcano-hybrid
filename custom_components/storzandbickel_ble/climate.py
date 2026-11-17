@@ -19,13 +19,13 @@ from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import MAX_TEMP, MIN_TEMP, TEMP_STEP
+from .const import MIN_TEMP, TEMP_STEP
 from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
 from .entity import StorzBickelEntity
 from .families import Family
 
-# The coordinator owns every read, and writes are already serialised by the
-# single GATT lock in volcano.py, so Home Assistant does not need to throttle.
+# The coordinator owns every read, and writes are already serialized by the
+# single GATT lock in ble_device.py, so Home Assistant does not need to throttle.
 PARALLEL_UPDATES = 0
 
 
@@ -54,11 +54,10 @@ class StorzBickelClimate(StorzBickelEntity, ClimateEntity):
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
     _attr_fan_modes: list[str] | None = [FAN_OFF, FAN_ON]
     _attr_min_temp = MIN_TEMP
-    _attr_max_temp = MAX_TEMP
     _attr_target_temperature_step = TEMP_STEP
 
     def __init__(self, coordinator: StorzBickelCoordinator) -> None:
-        """Initialise the climate entity."""
+        """Initialize the climate entity."""
         super().__init__(coordinator, "climate")
         self._attr_max_temp = coordinator.device.max_temp
         # Only the Volcano has an air pump; the portables have no fan.

@@ -400,6 +400,9 @@
     "invalid_device": {
       "message": "{device_id} is not a loaded Volcano."
     },
+    "above_max_temp": {
+      "message": "{temperature} °C is above this device's highest target of {max_temp} °C."
+    },
     "wait_timeout": {
       "message": "The Volcano did not reach the target temperature within {seconds} seconds."
     },
