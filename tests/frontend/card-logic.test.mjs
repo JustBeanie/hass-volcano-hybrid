@@ -601,3 +601,14 @@ test("presets: false shows no presets at all, named lists included", () => {
   assert.deepEqual(model.lists, []);
   assert.deepEqual(model.presets, []);
 });
+
+test("hide_presets, the editor's switch, hides presets too", () => {
+  const hass = volcano();
+  const resolved = resolveDevice(hass, "dev1");
+  const model = cardModel(hass, resolved, { ...LISTS, hide_presets: true });
+  assert.deepEqual(model.lists, []);
+  assert.deepEqual(model.presets, []);
+  // Switched back off, the lists come back.
+  const shown = cardModel(hass, resolved, { ...LISTS, hide_presets: false });
+  assert.ok(shown.presets.length > 0);
+});

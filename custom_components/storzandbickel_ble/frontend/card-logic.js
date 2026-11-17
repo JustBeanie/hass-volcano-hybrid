@@ -284,10 +284,11 @@ export function presets(config, unit, min, max, fallback = true) {
  * A card can carry several named lists under `preset_lists` and switch
  * between them; a list with nothing usable in it is left out. Without any,
  * there is one unnamed list: the card's `presets`, or the defaults.
- * `presets: false` turns presets off altogether, named lists included.
+ * `hide_presets: true`, the editor's switch, turns presets off altogether,
+ * named lists included; so does `presets: false` written in YAML.
  */
 export function presetLists(config, unit, min, max) {
-  if (config?.presets === false) return [];
+  if (config?.hide_presets === true || config?.presets === false) return [];
   const given = Array.isArray(config?.preset_lists) ? config.preset_lists : [];
   const named = given
     .map((list, index) => ({

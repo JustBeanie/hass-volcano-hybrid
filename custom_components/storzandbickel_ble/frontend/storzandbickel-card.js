@@ -672,6 +672,8 @@ class StorzBickelCard extends HTMLElement {
           selector: { device: { integration: DOMAIN } },
         },
         { name: "name", selector: { text: {} } },
+        // Off unless set, so a card without it shows presets as before.
+        { name: "hide_presets", selector: { boolean: {} } },
         { name: "presets", selector: { text: { multiple: true } } },
         {
           name: "preset_lists",
@@ -694,11 +696,14 @@ class StorzBickelCard extends HTMLElement {
             localize("ui.common.device") ||
             "Device",
           name: localize("ui.panel.lovelace.editor.card.generic.name") || "Name",
+          hide_presets: "Hide presets",
           presets: "Temperature presets",
           preset_lists: "Preset lists",
         })[schema.name],
       computeHelper: (schema) =>
         ({
+          hide_presets:
+            "Show no preset buttons, whatever the lists below hold.",
           presets:
             "One-tap targets, in the temperature unit Home Assistant uses. Leave empty for the defaults.",
           preset_lists:
