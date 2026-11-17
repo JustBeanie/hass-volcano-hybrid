@@ -112,9 +112,9 @@ core's test-layout rules.
   dependencies. Keep it that way: what ships is what is in the repository.
 - Decisions go in `card-logic.js`, which has no DOM in it and is what the
   tests cover. `storzandbickel-card.js` only turns its results into elements.
-- Reuse Home Assistant's own cards and card features before drawing anything.
-  The card is the built-in thermostat card for a reason: it then matches every
-  theme and every future restyle without any work here.
+- Draw with Home Assistant's own building blocks: `ha-card`, theme colour
+  variables, and the control height, radius and spacing the built-in card
+  features use. No colour or size of its own, so it matches every theme.
 - Find entities by `translation_key` and device, never by entity ID.
 
 ## Quality scale

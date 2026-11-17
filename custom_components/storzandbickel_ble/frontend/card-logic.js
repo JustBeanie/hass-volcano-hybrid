@@ -6,6 +6,14 @@
  * elements in storzandbickel-card.js only turn the results into markup.
  */
 
+// Targets offered as one-tap presets when the card is not given its own,
+// in each unit Home Assistant can be set to. Round numbers in both, not one
+// list converted into the other.
+const DEFAULT_PRESETS = {
+  "°C": [175, 185, 195, 205],
+  "°F": [350, 365, 380, 400],
+};
+
 export const DOMAIN = "storzandbickel_ble";
 export const CARD_TYPE = "storzandbickel-card";
 export const STATUS_TYPE = "storzandbickel-status";
@@ -68,26 +76,6 @@ export function resolveDevice(hass, deviceId) {
   return resolved.climate ? resolved : undefined;
 }
 
-/**
- * The configuration of the built-in thermostat card this card renders.
- *
- * The dial, the heat switch and the air switch are all Home Assistant's own;
- * only the status row is ours. A portable has no air pump, so its climate
- * entity offers no fan modes and gets no air switch.
- */
-export function thermostatConfig(hass, resolved, config = {}) {
-  const features = [{ type: "climate-hvac-modes", style: "icons" }];
-  const fanModes = hass.states?.[resolved.climate]?.attributes?.fan_modes;
-  if (Array.isArray(fanModes) && fanModes.length > 0) {
-    features.push({ type: "climate-fan-modes", style: "icons" });
-  }
-  features.push({ type: `custom:${STATUS_TYPE}` });
-
-  const card = { type: "thermostat", entity: resolved.climate, features };
-  if (config.name) card.name = config.name;
-  return card;
-}
-
 const stateOf = (hass, entityId) =>
   entityId ? hass.states?.[entityId] : undefined;
 
@@ -114,17 +102,19 @@ export function statusItems(hass, resolved) {
   if (connection?.state === "off" || !known(climate)) {
     // Not connected: say why, in the link-health sensor's own words when it
     // is there, since "refused" and "out of range" call for different fixes.
+    // Only while the link really is down, though: if it is up and the device
+    // is unavailable for some other reason, "Connected" would be the wrong
+    // thing to show as the problem.
     const health = stateOf(hass, resolved.linkHealth);
+    const down = connection?.state === "off";
+    const speaker = known(health) ? resolved.linkHealth : resolved.connection;
     items.push({
       kind: "connection",
       tone: "warning",
-      entity: (known(health) ? resolved.linkHealth : resolved.connection) ??
-        resolved.climate,
-      label: known(health)
-        ? hass.formatEntityState(health)
-        : connection
-          ? hass.formatEntityState(connection)
-          : hass.localize?.("state.default.unavailable") || "Unavailable",
+      entity: down ? speaker : resolved.climate,
+      label: down
+        ? hass.formatEntityState(stateOf(hass, speaker))
+        : hass.localize?.("state.default.unavailable") || "Unavailable",
     });
   } else if (ready?.state === "on") {
     items.push({
@@ -188,4 +178,101 @@ export function statusSupported(hass, context) {
   return Boolean(
     entityId && domainOf(entityId) === "climate" && deviceOf(hass, entityId)
   );
+}
+
+const number = (value) =>
+  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+
+/** The unit temperatures are shown and set in: Home Assistant's own. */
+export function temperatureUnit(hass) {
+  return hass.config?.unit_system?.temperature === "°F" ? "°F" : "°C";
+}
+
+/**
+ * The presets to offer: the card's own if it lists any, else the defaults.
+ *
+ * The editor hands them over as text, so anything that is not a number is
+ * dropped rather than shown as a button that cannot work. Sorted, without
+ * repeats, and limited to what the device accepts.
+ */
+export function presets(config, unit, min, max) {
+  const given = Array.isArray(config?.presets) ? config.presets : [];
+  const parsed = given
+    .map((value) => Number.parseFloat(value))
+    .filter((value) => Number.isFinite(value));
+  const values = parsed.length > 0 ? parsed : DEFAULT_PRESETS[unit];
+  return [...new Set(values)]
+    .filter((value) => value >= min && value <= max)
+    .sort((left, right) => left - right);
+}
+
+/** A target moved by ``delta``, kept inside what the device accepts. */
+export function stepTarget(target, delta, min, max) {
+  return Math.min(max, Math.max(min, Math.round(target + delta)));
+}
+
+/**
+ * How far the block is towards the target, from 0 to 1.
+ *
+ * Measured from the lowest temperature the device can be set to, which is
+ * the nearest thing to "cold" it reports. Undefined when either temperature
+ * is unknown, so the bar can be left empty rather than drawn wrong.
+ */
+export function progress(current, target, min) {
+  if (current === undefined || target === undefined) return undefined;
+  if (target <= min) return current >= target ? 1 : 0;
+  return Math.min(1, Math.max(0, (current - min) / (target - min)));
+}
+
+/**
+ * Everything the card draws for one device, as plain data.
+ *
+ * `available` is false while the device cannot be reached; the card then
+ * shows the last known numbers greyed out and disables its controls, apart
+ * from the ones the integration keeps usable to bring the link back.
+ */
+export function cardModel(hass, resolved, config = {}) {
+  const climate = stateOf(hass, resolved.climate);
+  const attributes = climate?.attributes ?? {};
+  const available = Boolean(known(climate));
+  const unit = temperatureUnit(hass);
+  const min = number(attributes.min_temp) ?? (unit === "°F" ? 104 : 40);
+  const max = number(attributes.max_temp) ?? (unit === "°F" ? 446 : 230);
+  const current = number(attributes.current_temperature);
+  const target = number(attributes.temperature);
+  const heating = available && climate.state === "heat";
+  const fanModes = attributes.fan_modes;
+  const hasAir = Array.isArray(fanModes) && fanModes.includes("on");
+  const [status, ...extras] = statusItems(hass, resolved);
+
+  return {
+    entity: resolved.climate,
+    name: config.name || attributes.friendly_name || "Storz & Bickel",
+    available,
+    unit,
+    min,
+    max,
+    current,
+    target,
+    status,
+    extras,
+    progress: progress(current, target, min),
+    heat: {
+      on: heating,
+      label:
+        hass.localize?.("component.climate.entity_component._.state.heat") ||
+        "Heat",
+    },
+    // A portable has no air pump, so its climate entity has no fan modes.
+    air: hasAir
+      ? {
+          on: available && attributes.fan_mode === "on",
+          label: entityName(hass, "switch", "fan", "Air"),
+        }
+      : undefined,
+    presets: presets(config, unit, min, max).map((value) => ({
+      value,
+      active: value === target,
+    })),
+  };
 }
