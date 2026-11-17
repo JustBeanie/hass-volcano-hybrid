@@ -1,0 +1,45 @@
+name: Release
+
+# Builds the zip HACS installs from and attaches it to the release, so
+# publishing a release is the whole job. Refuses a tag that does not match
+# manifest.json: HACS shows the tag, Home Assistant shows the manifest, and
+# the two disagreeing is how "it says I am on the old version" gets reported.
+
+on:
+  release:
+    types: [published]
+
+# Attaching a file to the release is the one thing here that writes.
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package the integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Passed through the environment, never interpolated into a script.
+      TAG: ${{ github.event.release.tag_name }}
+      INTEGRATION: custom_components/storzandbickel_ble
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - name: Check the tag matches the manifest
+        run: |
+          set -euo pipefail
+          version="$(python3 -c "import json, sys; print(json.load(open(sys.argv[1]))['version'])" "$INTEGRATION/manifest.json")"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::Release $TAG does not match manifest.json version $version"
+            exit 1
+          fi
+      - name: Build the zip
+        run: |
+          set -euo pipefail
+          cd "$INTEGRATION"
+          zip -r "$RUNNER_TEMP/storzandbickel_ble.zip" . -x '*__pycache__*' '*.pyc'
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$TAG" "$RUNNER_TEMP/storzandbickel_ble.zip" --clobber

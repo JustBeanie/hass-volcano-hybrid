@@ -1,0 +1,164 @@
+blueprint:
+  name: "Storz & Bickel: temperature steps"
+  description: >-
+    Steps a Volcano Hybrid up through a range of temperatures, filling a bag
+    at each one: for example 175, 185, 195 and 205. It pauses between steps so
+    you can swap the bag, and turns the heat off after the last.
+
+    If a temperature is not reached in time, or the connection drops, the heat
+    and air are switched off and the script stops with an error.
+  domain: script
+  author: JustBeanie
+  source_url: https://github.com/JustBeanie/hass-volcano-hybrid/blob/master/blueprints/script/storzandbickel_ble/temperature_steps.yaml
+  homeassistant:
+    min_version: 2026.11.0
+  input:
+    volcano:
+      name: Volcano
+      description: The Volcano Hybrid's climate entity.
+      selector:
+        entity:
+          filter:
+            - integration: storzandbickel_ble
+              domain: climate
+    start_temperature:
+      name: First temperature
+      description: In the temperature unit Home Assistant is set to.
+      default: 175
+      selector:
+        number:
+          min: 40
+          max: 446
+          step: 1
+          mode: box
+    end_temperature:
+      name: Last temperature
+      description: The steps stop at or just below this.
+      default: 205
+      selector:
+        number:
+          min: 40
+          max: 446
+          step: 1
+          mode: box
+    step:
+      name: Step
+      description: How much hotter each step is than the one before.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+          mode: box
+    fill_seconds:
+      name: Fill time
+      description: How long the air runs at each temperature.
+      default: 40
+      selector:
+        number:
+          min: 5
+          max: 180
+          unit_of_measurement: s
+    pause_seconds:
+      name: Pause between steps
+      description: Time to swap the bag before the next temperature.
+      default: 120
+      selector:
+        number:
+          min: 0
+          max: 900
+          unit_of_measurement: s
+    heat_up_minutes:
+      name: Heat-up limit
+      description: Give up if a temperature is not reached within this long.
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 30
+          unit_of_measurement: min
+
+mode: single
+
+variables:
+  volcano: !input volcano
+  start_temperature: !input start_temperature
+  end_temperature: !input end_temperature
+  step: !input step
+  # Every temperature to visit, worked out once so a start above the end
+  # simply does nothing rather than looping.
+  temperatures: >-
+    {{ range(start_temperature | int, (end_temperature | int) + 1, step | int)
+       | list }}
+
+sequence:
+  - repeat:
+      for_each: "{{ temperatures }}"
+      sequence:
+        - action: climate.set_temperature
+          target:
+            entity_id: "{{ volcano }}"
+          data:
+            temperature: "{{ repeat.item }}"
+        - action: climate.set_hvac_mode
+          target:
+            entity_id: "{{ volcano }}"
+          data:
+            hvac_mode: heat
+
+        # "Idle" alone can be left over from the step before, so the
+        # temperature has to be there too.
+        - wait_template: >-
+            {{ states(volcano) != 'heat'
+               or (state_attr(volcano, 'hvac_action') == 'idle'
+                   and (state_attr(volcano, 'current_temperature') | float(0))
+                       >= (state_attr(volcano, 'temperature') | float(999)) - 2) }}
+          timeout:
+            minutes: !input heat_up_minutes
+          continue_on_timeout: true
+        - if:
+            - condition: template
+              value_template: >-
+                {{ not wait.completed or states(volcano) != 'heat' }}
+          then:
+            - action: climate.set_fan_mode
+              continue_on_error: true
+              target:
+                entity_id: "{{ volcano }}"
+              data:
+                fan_mode: "off"
+            - action: climate.set_hvac_mode
+              continue_on_error: true
+              target:
+                entity_id: "{{ volcano }}"
+              data:
+                hvac_mode: "off"
+            - stop: The Volcano did not reach its temperature, so the steps were stopped.
+              error: true
+
+        - action: climate.set_fan_mode
+          target:
+            entity_id: "{{ volcano }}"
+          data:
+            fan_mode: "on"
+        - delay:
+            seconds: !input fill_seconds
+        - action: climate.set_fan_mode
+          target:
+            entity_id: "{{ volcano }}"
+          data:
+            fan_mode: "off"
+
+        - if:
+            - condition: template
+              value_template: "{{ not repeat.last }}"
+          then:
+            - delay:
+                seconds: !input pause_seconds
+
+  - action: climate.set_hvac_mode
+    target:
+      entity_id: "{{ volcano }}"
+    data:
+      hvac_mode: "off"
