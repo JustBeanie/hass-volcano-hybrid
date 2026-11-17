@@ -93,9 +93,9 @@ triggers. On top of that:
 | Error, needs factory reset | ✓ | | |
 | Charge LED, automatic Bluetooth shutdown | ✓ | | |
 | Charging, bootloader mode | | ✓ | ✓ |
-| Display °F, charge optimisation, charge limit, boost on display, boost never times out | | ✓ | ✓ |
+| Display °F, charge optimization, charge limit, boost on display, boost never times out | | ✓ | ✓ |
 | Total heating and charging time | Heating (hours) | ✓ | ✓ |
-| Permanent Bluetooth, colour | | | ✓ |
+| Permanent Bluetooth, color | | | ✓ |
 
 A Venty or Veazy sitting in its **bootloader** (after an interrupted update) is
 reported but never controlled. This integration does not install firmware on any
@@ -210,7 +210,7 @@ of these reloads the integration so it takes effect immediately.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | Initial temperature | unset | A target temperature in °C, between 40 and 230, written whenever Home Assistant starts or the integration is reloaded. Leave blank to keep whatever the device already has. |
-| Start the fan on startup | off | Runs the fan once on startup or reload. It is **not** re-applied when Bluetooth reconnects — that behaviour caused the fan to start on its own after any signal blip. |
+| Start the fan on startup | off | Runs the fan once on startup or reload. It is **not** re-applied when Bluetooth reconnects — that behavior caused the fan to start on its own after any signal blip. |
 | Auto-connect delay | 1 s | How long to wait after hearing the vaporizer before connecting, so every adapter and proxy can report it and the strongest one is used. Keep it low. |
 | Delayed reconnect wait | 11 s | How long **Reconnect after delay** stays off the link. The vaporizer advertises about every ten seconds, so this guarantees a fresh advertisement. |
 
@@ -447,14 +447,22 @@ serves the card itself.
 - **The temperature it is at**, large, with the target beside it and plus and
   minus to nudge it a degree at a time.
 - **A heat-up bar** that fills as the block climbs to the target, in the heat
-  colour while heating and green once the device reports it is ready.
+  color while heating and green once the device reports it is ready.
 - **Heat** and, on a Volcano, **Fan** as one button each.
-- **Presets** for the temperatures you actually use, one tap each.
+- **Presets** for the temperatures you actually use, one tap each, in as
+  many named lists as you like, with a tab for each.
+- **Auto-off countdown** while it heats: how long until the device switches
+  its heater off by itself. A Crafty, Venty or Veazy reports this directly.
+  The Volcano reports only the delay it is set to, so the card works it out
+  from when the heater was turned on and marks it with a `~`. The device's own
+  timer may restart when you use it, so the real switch-off comes at or after
+  the estimate, not before. Restarting Home Assistant while it heats restarts
+  the estimate too. Tap it to change the delay.
 - **Status** in the corner: *Heating*, *Ready*, or why it is not connected. On
   a Crafty, Venty or Veazy the battery and a *Find device* button are added
   underneath.
 
-It uses your theme's colours and Home Assistant's own control sizes, so it
+It uses your theme's colors and Home Assistant's own control sizes, so it
 sits on a dashboard like any built-in card.
 
 In YAML:
@@ -467,7 +475,22 @@ presets: [175, 185, 195, 205] # optional, in Home Assistant's temperature unit
 ```
 
 Without `presets` the card offers 175, 185, 195 and 205 °C, or 350, 365, 380
-and 400 °F.
+and 400 °F. `presets: false` hides presets altogether.
+
+For more than one set, name them under `preset_lists`, or use **Preset lists**
+in the card editor. With two or more, the card shows a tab for each and
+remembers the one you picked in that browser; until you pick one, it shows the
+list that holds the current target. Named lists replace `presets`.
+
+```yaml
+type: custom:storzandbickel-card
+device_id: <the device's ID>
+preset_lists:
+  - name: Flavor
+    presets: [175, 180, 185]
+  - name: Clouds
+    presets: [200, 205, 210]
+```
 
 The status is also available as a card feature of its own. On any tile or
 thermostat card for the device's climate entity, choose **Add feature → Storz

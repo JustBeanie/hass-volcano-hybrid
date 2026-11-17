@@ -5,10 +5,14 @@ import { test } from "node:test";
 
 import {
   CARD_TYPE,
+  autoOff,
+  autoOffLabel,
   cardModel,
+  chosenList,
   deviceOf,
   devices,
   entitySuggestion,
+  presetLists,
   presets,
   progress,
   resolveDevice,
@@ -128,7 +132,11 @@ test("a card's own presets are cleaned up, not trusted", () => {
   );
   // Nothing usable falls back to the defaults rather than an empty row.
   assert.deepEqual(presets({ presets: ["x"] }, "°C", 40, 230), [175, 185, 195, 205]);
-  assert.deepEqual(presets({ presets: "185" }, "°C", 40, 230), [175, 185, 195, 205]);
+  // Written by hand in YAML as one line, they are split up.
+  assert.deepEqual(presets({ presets: "190, 180;200" }, "°C", 40, 230), [180, 190, 200]);
+  assert.deepEqual(presets({ presets: 185 }, "°C", 40, 230), [175, 185, 195, 205]);
+  // A named list does not fall back: an empty one is simply empty.
+  assert.deepEqual(presets({ presets: [] }, "°C", 40, 230, false), []);
 });
 
 test("stepping the target stays inside what the device accepts", () => {
@@ -391,4 +399,161 @@ test("the status row is offered on our climate entities only", () => {
   assert.equal(statusSupported(hass, { entity_id: "switch.s_b_volcano_h_fan" }), false);
   assert.equal(statusSupported(hass, { area_id: "kitchen" }), false);
   assert.equal(statusSupported(hass, undefined), false);
+});
+
+// -- auto-off ---------------------------------------------------------------
+
+const NOW = Date.parse("2026-11-17T12:00:00Z");
+
+/** A Volcano heating since `since`, with its auto-off delay set to `minutes`. */
+function heatingVolcano(minutes, since = "2026-11-17T11:50:00Z") {
+  const hass = volcano({
+    entities: [entry("number.living_room_auto_off_time", "dev1", "auto_off_time")],
+    states: [
+      { ...state("climate.s_b_volcano_h", "heat", { hvac_action: "heating" }), last_changed: since },
+      state("number.living_room_auto_off_time", minutes),
+    ],
+  });
+  return hass;
+}
+
+test("the Volcano's auto-off is estimated from when it started heating", () => {
+  const hass = heatingVolcano("30.0");
+  const resolved = resolveDevice(hass, "dev1");
+  assert.equal(resolved.autoOffTime, "number.living_room_auto_off_time");
+  assert.deepEqual(autoOff(hass, resolved, NOW), {
+    entity: "number.living_room_auto_off_time",
+    seconds: 20 * 60,
+    estimated: true,
+  });
+  // Shown beside the status, and opens the delay's own dialog.
+  const items = statusItems(hass, resolved, NOW);
+  assert.deepEqual(items[1], {
+    kind: "auto_off",
+    tone: "neutral",
+    entity: "number.living_room_auto_off_time",
+    label: "Auto-off in ~20 min",
+  });
+  // Past the delay it says it is due, never a negative time.
+  assert.equal(autoOff(hass, resolved, NOW + 3600_000).seconds, 0);
+});
+
+test("no auto-off is shown while the heater is off or nothing is known", () => {
+  const off = volcano({
+    entities: [entry("number.living_room_auto_off_time", "dev1", "auto_off_time")],
+    states: [state("number.living_room_auto_off_time", "30")],
+  });
+  assert.equal(autoOff(off, resolveDevice(off, "dev1"), NOW), undefined);
+
+  const unknownDelay = heatingVolcano("unknown");
+  assert.equal(autoOff(unknownDelay, resolveDevice(unknownDelay, "dev1"), NOW), undefined);
+
+  const noTimestamp = heatingVolcano("30", undefined);
+  delete noTimestamp.states["climate.s_b_volcano_h"].last_changed;
+  assert.equal(autoOff(noTimestamp, resolveDevice(noTimestamp, "dev1"), NOW), undefined);
+
+  // A clock behind the device's timestamp does not add time.
+  const ahead = heatingVolcano("30", "2026-11-17T12:05:00Z");
+  assert.equal(autoOff(ahead, resolveDevice(ahead, "dev1"), NOW).seconds, 30 * 60);
+});
+
+test("a portable's own countdown is used as it stands", () => {
+  const hass = hassOf(
+    [
+      entry("climate.crafty", "dev1"),
+      entry("sensor.crafty_auto_off_countdown", "dev1", "auto_off_countdown"),
+    ],
+    [
+      state("climate.crafty", "heat", { hvac_action: "heating" }),
+      state("sensor.crafty_auto_off_countdown", "95"),
+    ]
+  );
+  const resolved = resolveDevice(hass, "dev1");
+  assert.deepEqual(autoOff(hass, resolved, NOW), {
+    entity: "sensor.crafty_auto_off_countdown",
+    seconds: 95,
+    estimated: false,
+  });
+  assert.deepEqual(
+    cardModel(hass, resolved, {}, { now: NOW }).extras.map((item) => item.label),
+    ["Auto-off in 2 min"]
+  );
+});
+
+test("the auto-off label is in whole minutes, rounded up", () => {
+  const label = (seconds, estimated = false) => autoOffLabel({ seconds, estimated });
+  assert.equal(label(0), "Auto-off due");
+  assert.equal(label(1), "Auto-off in 1 min");
+  assert.equal(label(60), "Auto-off in 1 min");
+  assert.equal(label(61), "Auto-off in 2 min");
+  assert.equal(label(3600), "Auto-off in 1 h");
+  assert.equal(label(3900, true), "Auto-off in ~1 h 5 min");
+});
+
+// -- preset lists -----------------------------------------------------------
+
+const LISTS = {
+  preset_lists: [
+    { name: "Flavor", presets: ["175", "185"] },
+    { name: " ", presets: "200, 210" },
+    { name: "Out of range", presets: ["999"] },
+    { presets: [] },
+    null,
+  ],
+};
+
+test("named preset lists are cleaned up and unnamed ones numbered", () => {
+  assert.deepEqual(presetLists(LISTS, "°C", 40, 230), [
+    { name: "Flavor", values: [175, 185] },
+    { name: "Presets 2", values: [200, 210] },
+  ]);
+  // Without any, there is one unnamed list: the card's presets or defaults.
+  assert.deepEqual(presetLists({ presets: ["190"] }, "°C", 40, 230), [
+    { name: undefined, values: [190] },
+  ]);
+  assert.deepEqual(presetLists({ preset_lists: [{ presets: ["x"] }] }, "°C", 40, 230), [
+    { name: undefined, values: [175, 185, 195, 205] },
+  ]);
+});
+
+test("the list shown is the one picked, else the one holding the target", () => {
+  const lists = [{ values: [175, 185] }, { values: [200, 210] }];
+  assert.equal(chosenList(lists, 1, 175), 1);
+  assert.equal(chosenList(lists, undefined, 210), 1);
+  assert.equal(chosenList(lists, undefined, 190), 0);
+  // A pick that no longer exists, after the lists were edited, is ignored.
+  assert.equal(chosenList(lists, 5, 210), 1);
+  assert.equal(chosenList(lists, Number.NaN, 175), 0);
+});
+
+test("the card shows tabs for two or more lists, and the chosen list's presets", () => {
+  const hass = volcano({
+    states: [state("climate.s_b_volcano_h", "heat", { temperature: 210 })],
+  });
+  const resolved = resolveDevice(hass, "dev1");
+
+  const model = cardModel(hass, resolved, LISTS);
+  assert.deepEqual(model.lists, [
+    { name: "Flavor", active: false },
+    { name: "Presets 2", active: true },
+  ]);
+  assert.deepEqual(model.presets, [
+    { value: 200, active: false },
+    { value: 210, active: true },
+  ]);
+
+  const picked = cardModel(hass, resolved, LISTS, { list: 0 });
+  assert.deepEqual(picked.presets.map((preset) => preset.value), [175, 185]);
+
+  // One list needs no tabs.
+  assert.deepEqual(cardModel(hass, resolved, {}).lists, []);
+});
+
+test("presets: false shows no presets at all, named lists included", () => {
+  const hass = volcano();
+  const resolved = resolveDevice(hass, "dev1");
+  assert.deepEqual(presetLists({ presets: false }, "°C", 40, 230), []);
+  const model = cardModel(hass, resolved, { ...LISTS, presets: false });
+  assert.deepEqual(model.lists, []);
+  assert.deepEqual(model.presets, []);
 });

@@ -113,7 +113,7 @@ rules:
     status: done
     comment: |
       Zero on every platform. The coordinator owns all reads and writes are
-      already serialised by the single GATT lock in volcano.py.
+      already serialized by the single GATT lock in volcano.py.
   reauthentication-flow:
     status: exempt
     comment: The device has no authentication.
@@ -184,7 +184,7 @@ rules:
   reconfiguration-flow:
     status: done
     comment: |
-      An options flow for the startup behaviour, plus a reconfigure step that
+      An options flow for the startup behavior, plus a reconfigure step that
       re-tests the stored address. The address itself is a fixed MAC and is
       not user-editable by design.
   repair-issues:

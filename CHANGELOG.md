@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The dashboard card shows the auto-off countdown** while the heater is on.
+  A portable's own countdown is shown as it stands; on the Volcano, which
+  reports only the delay, it is estimated from when the heater was turned on
+  and marked `~`. The status card feature shows it too.
+- **Several named preset lists on the card**, under `preset_lists` or
+  **Preset lists** in the editor, with a tab for each. The tab you pick is
+  remembered per browser.
+- **`presets: false`** hides the card's presets.
+
+### Changed
+
+- Documentation and user-facing text are in American English: *Color*,
+  *Charge optimization*, *Startup behavior*, *Unrecognized fault*. Entity IDs
+  you already have are kept; a Venty or Veazy added from now on gets
+  `sensor.<name>_color` and `switch.<name>_charge_optimization`.
+- A card's `presets` can also be written as one line, `presets: 180, 190`.
+
+### Fixed
+
+- **After an update the card could run with the previous release's logic.**
+  Home Assistant's service worker kept serving the old `card-logic.js`, whose
+  address never changed between releases. It is now loaded with the release
+  version in its address, like the card itself.
+
 ## [4.2.0] - 2026-11-16
 
 ### Added
@@ -41,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the entry was reloaded, and a firmware update was not reflected either.
 - **A wait that times out no longer makes the device look unavailable.** If
   *Set temperature* with *Wait until reached*, or *Connect*, ran out of time
-  while a poll was in flight, the poll was cancelled and counted as a failed
+  while a poll was in flight, the poll was canceled and counted as a failed
   update, so every entity went unavailable until the next one.
 
 ### Changed
@@ -179,7 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Experimental support for the Crafty / Crafty+, Venty and Veazy.** Implemented
   from Storz & Bickel's web app by way of SavageNL's protocol descriptions; not
   run on hardware by this project, so please report how it goes with the
-  diagnostics attached. Each device is recognised from its advertisement, or can
+  diagnostics attached. Each device is recognized from its advertisement, or can
   be added by address with its type chosen.
   - They share the Volcano's self-healing Bluetooth link, link-health sensor,
     auto-connect switch, reconnect buttons, device triggers and actions.
@@ -238,7 +266,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Development
 
 - The Bluetooth link code is shared by every device family (`ble_device.py`);
-  the Volcano's behaviour is unchanged and its whole test suite runs against it.
+  the Volcano's behavior is unchanged and its whole test suite runs against it.
 - Shared code is named after Storz & Bickel rather than the Volcano, and typed
   accessors replace `Any` and attribute lookups by name.
 - CI requires 100% line and branch coverage, treats warnings from the
@@ -306,7 +334,7 @@ were never released on their own.
   bits — display while cooling is register 2 bit 12, vibration is register 3 bit 10,
   both inverted — and the device expects a four-byte set/clear word. They are now
   named **Display while cooling** and **Vibration**, decode the right bit, write the
-  right word, and read the register back afterwards, so a write the device rejects
+  right word, and read the register back afterward, so a write the device rejects
   does not show as applied. Existing entity IDs (`switch.<name>_register_2` and
   `_register_3`) are unchanged.
 
@@ -393,7 +421,7 @@ the failure it was reporting could not have been caused by anything else.
   waited out whatever was left of it. Measured on hardware: 10-15 seconds when a
   command had just run, under a second when the cooldown happened to have expired.
   The advertisement path now refreshes directly. A guard flag keeps a burst of
-  advertisements to one attempt at a time, and clears afterwards whether or not
+  advertisements to one attempt at a time, and clears afterward whether or not
   the attempt succeeded, since an advertisement means the device really is there.
 
 ## [3.1.0] - 2026-08-15
@@ -463,11 +491,11 @@ calling them will fail with "service not found".
 - `volcano_hybrid.screen_animation`
 
 Both were convenience wrappers over entities the integration already exposes, so
-nothing is actually lost — the same behaviour is a few lines of built-in actions,
+nothing is actually lost — the same behavior is a few lines of built-in actions,
 and the **Use cases** section of the README now shows exactly that. A fan timer is
 `switch.turn_on`, a `delay`, and `switch.turn_off`; a screen animation is a `repeat`
-over `light.turn_on`. The one behavioural difference is that a `delay` does not
-survive a Home Assistant restart, where the old action's timer was cancelled
+over `light.turn_on`. The one behavioral difference is that a `delay` does not
+survive a Home Assistant restart, where the old action's timer was canceled
 cleanly on unload.
 
 Removing them also removed roughly 180 lines of coordinator machinery that only
@@ -525,7 +553,7 @@ up from Bronze. Existing installations migrate automatically and keep every enti
 ### Changed
 
 - Connectivity is now logged once when it drops and once when it returns, rather
-  than relying on the coordinator's incidental behaviour.
+  than relying on the coordinator's incidental behavior.
 - `PARALLEL_UPDATES = 0` on every platform.
 - Fully strict-typed: `py.typed`, complete annotations, and mypy at Home Assistant's
   strict settings in CI.
@@ -576,7 +604,7 @@ identifier and entity unique IDs change, and both are rewritten in place.
 - **Light brightness** no longer loses a step converting between 0–255 and 0–100.
 - **Setup no longer reports success when the device is unreachable**; the entry
   retries instead of loading entities that can never work.
-- **Fan timers are cancelled on unload**, so a pending timer can no longer
+- **Fan timers are canceled on unload**, so a pending timer can no longer
   operate the device after the integration has been removed.
 - **Fixed the documentation and issue tracker URLs**, which pointed at a
   repository that does not exist.
