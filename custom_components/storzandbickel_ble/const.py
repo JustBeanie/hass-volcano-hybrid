@@ -21,7 +21,7 @@ MANUFACTURER_ID = 1736
 CONF_MAC_ADDRESS = "mac_address"
 CONF_INITIAL_TEMP = "initial_temperature"
 CONF_FAN_ON_CONNECT = "fan_on_connect"
-# Which protocol family the device speaks; absent on entries from before 4.3,
+# Which protocol family the device speaks; absent on entries from before 4.0,
 # which are all Volcanos.
 CONF_MODEL = "model"
 # Whether Home Assistant connects and stays connected on its own. Kept in the

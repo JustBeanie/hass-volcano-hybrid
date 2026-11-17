@@ -263,6 +263,34 @@ async def test_an_abort_that_loses_to_the_timeout_is_not_left_unread(
     assert err.value.translation_key == "wait_timeout"
 
 
+async def test_a_wait_that_times_out_does_not_cancel_the_poll(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """The poll a wait started finishes even though the wait gave up on it.
+
+    Cancelled part-way, it was recorded as a failed update and every entity
+    went unavailable until the next poll.
+    """
+    coordinator = loaded_entry.runtime_data
+    release = asyncio.Event()
+    real_update = coordinator.device.async_update
+
+    async def _slow_update() -> object:
+        await release.wait()
+        return await real_update()
+
+    with patch(UPDATE, AsyncMock(side_effect=_slow_update)):
+        with pytest.raises(HomeAssistantError) as err:
+            await coordinator.async_wait_connected(0.01)
+        assert err.value.translation_key == "connect_timeout"
+
+        release.set()
+        await hass.async_block_till_done()
+
+    assert coordinator.last_update_success is True
+    assert hass.states.get("climate.s_b_volcano_h").state != "unavailable"
+
+
 # -- connect and disconnect -------------------------------------------------
 
 

@@ -22,6 +22,7 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, issue_registry as ir
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.typing import UNDEFINED
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -138,6 +139,9 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
         # reading, so nothing fires for a state the device was already in.
         self._last_target_reached: bool | None = None
         self._last_any_fault: bool | None = None
+        # The serial number, firmware and model last written to the device
+        # registry; see _async_sync_device_details.
+        self._registered_details: tuple[str | None, ...] | None = None
         # The options this entry was set up with that need a reload to change;
         # see _async_options_updated in __init__.py.
         self.reload_options: dict[str, Any] = {}
@@ -335,6 +339,7 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
             else self.device.idle_interval
         )
         self._async_fire_edges()
+        self._async_sync_device_details()
         return state
 
     @callback
@@ -457,12 +462,42 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
             self._last_any_fault = fault
 
     @callback
-    def _async_fire(self, trigger_type: str, **data: Any) -> None:
-        """Fire a device trigger event, if the device is registered yet."""
-        device = dr.async_get(self.hass).async_get_device_by_identifier(
+    def _async_registry_device(self) -> dr.DeviceEntry | None:
+        """Return this device's registry entry, once an entity has made it."""
+        return dr.async_get(self.hass).async_get_device_by_identifier(
             (DOMAIN, dr.format_mac(self.address)), self.config_entry.entry_id
         )
-        if device is None:
+
+    @callback
+    def _async_sync_device_details(self) -> None:
+        """Keep the device page's serial number, firmware and model current.
+
+        Entities write these once, when they are created. A portable that was
+        asleep at startup had none to write, and a firmware update changes one
+        afterwards; either way the device page kept the old value until the
+        entry was reloaded. Only what the device has actually reported is
+        written, so a value never goes back to blank.
+        """
+        state = self.device.state
+        details = (state.serial_number, state.firmware_version, state.model)
+        if details == self._registered_details:
+            return
+        if (device := self._async_registry_device()) is None:
+            # No entity yet; they write what is known when they are created.
+            return
+        serial, firmware, model = details
+        dr.async_get(self.hass).async_update_device(
+            device.id,
+            serial_number=UNDEFINED if serial is None else serial,
+            sw_version=UNDEFINED if firmware is None else firmware,
+            model_id=UNDEFINED if model is None else model,
+        )
+        self._registered_details = details
+
+    @callback
+    def _async_fire(self, trigger_type: str, **data: Any) -> None:
+        """Fire a device trigger event, if the device is registered yet."""
+        if (device := self._async_registry_device()) is None:
             return
         self.hass.bus.async_fire(
             EVENT_DEVICE,
@@ -558,9 +593,16 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
                 )
 
         remove = self.async_add_listener(_check)
+        # Owned by the entry and shielded from the timeout below. Cancelling
+        # a poll part-way makes Home Assistant record it as a failed update,
+        # so a wait that ran out of time used to turn every entity
+        # unavailable until the next poll.
+        refresh = self.config_entry.async_create_task(
+            self.hass, self.async_refresh(), eager_start=True
+        )
         try:
             async with asyncio.timeout(seconds):
-                await self.async_refresh()
+                await asyncio.shield(refresh)
                 _check()
                 await done
         except TimeoutError as err:

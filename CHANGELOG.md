@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.2] - 2026-11-16
+
+### Fixed
+
+- **The device page keeps its serial number, firmware and model current.**
+  They were written once, when the entities were created. A Crafty, Venty or
+  Veazy that was asleep when Home Assistant started showed none of them until
+  the entry was reloaded, and a firmware update was not reflected either.
+- **A wait that times out no longer makes the device look unavailable.** If
+  *Set temperature* with *Wait until reached*, or *Connect*, ran out of time
+  while a poll was in flight, the poll was cancelled and counted as a failed
+  update, so every entity went unavailable until the next one.
+
+### Changed
+
+- The README shows what the device page looks like.
+- The tests also run against the newest Home Assistant published, betas
+  included, so a deprecation is noticed before it reaches a release. That run
+  reports and does not block.
+
 ## [4.1.1] - 2026-11-16
 
 ### Fixed
