@@ -304,7 +304,7 @@ class CraftyDevice(StorzBickelDevice):
         firmware most likely re-derives the boost from the target, so leaving
         it out could lose the user's boost setting.
         """
-        value = int(max(40, min(MAX_TEMP, celsius)))
+        value = round(max(40, min(MAX_TEMP, celsius)))
         async with self._lock:
             await self._write(CHAR_TARGET_TEMP, struct.pack("<H", value * 10))
             if (boost := self._state.boost_offset) is not None:

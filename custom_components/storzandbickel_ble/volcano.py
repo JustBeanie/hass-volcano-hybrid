@@ -555,7 +555,7 @@ class VolcanoHybrid(StorzBickelDevice):
 
     async def async_set_target_temperature(self, celsius: float) -> None:
         """Set the target temperature in degrees Celsius."""
-        value = int(max(MIN_TEMP, min(MAX_TEMP, celsius)))
+        value = round(max(MIN_TEMP, min(MAX_TEMP, celsius)))
         async with self._lock:
             await self._write(CHAR_TARGET_TEMP, struct.pack("<I", value * 10))
         self._state.target_temperature = float(value)

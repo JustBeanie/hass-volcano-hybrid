@@ -29,6 +29,7 @@ const {
   deviceOf,
   entitySuggestion,
   resolveDevice,
+  sameSetting,
   statusItems,
   statusSupported,
   stepTarget,
@@ -377,7 +378,7 @@ class StorzBickelCard extends HTMLElement {
       const sent = !this._sendTimer;
       if (
         sent &&
-        (model.target === this._pendingTarget ||
+        (sameSetting(model.target, this._pendingTarget, model.unit) ||
           Date.now() > this._pendingUntil)
       ) {
         this._pendingTarget = undefined;
@@ -385,7 +386,7 @@ class StorzBickelCard extends HTMLElement {
         model.target = this._pendingTarget;
         model.presets = model.presets.map((preset) => ({
           ...preset,
-          active: preset.value === this._pendingTarget,
+          active: sameSetting(preset.value, this._pendingTarget, model.unit),
         }));
       }
     }
@@ -630,7 +631,7 @@ class StorzBickelCard extends HTMLElement {
   _step(delta) {
     const model = this._model;
     this._setTarget(
-      stepTarget(model.target, delta, model.min, model.max),
+      stepTarget(model.target, delta, model.min, model.max, model.unit),
       TARGET_SEND_DELAY
     );
   }

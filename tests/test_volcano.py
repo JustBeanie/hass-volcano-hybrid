@@ -213,6 +213,12 @@ async def test_commands_do_not_deadlock(
     assert written[CHAR_BRIGHTNESS] == (50).to_bytes(2, "little")
     assert written[CHAR_AUTO_OFF_SETTING] == (1800).to_bytes(2, "little")
 
+    # A Fahrenheit target arrives as a fraction of a degree. Rounded, not
+    # truncated: 379 °F is 192.8 °C, and truncating made it read back as 378.
+    await device.async_set_target_temperature(192.78)
+    assert dict(fake_client.writes)[CHAR_TARGET_TEMP] == (1930).to_bytes(4, "little")
+    assert device.state.target_temperature == 193
+
 
 async def test_optimistic_window_survives_a_stale_notification(
     mock_establish_connection: object, fake_client: FakeBleakClient
