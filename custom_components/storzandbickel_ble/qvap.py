@@ -305,7 +305,7 @@ class QvapDevice(StorzBickelDevice):
         """Set the target temperature."""
         frame = _frame(CMD_STATUS)
         frame[1] = WRITE_TARGET
-        frame[4:6] = struct.pack("<H", int(max(40, min(MAX_TEMP, celsius))) * 10)
+        frame[4:6] = struct.pack("<H", round(max(40, min(MAX_TEMP, celsius))) * 10)
         await self._async_status_write(frame)
 
     async def async_set_boost(self, offset: float) -> None:

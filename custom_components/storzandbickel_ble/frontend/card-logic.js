@@ -312,9 +312,36 @@ export function chosenList(lists, requested, target) {
   return holding === -1 ? 0 : holding;
 }
 
-/** A target moved by ``delta``, kept inside what the device accepts. */
-export function stepTarget(target, delta, min, max) {
-  return Math.min(max, Math.max(min, Math.round(target + delta)));
+/**
+ * The whole degree Celsius the device stores for a target in ``unit``.
+ *
+ * Every Storz & Bickel device sets its target in whole °C, so in °F only
+ * every 1.8° is a setting of its own: 379 °F and 380 °F are both 193 °C.
+ */
+export function deviceDegree(value, unit) {
+  return Math.round(unit === "°F" ? ((value - 32) * 5) / 9 : value);
+}
+
+/** Whether two targets are the same setting on the device. */
+export function sameSetting(left, right, unit) {
+  return (
+    left !== undefined &&
+    right !== undefined &&
+    deviceDegree(left, unit) === deviceDegree(right, unit)
+  );
+}
+
+/**
+ * A target moved by ``delta`` device degrees, kept inside what the device
+ * accepts. In °F one step is one degree Celsius, about 2 °F: a step of 1 °F
+ * often lands on the setting it started from, and the press does nothing.
+ */
+export function stepTarget(target, delta, min, max, unit = "°C") {
+  const next =
+    unit === "°F"
+      ? Math.round(((deviceDegree(target, unit) + delta) * 9) / 5 + 32)
+      : Math.round(target + delta);
+  return Math.min(max, Math.max(min, next));
 }
 
 /**
@@ -393,7 +420,7 @@ export function cardModel(
         : [],
     presets: (lists[chosen]?.values ?? []).map((value) => ({
       value,
-      active: value === target,
+      active: sameSetting(value, target, unit),
     })),
   };
 }

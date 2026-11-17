@@ -208,8 +208,13 @@ async def test_setting_the_target_without_a_known_boost(
     device = _device()
 
     await device.async_set_target_temperature(190)
+    # A Fahrenheit target, 379 °F: rounded to the nearest degree.
+    await device.async_set_target_temperature(192.78)
 
-    assert fake_client.writes == [(CHAR_TARGET_TEMP, _u16(1900))]
+    assert fake_client.writes == [
+        (CHAR_TARGET_TEMP, _u16(1900)),
+        (CHAR_TARGET_TEMP, _u16(1930)),
+    ]
 
 
 async def test_the_boost_stays_inside_the_range(

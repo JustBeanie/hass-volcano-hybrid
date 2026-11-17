@@ -9,6 +9,7 @@ import {
   autoOffLabel,
   cardModel,
   chosenList,
+  deviceDegree,
   deviceOf,
   devices,
   entitySuggestion,
@@ -16,6 +17,7 @@ import {
   presets,
   progress,
   resolveDevice,
+  sameSetting,
   statusItems,
   statusSupported,
   stepTarget,
@@ -144,6 +146,41 @@ test("stepping the target stays inside what the device accepts", () => {
   assert.equal(stepTarget(185.4, -1, 40, 230), 184);
   assert.equal(stepTarget(230, 1, 40, 230), 230);
   assert.equal(stepTarget(40, -1, 40, 230), 40);
+});
+
+test("in °F a step is one device degree, so every press changes the setting", () => {
+  // 378 °F is 192 °C. 379 °F would still be 192 °C, so plus goes to 193 °C.
+  assert.equal(deviceDegree(378, "°F"), 192);
+  assert.equal(stepTarget(378, 1, 104, 446, "°F"), 379);
+  assert.equal(stepTarget(379, 1, 104, 446, "°F"), 381);
+  assert.equal(stepTarget(381, -1, 104, 446, "°F"), 379);
+  // Each result is a setting of its own and reads back unchanged.
+  for (let f = 104; f <= 444; f = stepTarget(f, 1, 104, 446, "°F")) {
+    const next = stepTarget(f, 1, 104, 446, "°F");
+    assert.equal(deviceDegree(next, "°F"), deviceDegree(f, "°F") + 1);
+    assert.equal(Math.round((deviceDegree(next, "°F") * 9) / 5 + 32), next);
+  }
+  assert.equal(stepTarget(446, 1, 104, 446, "°F"), 446);
+  assert.equal(stepTarget(104, -1, 104, 446, "°F"), 104);
+});
+
+test("a °F preset is active when the device is on the same setting", () => {
+  // 380 °F is set as 193 °C, which the device reports back as 379 °F.
+  assert.equal(sameSetting(380, 379, "°F"), true);
+  assert.equal(sameSetting(380, 381, "°F"), false);
+  assert.equal(sameSetting(185, 185, "°C"), true);
+  assert.equal(sameSetting(185, 186, "°C"), false);
+  assert.equal(sameSetting(undefined, 185, "°C"), false);
+
+  const hass = volcano({
+    states: [state("climate.s_b_volcano_h", "heat", { temperature: 379 })],
+  });
+  hass.config = { unit_system: { temperature: "°F" } };
+  const model = cardModel(hass, resolveDevice(hass, "dev1"));
+  assert.deepEqual(
+    model.presets.filter((preset) => preset.active).map((preset) => preset.value),
+    [380]
+  );
 });
 
 test("the heat-up bar runs from cold to the target", () => {

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.1] - 2026-11-17
+
+### Fixed
+
+- **Fahrenheit targets landed a degree low.** The devices store whole °C, and
+  the target was truncated rather than rounded, so 380 °F (193.3 °C) became
+  193 °C but 379 °F (192.8 °C) became 192 °C and read back as 378 °F. It is
+  now rounded to the nearest degree on the Volcano, Crafty, Venty and Veazy.
+- **The card's plus and minus did nothing in °F about half the time.** One °F
+  is often the same setting on the device. In °F a press now moves one device
+  degree, about 2 °F, so every press changes the target.
+- **A °F preset is lit when the device is on its setting**, not only on the
+  exact °F value, which the device usually reports a degree off.
+
 ## [4.3.0] - 2026-11-17
 
 ### Added
