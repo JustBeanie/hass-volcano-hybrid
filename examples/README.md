@@ -1,5 +1,8 @@
 # Examples
 
+**Looking for something to import and run?** Use the
+[blueprints](../README.md#blueprints) instead. They need no editing.
+
 Working automations and scripts built on this integration, kept here rather than
 in the README because they are longer than a snippet and depend on each other.
 

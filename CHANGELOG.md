@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   device is not connected, plus battery and *Find device* on a Crafty, Venty
   or Veazy. It is a card feature, so it can also be added to any tile or
   thermostat card for the device.
+- **Blueprints.** Three scripts for the Volcano (fill a bag, a bag session,
+  and stepping up through temperatures) and an automation for any device that
+  runs your actions when it reports it is ready. Import them from the README.
+  The scripts turn the air and the heat off if the temperature is not reached
+  or the connection drops.
 
 ## [4.1.2] - 2026-11-16
 

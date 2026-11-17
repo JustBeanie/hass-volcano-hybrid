@@ -1,0 +1,148 @@
+blueprint:
+  name: "Storz & Bickel: bag session"
+  description: >-
+    Fills several bags in a row on a Volcano Hybrid: heats to a temperature,
+    fills a bag, pauses so you can swap it, and repeats. The heat goes off
+    after the last bag.
+
+    If the temperature is not reached in time, or the connection drops, the
+    heat and air are switched off and the script stops with an error.
+  domain: script
+  author: JustBeanie
+  source_url: https://github.com/JustBeanie/hass-volcano-hybrid/blob/master/blueprints/script/storzandbickel_ble/bag_session.yaml
+  homeassistant:
+    min_version: 2026.11.0
+  input:
+    volcano:
+      name: Volcano
+      description: The Volcano Hybrid's climate entity.
+      selector:
+        entity:
+          filter:
+            - integration: storzandbickel_ble
+              domain: climate
+    temperature:
+      name: Temperature
+      description: >-
+        The target, in the temperature unit Home Assistant is set to. The
+        Volcano accepts 40 to 230 °C (104 to 446 °F).
+      default: 185
+      selector:
+        number:
+          min: 40
+          max: 446
+          step: 1
+          mode: box
+    bags:
+      name: Bags
+      description: How many bags to fill.
+      default: 2
+      selector:
+        number:
+          min: 1
+          max: 10
+    fill_seconds:
+      name: Fill time
+      description: How long the air runs for each bag.
+      default: 40
+      selector:
+        number:
+          min: 5
+          max: 180
+          unit_of_measurement: s
+    pause_seconds:
+      name: Pause between bags
+      description: Time to swap the bag before the next one starts.
+      default: 120
+      selector:
+        number:
+          min: 10
+          max: 900
+          unit_of_measurement: s
+    heat_up_minutes:
+      name: Heat-up limit
+      description: Give up if the temperature is not reached within this long.
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 30
+          unit_of_measurement: min
+
+mode: single
+
+variables:
+  volcano: !input volcano
+  bags: !input bags
+
+sequence:
+  - action: climate.set_temperature
+    target:
+      entity_id: "{{ volcano }}"
+    data:
+      temperature: !input temperature
+  - action: climate.set_hvac_mode
+    target:
+      entity_id: "{{ volcano }}"
+    data:
+      hvac_mode: heat
+
+  - repeat:
+      count: "{{ bags | int }}"
+      sequence:
+        # Before every bag, not only the first: the block cools while a bag
+        # is being swapped. Ends early on a dropped connection or the heater
+        # being switched off by hand.
+        - wait_template: >-
+            {{ states(volcano) != 'heat'
+               or (state_attr(volcano, 'hvac_action') == 'idle'
+                   and (state_attr(volcano, 'current_temperature') | float(0))
+                       >= (state_attr(volcano, 'temperature') | float(999)) - 2) }}
+          timeout:
+            minutes: !input heat_up_minutes
+          continue_on_timeout: true
+        - if:
+            - condition: template
+              value_template: >-
+                {{ not wait.completed or states(volcano) != 'heat' }}
+          then:
+            - action: climate.set_fan_mode
+              continue_on_error: true
+              target:
+                entity_id: "{{ volcano }}"
+              data:
+                fan_mode: "off"
+            - action: climate.set_hvac_mode
+              continue_on_error: true
+              target:
+                entity_id: "{{ volcano }}"
+              data:
+                hvac_mode: "off"
+            - stop: The Volcano did not reach its temperature, so the session was stopped.
+              error: true
+
+        - action: climate.set_fan_mode
+          target:
+            entity_id: "{{ volcano }}"
+          data:
+            fan_mode: "on"
+        - delay:
+            seconds: !input fill_seconds
+        - action: climate.set_fan_mode
+          target:
+            entity_id: "{{ volcano }}"
+          data:
+            fan_mode: "off"
+
+        - if:
+            - condition: template
+              value_template: "{{ not repeat.last }}"
+          then:
+            - delay:
+                seconds: !input pause_seconds
+
+  - action: climate.set_hvac_mode
+    target:
+      entity_id: "{{ volcano }}"
+    data:
+      hvac_mode: "off"

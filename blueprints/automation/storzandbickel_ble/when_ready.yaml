@@ -1,0 +1,42 @@
+blueprint:
+  name: "Storz & Bickel: when it is ready"
+  description: >-
+    Runs the actions you choose the moment a Storz & Bickel device reports it
+    has reached its target temperature: send a notification, flash a light,
+    announce it on a speaker.
+
+    It uses the device's own "target reached" signal, the same one that makes
+    it vibrate, so it fires once per heat-up and not every time the
+    temperature wobbles around the target.
+  domain: automation
+  author: JustBeanie
+  source_url: https://github.com/JustBeanie/hass-volcano-hybrid/blob/master/blueprints/automation/storzandbickel_ble/when_ready.yaml
+  homeassistant:
+    min_version: 2026.11.0
+  input:
+    device:
+      name: Device
+      description: The Volcano Hybrid, Crafty, Venty or Veazy to watch.
+      selector:
+        device:
+          filter:
+            - integration: storzandbickel_ble
+    actions:
+      name: Actions
+      description: >-
+        What to do when it is ready. The temperature it reached is available
+        as `trigger.event.data.temperature`, in °C.
+      default: []
+      selector:
+        action:
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  - trigger: device
+    domain: storzandbickel_ble
+    device_id: !input device
+    type: target_reached
+
+actions: !input actions
