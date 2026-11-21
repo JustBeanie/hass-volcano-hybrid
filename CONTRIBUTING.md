@@ -1,6 +1,7 @@
 # Contributing
 
-Thanks for considering a contribution.
+Thanks for considering a contribution. The [roadmap](ROADMAP.md) lists the
+planned work, and each item there is an issue you can pick up.
 
 ## Reporting bugs
 
