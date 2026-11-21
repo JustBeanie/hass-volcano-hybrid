@@ -1,0 +1,76 @@
+name: Device report
+description: Report how well a device works with the integration
+body:
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device model
+      options:
+        - Volcano Hybrid
+        - Crafty
+        - Crafty+
+        - Venty
+        - Veazy
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Device firmware version
+      description: Check the Firmware version sensor on the device page. Enter Unknown if unavailable.
+    validations:
+      required: true
+  - type: input
+    id: ble-firmware
+    attributes:
+      label: BLE firmware version
+      description: Check the BLE firmware version sensor on the device page. Enter Unknown if unavailable.
+    validations:
+      required: true
+  - type: input
+    id: integration-version
+    attributes:
+      label: Integration version
+    validations:
+      required: true
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home Assistant version
+    validations:
+      required: true
+  - type: dropdown
+    id: reached-through
+    attributes:
+      label: How the device is reached
+      options:
+        - Bluetooth adapter on the Home Assistant host
+        - ESPHome Bluetooth proxy
+    validations:
+      required: true
+  - type: upload
+    id: diagnostics
+    attributes:
+      label: Diagnostics download
+      description: |
+        In Home Assistant, go to Settings → Devices & services → Storz & Bickel BLE → ⋮ → Download diagnostics. Attach the redacted JSON download and check it for any personal information before uploading.
+    validations:
+      required: true
+      accept: ".json"
+  - type: dropdown
+    id: result
+    attributes:
+      label: Does the device work?
+      options:
+        - Works
+        - Partly works
+        - Does not work
+    validations:
+      required: true
+  - type: textarea
+    id: what-did-not-work
+    attributes:
+      label: What did not work?
+      description: If the device partly works or does not work, describe what you tried and what happened.
+    validations:
+      required: false

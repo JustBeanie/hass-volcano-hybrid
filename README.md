@@ -65,9 +65,9 @@ The **experimental** devices are implemented from Storz & Bickel's own web app, 
 way of the protocol descriptions in
 [SavageNL's integration](https://github.com/SavageNL/home-assistant-volcano-hybrid),
 and **have not been run on real hardware** by this project. If you own one, please
-open an issue with the diagnostics download attached, whether it works or not —
-that is how they stop being experimental. The [roadmap](ROADMAP.md) tracks what
-is still to be confirmed for each one.
+file a [Device report](https://github.com/JustBeanie/hass-volcano-hybrid/issues/new?template=device_report.yml)
+with the diagnostics download attached, even if everything works. The
+[roadmap](ROADMAP.md) tracks what is still to be confirmed for each one.
 
 They also behave differently from the Volcano in one way that matters: they are
 battery devices that switch Bluetooth off when idle. Their entities show as
