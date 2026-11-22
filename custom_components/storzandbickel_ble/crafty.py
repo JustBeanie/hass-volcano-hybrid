@@ -303,10 +303,14 @@ class CraftyDevice(StorzBickelDevice):
 
         The app always follows a target write with the current boost; the
         firmware most likely re-derives the boost from the target, so leaving
-        it out could lose the user's boost setting.
+        it out could lose the user's boost setting. The boost is read off the
+        device first, under the same lock: the polled value can be 30 s old,
+        and writing that back would undo a boost changed on the device since.
         """
         value = self._clamp_target(celsius)
         async with self._lock:
+            if (raw_boost := await self._read(CHAR_BOOST)) is not None:
+                self._apply(CHAR_BOOST, raw_boost)
             await self._write(CHAR_TARGET_TEMP, struct.pack("<H", value * 10))
             if (boost := self._state.boost_offset) is not None:
                 await self._write(CHAR_BOOST, struct.pack("<H", round(boost * 10)))
@@ -328,7 +332,12 @@ class CraftyDevice(StorzBickelDevice):
         self._state.led_brightness = value
 
     async def _async_write_status2(self, mask: int, set_: bool) -> None:
-        """Read-modify-write status register 2 as a whole word."""
+        """Read-modify-write status register 2 as a whole word.
+
+        The find bit is dropped from every write but Find's own. It stays set
+        for the 30 s the device buzzes, so writing back the word as read
+        within that window could start the buzz again or make it last longer.
+        """
         self._require_control()
         async with self._lock:
             current = _decode_int(await self._read(CHAR_STATUS2))
@@ -337,6 +346,8 @@ class CraftyDevice(StorzBickelDevice):
                     "Could not read the settings register",
                     ConnectionFailure.WRITE_FAILED,
                 )
+            if mask != MASK_FIND:
+                current &= ~MASK_FIND
             word = (current | mask) if set_ else (current & ~mask)
             await self._write(CHAR_STATUS2, struct.pack("<H", word & 0xFFFF))
             self._apply(CHAR_STATUS2, await self._read(CHAR_STATUS2))

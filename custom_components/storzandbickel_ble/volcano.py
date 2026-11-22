@@ -312,6 +312,16 @@ class VolcanoHybrid(StorzBickelDevice):
         """Return the last known state."""
         return self._state
 
+    def _forget_link_info(self) -> None:
+        """Make the first poll on the next link read the device information.
+
+        Resetting only the once-per-link flag left those reads waiting on
+        the ten-minute schedule, so serial, firmware and model could be ten
+        minutes stale after a reconnect -- not what the reset was for.
+        """
+        super()._forget_link_info()
+        self._device_info_read_at = None
+
     # -- notifications -----------------------------------------------------
 
     def _handle_notification(self, uuid: str, data: bytes) -> None:
@@ -423,10 +433,6 @@ class VolcanoHybrid(StorzBickelDevice):
             # regulation faults live here, and both can change mid-session.
             self._apply_register(2, await self._read(CHAR_REGISTER2))
 
-            brightness = _decode_int(await self._read(CHAR_BRIGHTNESS))
-            if brightness is not None and 0 <= brightness <= 100:
-                self._state.brightness = brightness
-
             # Read on the very first poll, then only occasionally.
             if (
                 self._device_info_read_at is None
@@ -469,6 +475,12 @@ class VolcanoHybrid(StorzBickelDevice):
                 _decode_string(await self._read(CHAR_MODEL)) or self._state.model
             )
             self._static_info_read = True
+
+        # On the slow cycle: only our own command, which is applied straight
+        # away, or the device's menu changes it.
+        brightness = _decode_int(await self._read(CHAR_BRIGHTNESS))
+        if brightness is not None and 0 <= brightness <= 100:
+            self._state.brightness = brightness
 
         hours = _decode_int(await self._read(CHAR_HOURS_OF_OPERATION))
         if hours is not None:

@@ -28,6 +28,7 @@ from homeassistant.util import dt as dt_util
 
 from .ble_device import (
     ConnectionFailure,
+    ConnectNotWantedError,
     DeviceConnectionError,
     DeviceState,
     StorzBickelDevice,
@@ -51,7 +52,7 @@ from .const import (
 from .crafty import CraftyDevice
 from .families import Family
 from .qvap import QvapDevice
-from .volcano import VolcanoHybrid
+from .volcano import VolcanoHybrid, VolcanoState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -145,6 +146,12 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
         # The options this entry was set up with that need a reload to change;
         # see _async_options_updated in __init__.py.
         self.reload_options: dict[str, Any] = {}
+        # Set by a poll that found nothing can hear the device; see
+        # _async_refresh_finished.
+        self._quiet_failure: UpdateFailed | None = None
+        # Set once the entry starts unloading: nothing may open a link then.
+        self._unloading = False
+        device.may_connect = lambda: self._may_connect
         entry.async_on_unload(device.register_callback(self._handle_push_update))
         entry.async_on_unload(self._async_cancel_reconnect)
 
@@ -176,7 +183,7 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
     @property
     def _may_connect(self) -> bool:
         """Return whether a poll may open a link that is not already up."""
-        return self.auto_connect or self._within_demand_grace
+        return not self._unloading and (self.auto_connect or self._within_demand_grace)
 
     @property
     def _within_demand_grace(self) -> bool:
@@ -331,8 +338,25 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
 
         try:
             state = await self.device.async_update()
+        except ConnectNotWantedError:
+            # Auto-connect went off while this poll waited for the lock. Not
+            # a failure: the same as finding it off to begin with.
+            return self.device.state
         except DeviceConnectionError as err:
             self._handle_update_failure(err)
+            # Nothing gained by the fast cadence while the device is gone:
+            # an advertisement is what brings it back (async_set_ble_device),
+            # and a command switches back to active on its own.
+            self._async_set_interval(self.device.idle_interval)
+            if err.kind is ConnectionFailure.NOT_VISIBLE:
+                # Unplugged, out of range or asleep: the normal state of a
+                # Volcano between sessions, not a fault. Raising here would
+                # have Home Assistant log an ERROR for every outage, so the
+                # failure is recorded quietly instead; see
+                # _async_refresh_finished.
+                self._quiet_failure = UpdateFailed(str(err))
+                self.last_update_success = True
+                return self.device.state
             raise UpdateFailed(str(err)) from err
 
         self._handle_update_success()
@@ -344,6 +368,22 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
         self._async_fire_edges()
         self._async_sync_device_details()
         return state
+
+    @callback
+    def _async_refresh_finished(self) -> None:
+        """Mark a quiet failure as failed, before the listeners are told.
+
+        Home Assistant's hook for subclasses, run after every refresh. A poll
+        that found nothing can hear the device returns rather than raising,
+        which keeps Home Assistant's ERROR out of the log, and lands here to
+        be counted as the failed update it is: entities go unavailable
+        exactly as before. ``last_update_success`` was set to True first so
+        the refresh did not log "recovered" on the way through.
+        """
+        if (err := self._quiet_failure) is not None:
+            self._quiet_failure = None
+            self.last_exception = err
+            self.last_update_success = False
 
     @callback
     def _async_set_interval(self, interval: timedelta) -> None:
@@ -363,8 +403,11 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
         if self._was_available:
             self._was_available = False
             self._outage_started = time.monotonic()
+            # Going out of sight is normal: a Volcano is unplugged between
+            # sessions and a portable sleeps. Anything else is a fault.
+            quiet = self.device.sleeps or err.kind is ConnectionFailure.NOT_VISIBLE
             _LOGGER.log(
-                logging.INFO if self.device.sleeps else logging.WARNING,
+                logging.INFO if quiet else logging.WARNING,
                 "Lost connection to %s at %s: %s",
                 self.config_entry.title,
                 self.address,
@@ -473,7 +516,7 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
 
     @callback
     def _async_sync_device_details(self) -> None:
-        """Keep the device page's serial number, firmware and model current.
+        """Keep the device page's serial, firmware, hardware and model current.
 
         Entities write these once, when they are created. A portable that was
         asleep at startup had none to write, and a firmware update changes one
@@ -482,18 +525,22 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
         written, so a value never goes back to blank.
         """
         state = self.device.state
-        details = (state.serial_number, state.firmware_version, state.model)
+        hardware = (
+            state.ble_firmware_version if isinstance(state, VolcanoState) else None
+        )
+        details = (state.serial_number, state.firmware_version, state.model, hardware)
         if details == self._registered_details:
             return
         if (device := self._async_registry_device()) is None:
             # No entity yet; they write what is known when they are created.
             return
-        serial, firmware, model = details
+        serial, firmware, model, hardware = details
         dr.async_get(self.hass).async_update_device(
             device.id,
             serial_number=UNDEFINED if serial is None else serial,
             sw_version=UNDEFINED if firmware is None else firmware,
             model_id=UNDEFINED if model is None else model,
+            hw_version=UNDEFINED if hardware is None else hardware,
         )
         self._registered_details = details
 
@@ -510,8 +557,15 @@ class StorzBickelCoordinator(DataUpdateCoordinator[DeviceState]):
     # -- link control ------------------------------------------------------
 
     async def async_shutdown_device(self) -> None:
-        """Drop the BLE link."""
+        """Stop polling, then drop the BLE link for good.
+
+        In that order, and with ``_unloading`` set first: a poll or
+        reconnect still in flight must find it may not open a new link, or it
+        would hold the device's only connection after the entry is gone.
+        """
+        self._unloading = True
         self._async_cancel_reconnect()
+        await self.async_shutdown()
         await self.device.async_disconnect()
 
     async def async_reconnect(self) -> None:

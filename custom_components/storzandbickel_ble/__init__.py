@@ -30,6 +30,7 @@ from .const import (
 )
 from .coordinator import StorzBickelConfigEntry, StorzBickelCoordinator
 from .dashboard import async_register_card
+from .deprecation import async_setup_deprecations
 from .families import Family, create_device
 from .migration import async_adopt_legacy, async_import_legacy_entries
 from .other_integrations import async_finish_move, async_offer_moves
@@ -167,6 +168,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: StorzBickelConfigEntry) 
         )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # After the platforms: the repairs look the sensors up in the registry.
+    async_setup_deprecations(hass, entry)
     return True
 
 

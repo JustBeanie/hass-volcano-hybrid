@@ -110,6 +110,14 @@
         }
       }
     },
+    "deprecated_sensor": {
+      "title": "{name}: the {entity_id} sensor is deprecated",
+      "description": "`{entity_id}` duplicates something else and will be removed in the Home Assistant 2027 readiness release of Storz & Bickel BLE. Use {replacement} instead.\n\nNo automation or script uses it. Check your dashboards, then disable or delete the sensor to clear this repair."
+    },
+    "deprecated_sensor_used": {
+      "title": "{name}: the {entity_id} sensor is deprecated",
+      "description": "`{entity_id}` duplicates something else and will be removed in the Home Assistant 2027 readiness release of Storz & Bickel BLE. Use {replacement} instead.\n\nThese still use it:\n{items}\n\nUpdate them and check your dashboards, then disable or delete the sensor to clear this repair."
+    },
     "legacy_integration_installed": {
       "title": "Remove the old Volcano Hybrid folder",
       "description": "This integration was renamed from `{legacy_domain}` to Storz & Bickel BLE, and the old copy is still installed at `custom_components/{legacy_domain}`. Both would compete for the vaporizer's single Bluetooth connection, so your existing device has not been moved across yet.\n\nDelete the `custom_components/{legacy_domain}` folder and restart Home Assistant. The device and every entity then move across with their entity IDs unchanged."
@@ -120,7 +128,7 @@
         "step": {
           "confirm": {
             "title": "Move {name} here",
-            "description": "{name} is set up in {integration}. It can be moved to this integration instead.\n\nThe device keeps its area and name. Entities that mean the same thing here keep their entity IDs, so automations, scripts and dashboards that use them keep working; the rest of {integration}'s entities for it are removed, and this integration adds its own.\n\n{integration} stops controlling the device, and its entry is removed. You can then uninstall {integration} from HACS if nothing else uses it."
+            "description": "{name} is set up in {integration}. It can be moved to this integration instead.\n\nThe device keeps its area and name. Entities that mean the same thing here keep their entity IDs, so automations, scripts and dashboards that use them keep working; the rest of {integration}'s entities for it are removed, and this integration adds its own.\n\n{integration} stops controlling the device, and its entry is removed. You can then uninstall {integration} from HACS if nothing else uses it.\n\nThe one-click move is deprecated and is removed in the next major release. Move now to keep your entity IDs."
           }
         },
         "abort": {

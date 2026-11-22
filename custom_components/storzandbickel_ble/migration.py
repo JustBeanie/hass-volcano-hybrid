@@ -138,6 +138,15 @@ async def async_import_legacy_entries(hass: HomeAssistant) -> None:
         return
     ir.async_delete_issue(hass, DOMAIN, ISSUE_LEGACY_INSTALLED)
 
+    # Deprecated in 4.4.0, removed in the Home Assistant 2027 readiness
+    # release. Said once, and only when there is something to import.
+    _LOGGER.warning(
+        "Importing %d %s entries from before 4.0. This upgrade path is"
+        " deprecated and is removed in the next major release, which will"
+        " need 4.x installed first",
+        len(legacy),
+        LEGACY_DOMAIN,
+    )
     for entry in legacy:
         hass.async_create_task(
             hass.config_entries.flow.async_init(

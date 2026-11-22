@@ -93,6 +93,21 @@ class DeviceConnectionError(Exception):
         self.kind = kind
 
 
+class ConnectNotWantedError(DeviceConnectionError):
+    """Raised instead of opening a link that is no longer wanted.
+
+    Not a fault: auto-connect was turned off while a poll waited for the
+    lock, so the poll found no link and must not open a new one.
+    """
+
+    def __init__(self, address: str) -> None:
+        """Say which device was left alone."""
+        super().__init__(
+            f"{address} is not connected and a new link is not wanted",
+            ConnectionFailure.CONNECT_FAILED,
+        )
+
+
 @dataclass
 class DeviceState:
     """What every family reports. Each family's state adds its own fields."""
@@ -253,6 +268,11 @@ class StorzBickelDevice:
         # sensor so the self-healing can be seen working.
         self.link_resets = 0
         self.adapter_cache_resets = 0
+        # Asked under the lock, right before a new link is opened. Whether one
+        # is wanted can change while a poll waits for the lock: turning
+        # auto-connect off drops the link first, and a poll that then found
+        # no link reconnected and held it from the phone app.
+        self.may_connect: Callable[[], bool] = lambda: True
 
     def _clamp_target(self, celsius: float) -> int:
         """Return a target as the whole degree the device stores, in range.
@@ -359,10 +379,19 @@ class StorzBickelDevice:
         self._notifications_started = False
         # Serial number and firmware are read once per connection, so a new link
         # has to read them again -- the device may have been swapped.
-        self._static_info_read = False
+        self._forget_link_info()
         self._state.connected = False
         self._state.connected_via = None
         self._notify_listeners()
+
+    def _forget_link_info(self) -> None:
+        """Make the next link read the device's details again.
+
+        Called wherever a link ends. A family that keeps its own schedule for
+        those reads resets it here too, so the first poll on a new link reads
+        them rather than whenever the schedule next falls due.
+        """
+        self._static_info_read = False
 
     # -- connection --------------------------------------------------------
 
@@ -370,6 +399,9 @@ class StorzBickelDevice:
         """Return a live client, connecting if needed. Assumes the lock is held."""
         if self._client is not None and self._client.is_connected:
             return self._client
+
+        if not self.may_connect():
+            raise ConnectNotWantedError(self.address)
 
         if (ble_device := self._ble_device) is None:
             raise DeviceConnectionError(
@@ -482,7 +514,7 @@ class StorzBickelDevice:
         self._client = None
         self._notifications_started = False
         # A new link has to read these again; they are only valid per-connection.
-        self._static_info_read = False
+        self._forget_link_info()
         self._state.connected = False
         self._state.connected_via = None
         self.link_resets += 1
@@ -509,7 +541,7 @@ class StorzBickelDevice:
             # link that is already gone may never deliver. The next link
             # reads the device's details again.
             self._notifications_started = False
-            self._static_info_read = False
+            self._forget_link_info()
             self._state.connected = False
             self._state.connected_via = None
             if notifying:

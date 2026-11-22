@@ -106,9 +106,14 @@ rules:
   log-when-unavailable:
     status: done
     comment: |
-      One WARNING when the link is lost and one INFO when it returns, tracked
-      by a flag on the coordinator rather than logged per poll. Covered by a
-      test that asserts the counts across several failed cycles.
+      One line when the link is lost and one INFO when it returns, tracked by
+      a flag on the coordinator rather than logged per poll. Going out of
+      sight (not_visible: a Volcano unplugged, a portable asleep) is normal,
+      so it logs at INFO, and the poll records the failure through
+      _async_refresh_finished instead of raising UpdateFailed, which keeps
+      Home Assistant's own ERROR out of the log. Every other failure logs a
+      WARNING and raises as before. Covered by tests that assert the counts
+      across several failed cycles and that an unplug logs no ERROR.
   parallel-updates:
     status: done
     comment: |
