@@ -390,6 +390,13 @@ More, including the full session script this was originally built around, are in
 heating element on from an automation, and Bluetooth is not a link to trust
 with that on its own.
 
+**Always keep an auto-off set.** It is the one safeguard that runs on the
+device itself, so it still works when Home Assistant, Bluetooth or an
+automation does not. Set the Volcano's **Auto-off time** to the shortest delay
+that suits how you use it (20 to 180 minutes here). Don't raise it to cover a
+long session; switch the heater on again instead. A portable uses its own
+auto-off, and its **Auto-off countdown** shows how long is left.
+
 What it does to fail safe, and what it does not:
 
 - **An "off" is checked and re-sent.** After heat off or air off on a Volcano,
@@ -400,9 +407,7 @@ What it does to fail safe, and what it does not:
 - **A failed command is an error**, in the dashboard and in a script, so a
   script stops instead of carrying on as if it had worked.
 - **If the connection drops, Home Assistant cannot switch anything off.** The
-  device's own auto-off timer is what protects you then, and it runs on the
-  device whether or not Home Assistant is connected. Leave it set to something
-  you are comfortable with (the **Auto-off time** entity).
+  device's own auto-off timer, above, is what protects you then.
 
 ## Known limitations
 
