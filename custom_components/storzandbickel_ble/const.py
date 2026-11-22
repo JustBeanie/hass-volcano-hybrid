@@ -66,7 +66,8 @@ ISSUE_CONNECTION_UNRESPONSIVE = "connection_unresponsive"
 ISSUE_LEGACY_INSTALLED = "legacy_integration_installed"
 # A device another Storz & Bickel integration has could be moved here.
 ISSUE_MIGRATE_FROM_OTHER = "migrate_from_other_integration"
-# Sensors deprecated in 4.4.0; see deprecation.py.
+# Sensors deprecated in 4.4.0; see deprecation.py. The first is the issue-id
+# prefix; the repair itself is only ever raised as the second.
 ISSUE_DEPRECATED_SENSOR = "deprecated_sensor"
 ISSUE_DEPRECATED_SENSOR_USED = "deprecated_sensor_used"
 

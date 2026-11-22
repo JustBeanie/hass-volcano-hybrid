@@ -110,10 +110,6 @@
         }
       }
     },
-    "deprecated_sensor": {
-      "title": "{name}: the {entity_id} sensor is deprecated",
-      "description": "`{entity_id}` duplicates something else and will be removed in the Home Assistant 2027 readiness release of Storz & Bickel BLE. Use {replacement} instead.\n\nNo automation or script uses it. Check your dashboards, then disable or delete the sensor to clear this repair."
-    },
     "deprecated_sensor_used": {
       "title": "{name}: the {entity_id} sensor is deprecated",
       "description": "`{entity_id}` duplicates something else and will be removed in the Home Assistant 2027 readiness release of Storz & Bickel BLE. Use {replacement} instead.\n\nThese still use it:\n{items}\n\nUpdate them and check your dashboards, then disable or delete the sensor to clear this repair."
