@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **An unplugged Volcano no longer logs an ERROR every time it goes away**
+  (#39). Going out of sight is its normal state between sessions, so it
+  logs one INFO line, as a sleeping portable already did. Entities still go
+  unavailable, and the connection lost and restored triggers still fire.
+  Refused connections and links that answer nothing still log as before.
+- **Turning Auto-connect off can no longer be undone by a poll already in
+  flight** (#43). A poll that was waiting for the link when Auto-connect went
+  off used to reconnect and hold the vaporizer from the Storz & Bickel app
+  for up to a minute. Whether a new link is wanted is now asked again right
+  before connecting, and nothing reconnects once the entry is unloading.
+- **Crafty+: changing a setting within 30 s of Find no longer restarts the
+  buzz** (#44). The find bit is left out of every other settings write.
+- **Crafty: setting the target no longer puts back an old boost** (#45). The
+  boost written after the target is read off the device first, not taken
+  from a poll up to 30 s old.
+- **Polling drops to the idle interval when the link is lost** (#49), rather
+  than trying every 10 s for a device that is not there. An advertisement
+  still reconnects straight away, and a command still restores the fast
+  interval.
+- **Volcano: a new link reads serial, firmware, model and hours on its first
+  poll** (#50), not up to ten minutes later. Screen brightness moves to the
+  ten-minute read, since only our own command (shown straight away) or the
+  device's menu changes it.
+- **Sensors no longer show stale values while Auto-connect is off** (#83).
+  Status registers, error history, last fault, hours of operation and the
+  Venty and Veazy heating and charging totals go unavailable without a link,
+  like every other reading, since the app may be changing them. Only fixed
+  facts (mains voltage, a Veazy's color) and signal strength stay available.
+
+### Added
+
+- **The device page shows the Volcano's BLE firmware as its Hardware
+  version** (#80), ahead of the BLE firmware sensor going away.
+
+### Deprecated
+
+- **Seven duplicate sensors** (#80), removed in the Home Assistant 2027
+  readiness release (#79): connection status, heater status, fan status and
+  auto-off time (kept only for v1 entity IDs), and serial number, firmware
+  version and BLE firmware version (the device page carries them). Each one
+  that is enabled raises a repair naming its replacement and any automation
+  or script that still uses it; disabling or deleting the sensor clears it
+  straight away. A new install creates all seven disabled.
+- **Both migration paths** (#82), removed in the 2027 readiness release
+  (#78): the import of a pre-4.0 (`volcano_hybrid`) install, which now logs a
+  WARNING when it imports something, and the one-click move from SavageNL's
+  or Chuffnugget's integration, whose repair now says to move while it is
+  still there. Both keep working exactly as before in 4.4.
+
 ## [4.3.3] - 2026-11-17
 
 ### Added

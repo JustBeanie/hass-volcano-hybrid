@@ -290,6 +290,8 @@ async def test_diagnostic_sensors(
     for entity_id in (
         "sensor.s_b_volcano_h_status_register_1",
         "sensor.s_b_volcano_h_connection_status",
+        "sensor.s_b_volcano_h_serial_number",
+        "sensor.s_b_volcano_h_firmware_version",
     ):
         registry.async_update_entity(entity_id, disabled_by=None)
     await hass.config_entries.async_reload(loaded_entry.entry_id)

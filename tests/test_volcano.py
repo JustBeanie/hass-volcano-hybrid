@@ -25,6 +25,7 @@ from custom_components.storzandbickel_ble.volcano import (
     CHAR_BRIGHTNESS,
     CHAR_CURRENT_TEMP,
     CHAR_FAN_ON,
+    CHAR_FIRMWARE,
     CHAR_HISTORY1,
     CHAR_HISTORY2,
     CHAR_REGISTER2,
@@ -889,3 +890,48 @@ def test_a_listener_may_unregister_itself_while_being_told() -> None:
     device._notify_listeners()
 
     assert told == ["first", "second", "second"]
+
+
+@pytest.mark.parametrize("end", ["dropped", "disconnected", "reset"])
+async def test_a_new_link_reads_device_information_on_its_first_poll(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient, end: str
+) -> None:
+    """However the link ended, the next one reads the details at once.
+
+    Only the once-per-link flag used to be reset, so the details still
+    waited for the ten-minute schedule after a reconnect.
+    """
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+    fake_client.reads[CHAR_FIRMWARE] = b"V01.04.00.00"
+
+    if end == "dropped":
+        device._handle_disconnect(fake_client)  # type: ignore[arg-type]
+    elif end == "disconnected":
+        await device.async_disconnect()
+    else:
+        async with device._lock:
+            await device._async_reset_link(reset_adapter_cache=False)
+    fake_client.is_connected = True
+    await device.async_update()
+
+    assert device.state.firmware_version == "V01.04.00.00"
+
+
+async def test_brightness_is_read_on_the_slow_cycle(
+    mock_establish_connection: AsyncMock, fake_client: FakeBleakClient
+) -> None:
+    """Only a command or the device's menu changes it, so it is not polled."""
+    device = VolcanoHybrid(ADDRESS)
+    device.set_ble_device(make_ble_device())
+    await device.async_update()
+    assert device.state.brightness == 70
+
+    fake_client.reads[CHAR_BRIGHTNESS] = (30).to_bytes(2, "little")
+    await device.async_update()
+    assert device.state.brightness == 70
+
+    device._device_info_read_at = None
+    await device.async_update()
+    assert device.state.brightness == 30

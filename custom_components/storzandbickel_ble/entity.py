@@ -18,6 +18,15 @@ from .const import DOMAIN, MANUFACTURER
 from .coordinator import StorzBickelCoordinator
 from .crafty import CraftyState
 from .families import FAMILY_NAMES, VOLCANO_ONLY, Family
+from .volcano import VolcanoState
+
+
+def hardware_version(state: DeviceState) -> str | None:
+    """Return what the device page shows as Hardware: the BLE firmware.
+
+    Only the Volcano reports one, from its separate Bluetooth module.
+    """
+    return state.ble_firmware_version if isinstance(state, VolcanoState) else None
 
 
 def always(_state: DeviceState) -> bool:
@@ -80,6 +89,7 @@ class StorzBickelEntity(CoordinatorEntity[StorzBickelCoordinator]):
             name=coordinator.config_entry.title,
             serial_number=coordinator.data.serial_number,
             sw_version=coordinator.data.firmware_version,
+            hw_version=hardware_version(coordinator.data),
         )
 
     @property

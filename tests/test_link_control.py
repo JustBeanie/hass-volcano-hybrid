@@ -491,3 +491,52 @@ async def test_an_advertisement_does_not_cut_a_delayed_reconnect_short(
         await hass.async_block_till_done()
 
     refresh.assert_called_once()
+
+
+# -- what stays available without a link ------------------------------------
+
+# Values the Storz & Bickel app can change while it holds the link.
+CHANGEABLE = (
+    "sensor.s_b_volcano_h_status_register_1",
+    "sensor.s_b_volcano_h_status_register_2",
+    "sensor.s_b_volcano_h_status_register_3",
+    "sensor.s_b_volcano_h_status_register_4",
+    "sensor.s_b_volcano_h_error_history_1",
+    "sensor.s_b_volcano_h_error_history_2",
+    "sensor.s_b_volcano_h_last_fault",
+    "sensor.s_b_volcano_h_hours_of_operation",
+)
+# A fixed hardware fact, and a value heard in advertisements.
+KNOWN_WITHOUT_LINK = (
+    "sensor.s_b_volcano_h_mains_voltage",
+    "sensor.s_b_volcano_h_signal_strength",
+)
+
+
+async def test_with_auto_connect_off_only_fixed_values_stay_available(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """With the link handed to the app, a value that can change goes unavailable.
+
+    Polls still succeed with auto-connect off, so these used to stay
+    available showing the last value read, while the app changed them.
+    """
+    await _enable(
+        hass,
+        loaded_entry,
+        *(entity_id for entity_id in CHANGEABLE if "register" in entity_id),
+        "sensor.s_b_volcano_h_error_history_1",
+        "sensor.s_b_volcano_h_error_history_2",
+        *KNOWN_WITHOUT_LINK,
+    )
+    for entity_id in (*CHANGEABLE, *KNOWN_WITHOUT_LINK):
+        assert hass.states.get(entity_id).state != "unavailable", entity_id
+
+    await _switch(hass, SERVICE_TURN_OFF, AUTO_CONNECT)
+    await loaded_entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    for entity_id in CHANGEABLE:
+        assert hass.states.get(entity_id).state == "unavailable", entity_id
+    for entity_id in KNOWN_WITHOUT_LINK:
+        assert hass.states.get(entity_id).state != "unavailable", entity_id

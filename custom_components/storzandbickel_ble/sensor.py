@@ -57,8 +57,13 @@ class StorzBickelSensorEntityDescription(
     """Describes a sensor."""
 
     value_fn: Callable[[Any], StateType]
-    # Diagnostic sensors must stay readable while the device is unreachable.
-    available_when_disconnected: bool = False
+    # Available whenever the last poll succeeded, link or no link. Only for a
+    # value that cannot change while Home Assistant is not connected -- a
+    # fixed hardware fact, or one that does not come over the link at all
+    # (RSSI is heard in advertisements). With auto-connect off a poll
+    # succeeds without a link, and anything else would show the last value
+    # read while the Storz & Bickel app may be changing it.
+    known_without_link: bool = False
     attributes_fn: Callable[[Any], dict[str, Any]] | None = None
 
 
@@ -118,11 +123,14 @@ def _raw_sensor(key: str) -> StorzBickelSensorEntityDescription:
         translation_key=key,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        available_when_disconnected=True,
         value_fn=lambda state: state.raw.get(key),
     )
 
 
+# connection_status, heater_status, fan_status, auto_off_time, serial_number,
+# ble_firmware and firmware_version are deprecated (see deprecation.py) and are
+# removed in the Home Assistant 2027 readiness release. All seven are disabled
+# by default so a new install never starts out with a repair.
 SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
     StorzBickelSensorEntityDescription(
         key="temperature",
@@ -139,7 +147,7 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         families=ALL_FAMILIES,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        available_when_disconnected=True,
+        known_without_link=True,
         value_fn=lambda state: "Connected" if state.connected else "Disconnected",
     ),
     StorzBickelSensorEntityDescription(
@@ -147,7 +155,6 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         translation_key="raw_register",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        available_when_disconnected=True,
         value_fn=lambda state: state.raw.get("status_register"),
     ),
     StorzBickelSensorEntityDescription(
@@ -177,14 +184,16 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         translation_key="serial_number",
         families=ALL_FAMILIES,
         entity_category=EntityCategory.DIAGNOSTIC,
-        available_when_disconnected=True,
+        entity_registry_enabled_default=False,
+        known_without_link=True,
         value_fn=lambda state: state.serial_number,
     ),
     StorzBickelSensorEntityDescription(
         key="ble_firmware",
         translation_key="ble_firmware",
         entity_category=EntityCategory.DIAGNOSTIC,
-        available_when_disconnected=True,
+        entity_registry_enabled_default=False,
+        known_without_link=True,
         value_fn=lambda state: state.ble_firmware_version,
     ),
     StorzBickelSensorEntityDescription(
@@ -192,7 +201,8 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         translation_key="firmware_version",
         families=ALL_FAMILIES,
         entity_category=EntityCategory.DIAGNOSTIC,
-        available_when_disconnected=True,
+        entity_registry_enabled_default=False,
+        known_without_link=True,
         value_fn=lambda state: state.firmware_version,
     ),
     StorzBickelSensorEntityDescription(
@@ -203,7 +213,6 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.TOTAL_INCREASING,
         native_unit_of_measurement=UnitOfTime.HOURS,
-        available_when_disconnected=True,
         value_fn=lambda state: state.hours_of_operation,
     ),
     StorzBickelSensorEntityDescription(
@@ -213,7 +222,7 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         entity_registry_enabled_default=False,
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.MINUTES,
-        available_when_disconnected=True,
+        known_without_link=True,
         value_fn=lambda state: state.auto_off_minutes,
     ),
     StorzBickelSensorEntityDescription(
@@ -222,7 +231,6 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=LAST_FAULT_OPTIONS,
         entity_category=EntityCategory.DIAGNOSTIC,
-        available_when_disconnected=True,
         value_fn=_last_fault,
         attributes_fn=_fault_log_attributes,
     ),
@@ -235,7 +243,7 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        available_when_disconnected=True,
+        known_without_link=True,
         value_fn=lambda state: state.rssi,
     ),
     StorzBickelSensorEntityDescription(
@@ -251,7 +259,7 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         translation_key="mains_voltage",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        available_when_disconnected=True,
+        known_without_link=True,
         value_fn=lambda state: state.mains_voltage,
     ),
     # Status register 1 is the existing "raw_register" sensor above.
@@ -294,7 +302,6 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL_INCREASING,
         native_unit_of_measurement=UnitOfTime.MINUTES,
         entity_category=EntityCategory.DIAGNOSTIC,
-        available_when_disconnected=True,
         families=QVAP,
         value_fn=lambda state: state.heater_minutes,
     ),
@@ -305,7 +312,6 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL_INCREASING,
         native_unit_of_measurement=UnitOfTime.MINUTES,
         entity_category=EntityCategory.DIAGNOSTIC,
-        available_when_disconnected=True,
         families=QVAP,
         value_fn=lambda state: state.charge_minutes,
     ),
@@ -314,7 +320,7 @@ SENSORS: tuple[StorzBickelSensorEntityDescription, ...] = (
         key="colour",
         translation_key="colour",
         entity_category=EntityCategory.DIAGNOSTIC,
-        available_when_disconnected=True,
+        known_without_link=True,
         families=frozenset({Family.VEAZY}),
         value_fn=lambda state: state.color,
     ),
@@ -389,7 +395,7 @@ class StorzBickelSensor(StorzBickelDescribedEntity, SensorEntity):
     @property
     def available(self) -> bool:
         """Return whether the sensor has a meaningful value."""
-        if self.entity_description.available_when_disconnected:
+        if self.entity_description.known_without_link:
             return (
                 self.coordinator.last_update_success or self.coordinator.data.connected
             )

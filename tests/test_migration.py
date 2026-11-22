@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntryState
@@ -392,3 +393,40 @@ def test_normalize_unique_id() -> None:
     assert normalize_unique_id(f"{FORMATTED_MAC}_fan", "abc", FORMATTED_MAC) == (
         f"{FORMATTED_MAC}_fan"
     )
+
+
+DEPRECATION = "This upgrade path is deprecated"
+
+
+async def test_an_import_warns_that_the_path_is_going_away(
+    hass: HomeAssistant,
+    mock_bluetooth: AsyncMock,
+    legacy_v3_entry: MockConfigEntry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """One WARNING when something is actually imported, and it still works."""
+    _register_legacy(hass, legacy_v3_entry)
+
+    with caplog.at_level(logging.WARNING, "custom_components.storzandbickel_ble"):
+        await _start(hass)
+
+    warnings = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and DEPRECATION in r.getMessage()
+    ]
+    assert len(warnings) == 1
+    assert "next major release" in warnings[0].getMessage()
+    assert hass.config_entries.async_entries(LEGACY_DOMAIN) == []
+
+
+async def test_a_startup_with_nothing_to_import_says_nothing(
+    hass: HomeAssistant,
+    mock_bluetooth: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The warning is for people who still need the path, nobody else."""
+    with caplog.at_level(logging.WARNING, "custom_components.storzandbickel_ble"):
+        await _start(hass)
+
+    assert DEPRECATION not in caplog.text

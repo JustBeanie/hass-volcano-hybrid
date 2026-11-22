@@ -66,6 +66,9 @@ ISSUE_CONNECTION_UNRESPONSIVE = "connection_unresponsive"
 ISSUE_LEGACY_INSTALLED = "legacy_integration_installed"
 # A device another Storz & Bickel integration has could be moved here.
 ISSUE_MIGRATE_FROM_OTHER = "migrate_from_other_integration"
+# Sensors deprecated in 4.4.0; see deprecation.py.
+ISSUE_DEPRECATED_SENSOR = "deprecated_sensor"
+ISSUE_DEPRECATED_SENSOR_USED = "deprecated_sensor_used"
 
 # Device limits.
 MIN_TEMP = 40

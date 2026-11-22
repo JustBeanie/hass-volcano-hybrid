@@ -79,8 +79,8 @@ Bluetooth** switches change that, at the cost of battery life.
 
 Every device gets the climate entity, the heater switch, the target-temperature
 number, Ready, Link health, Auto-connect, the reconnect buttons, the temperature,
-serial number, firmware, signal-strength and connected-via sensors, and the device
-triggers. On top of that:
+signal-strength and connected-via sensors, the (deprecated) serial number and
+firmware sensors, and the device triggers. On top of that:
 
 | | Crafty | Venty | Veazy |
 | --- | --- | --- | --- |
@@ -142,6 +142,10 @@ See the [release history](CHANGELOG.md) for changes between versions.
 
 ## Upgrading from 3.x
 
+> **Deprecated, removed in the 2027 readiness release.** That release will not
+> import a 3.x install. If you are still on 3.x, update to a 4.x release first
+> (any of them), let it move the device across, and then keep updating.
+
 Up to 3.x this integration's domain was `volcano_hybrid`. Another integration
 uses that domain too, so 4.0 renamed it to `storzandbickel_ble`. Nothing needs
 redoing by hand:
@@ -163,6 +167,11 @@ Entries made by the *other* `volcano_hybrid` integration are never touched by
 this step; see below.
 
 ## Moving from another integration
+
+> **Deprecated, removed in the 2027 readiness release.** Move now to keep your
+> entity IDs. After that release, remove the device from the other integration
+> first and then add it to this one; it comes up with this integration's own
+> entity IDs.
 
 If a device is set up in **SavageNL's Volcano Hybrid** integration or
 **Chuffnugget's Volcano Integration**, this integration offers to take it over.
@@ -236,7 +245,7 @@ The integration holds a **persistent Bluetooth connection** rather than connecti
 for each read. Over that connection:
 
 - **Every 10 seconds while the heater or fan is running** it polls the current
-  temperature, target temperature, status registers 1 and 2 and screen brightness. The heat
+  temperature, target temperature and status registers 1 and 2. The heat
   block moves fast enough that a longer interval makes the climate card feel broken.
 - **Every 60 seconds once both are off.** There is no ramp left to watch, and a
   cooling vaporizer does not need six polls a minute. Pressing a button in Home
@@ -246,7 +255,8 @@ for each read. Over that connection:
   interval is in force. The register is still polled as well, so a dropped
   notification cannot leave the heater reading the wrong way round.
 - **Every 10 minutes** it re-reads the things that barely change: hours of operation,
-  auto-off delay, status registers 3–5 and the error history. The history is also
+  auto-off delay, screen brightness, status registers 3–5 and the error history.
+  A new connection reads them all on its first poll. The history is also
   re-read the moment a fault bit appears, so the last-fault sensor does not lag a
   fault by ten minutes. Serial number and firmware are read once per
   connection, since they cannot change while one is open.
@@ -261,7 +271,9 @@ retrying; it does not need a restart to recover.
 Because the vaporizer is normally unplugged between sessions, coming back is
 treated as the expected case rather than an error. When no adapter or proxy can
 hear it, polls fail immediately instead of working through a connection ladder —
-so a command pressed during an outage fails straight away rather than hanging.
+so a command pressed during an outage fails straight away rather than hanging —
+and drop to the 60-second interval. Going out of sight logs one INFO line, not
+an error.
 The moment it advertises again, Home Assistant reconnects, including when the
 config entry was left retrying setup because the device was off at startup.
 
@@ -533,18 +545,40 @@ thermostat card for the device's climate entity, choose **Add feature → Storz
 | `switch.<name>_register_2` | Display stays on while cooling (disabled by default; entity ID kept likewise) |
 | `switch.<name>_display_fahrenheit` | Device display in °F instead of °C (disabled by default) |
 
-Plus diagnostic sensors for the serial number, firmware versions, hours of
-operation, brightness and auto-off delay. Debug entities ship disabled by default
+Plus diagnostic sensors for hours of operation and brightness. Debug entities ship disabled by default
 and can be enabled from the device page: status registers 1–5 and error history
-1–2 as raw hex, connection status and heater/fan status text, signal strength, the
-adapter or proxy the link goes through, and the mains voltage the unit was built
-for. A fresh install names
+1–2 as raw hex, signal strength, the adapter or proxy the link goes through, and
+the mains voltage the unit was built for. A fresh install names
 the settings switches `vibration` and `display_while_cooling`; an upgrade keeps the
 existing `register_3` / `register_2` entity IDs.
 
 The temperature sensor reports **unknown** while the heater is idle. That is not
 a fault: the device reports a −18 °C placeholder when the probe has no live
 reading, and surfacing that as a real temperature would poison your history.
+
+With **Auto-connect** off and no link, sensors go unavailable rather than show
+the last value read, since the Storz & Bickel app may be changing it. Only
+fixed facts (the mains voltage, a Veazy's color) and signal strength, which
+comes from advertisements, stay available.
+
+### Deprecated sensors
+
+These seven duplicate something else and are **deprecated, removed in the 2027
+readiness release**. Each one that is enabled raises a repair under
+**Settings → System → Repairs** naming its replacement and any automation or
+script that still uses it; check your dashboards too. Disabling or deleting the
+sensor clears the repair straight away. A new install creates all seven
+disabled.
+
+| Sensor | Use instead |
+| --- | --- |
+| `sensor.<name>_connection_status` | `binary_sensor.<name>_connection`, or `sensor.<name>_link_health` |
+| `sensor.<name>_heater_status` | `switch.<name>_heater` |
+| `sensor.<name>_fan_status` | `switch.<name>_fan` |
+| `sensor.<name>_auto_off_time` | `number.<name>_auto_off_time` |
+| `sensor.<name>_serial_number` (every device) | **Serial number** on the device page |
+| `sensor.<name>_firmware_version` (every device) | **Firmware** on the device page, or the firmware update entity's installed version |
+| `sensor.<name>_ble_firmware_version` | **Hardware** on the device page |
 
 The climate entity's action is **Heating** until the device reports the target
 reached and **Idle** while it holds, from the same device signal as Ready.

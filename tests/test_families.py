@@ -462,3 +462,25 @@ async def test_reconfigure_tests_with_the_right_protocol(
     # The confirmed link is picked up by loading the entry.
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.LOADED
+
+
+@pytest.mark.parametrize("fake_client", ["venty"], indirect=True)
+async def test_a_venty_s_running_totals_need_the_link(
+    hass: HomeAssistant, mock_bluetooth: AsyncMock, fake_client: FakeQvapClient
+) -> None:
+    """Heating and charging totals go on while the app holds the link."""
+    entry = _entry(Family.VENTY)
+    await _setup(hass, entry)
+    totals = (
+        "sensor.my_venty_total_heating_time",
+        "sensor.my_venty_total_charging_time",
+    )
+    for entity_id in totals:
+        assert hass.states.get(entity_id).state != "unavailable", entity_id
+
+    await entry.runtime_data.async_set_auto_connect(False)
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    for entity_id in totals:
+        assert hass.states.get(entity_id).state == "unavailable", entity_id

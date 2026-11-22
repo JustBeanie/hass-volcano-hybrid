@@ -2,8 +2,10 @@
   "domain": "storzandbickel_ble",
   "name": "Storz & Bickel BLE",
   "after_dependencies": [
+    "automation",
     "frontend",
-    "http"
+    "http",
+    "script"
   ],
   "bluetooth": [
     {

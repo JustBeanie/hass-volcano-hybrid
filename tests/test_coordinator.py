@@ -10,6 +10,7 @@ from homeassistant.components.bluetooth import BluetoothChange
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, issue_registry as ir
+from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 from pytest_homeassistant.common import MockConfigEntry
 
@@ -59,7 +60,7 @@ async def test_unavailable_is_logged_once_and_recovery_once(
     loaded_entry: MockConfigEntry,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """One WARNING when the link drops, one INFO when it comes back.
+    """One line when the link drops, one INFO when it comes back.
 
     The Silver rule is explicitly about not logging per poll.
     """
@@ -481,3 +482,170 @@ async def test_a_detail_the_device_has_not_reported_is_not_blanked(
     assert updated is not None
     assert updated.sw_version == "V01.03.00.00"
     assert updated.serial_number == "VH38NHG700"
+
+
+# -- quiet outages, the poll cadence and the auto-connect race ---------------
+
+OUR_LOGGERS = "custom_components.storzandbickel_ble"
+
+
+async def test_an_unplugged_volcano_logs_no_error(
+    hass: HomeAssistant,
+    loaded_entry: MockConfigEntry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Unplugging is the Volcano's normal state between sessions, not a fault.
+
+    One INFO line, nothing at WARNING or above -- Home Assistant's own
+    "Error fetching" included -- and the entities still go unavailable.
+    """
+    coordinator = loaded_entry.runtime_data
+    caplog.clear()
+
+    with (
+        caplog.at_level(logging.DEBUG, OUR_LOGGERS),
+        patch.object(
+            coordinator.device,
+            "async_update",
+            side_effect=DeviceConnectionError("gone", ConnectionFailure.NOT_VISIBLE),
+        ),
+    ):
+        for _ in range(3):
+            await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+    ours = [r for r in caplog.records if r.name.startswith(OUR_LOGGERS)]
+    assert not [r for r in ours if r.levelno >= logging.WARNING]
+    assert [r.levelno for r in ours if "Lost connection" in r.getMessage()] == [
+        logging.INFO
+    ]
+    assert coordinator.last_update_success is False
+    assert isinstance(coordinator.last_exception, UpdateFailed)
+    assert coordinator.link_health.current_failure is ConnectionFailure.NOT_VISIBLE
+    assert hass.states.get(CLIMATE).state == "unavailable"
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, OUR_LOGGERS):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+    assert coordinator.last_update_success is True
+    assert "Reconnected to S&B VOLCANO H" in caplog.text
+    assert hass.states.get(CLIMATE).state != "unavailable"
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        ConnectionFailure.CONNECT_FAILED,
+        ConnectionFailure.NO_READS,
+        ConnectionFailure.STALE_GATT,
+    ],
+)
+async def test_a_real_fault_still_logs_an_error(
+    hass: HomeAssistant,
+    loaded_entry: MockConfigEntry,
+    caplog: pytest.LogCaptureFixture,
+    kind: ConnectionFailure,
+) -> None:
+    """Only going out of sight is quiet; the faults still log as before."""
+    coordinator = loaded_entry.runtime_data
+    caplog.clear()
+
+    with (
+        caplog.at_level(logging.INFO, OUR_LOGGERS),
+        patch.object(
+            coordinator.device,
+            "async_update",
+            side_effect=DeviceConnectionError("broken", kind),
+        ),
+    ):
+        await coordinator.async_refresh()
+
+    levels = {r.levelno for r in caplog.records if r.name.startswith(OUR_LOGGERS)}
+    assert {logging.WARNING, logging.ERROR} <= levels
+    assert coordinator.last_update_success is False
+
+
+async def test_a_lost_link_drops_to_the_idle_interval(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry, fake_client: FakeBleakClient
+) -> None:
+    """Fast polls buy nothing while the device is gone; a command restores them."""
+    coordinator = loaded_entry.runtime_data
+    fake_client.reads[CHAR_STATUS_REGISTER] = RAW_STATUS_HEATING
+    await coordinator.async_refresh()
+    assert coordinator.update_interval == ACTIVE_INTERVAL
+
+    with patch.object(
+        coordinator.device,
+        "async_update",
+        side_effect=DeviceConnectionError("gone", ConnectionFailure.NOT_VISIBLE),
+    ):
+        await coordinator.async_refresh()
+    assert coordinator.update_interval == IDLE_INTERVAL
+
+    await coordinator.async_turn_heater_on()
+    assert coordinator.update_interval == ACTIVE_INTERVAL
+
+
+async def test_auto_connect_off_wins_over_a_poll_waiting_for_the_lock(
+    hass: HomeAssistant,
+    loaded_entry: MockConfigEntry,
+    fake_client: FakeBleakClient,
+    mock_establish_connection: AsyncMock,
+) -> None:
+    """A poll that checked before auto-connect went off must not reconnect.
+
+    The poll passed its check with auto-connect still on and then waited for
+    the lock. By the time it got it the link was gone; it used to open a new
+    one and hold it from the phone app until the next poll noticed.
+    """
+    coordinator = loaded_entry.runtime_data
+    device = coordinator.device
+    device._handle_disconnect(fake_client)
+    before = mock_establish_connection.call_count
+
+    await device._lock.acquire()
+    poll = hass.async_create_task(coordinator.async_refresh())
+    await asyncio.sleep(0)
+    switch_off = hass.async_create_task(coordinator.async_set_auto_connect(False))
+    await asyncio.sleep(0)
+    device._lock.release()
+    await poll
+    await switch_off
+
+    assert mock_establish_connection.call_count == before
+    assert device.connected is False
+    assert coordinator.last_update_success is True
+
+
+async def test_nothing_reconnects_once_the_entry_is_unloading(
+    hass: HomeAssistant,
+    loaded_entry: MockConfigEntry,
+    mock_establish_connection: AsyncMock,
+) -> None:
+    """Unloading stops polling before dropping the link, and nothing reopens it."""
+    coordinator = loaded_entry.runtime_data
+
+    await coordinator.async_shutdown_device()
+    before = mock_establish_connection.call_count
+    await coordinator.async_refresh()
+
+    assert coordinator.device.connected is False
+    assert mock_establish_connection.call_count == before
+
+
+async def test_the_device_page_shows_the_ble_firmware_as_hardware(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    """The BLE firmware is on the device page before its sensor goes."""
+    registry = dr.async_get(hass)
+    coordinator = loaded_entry.runtime_data
+    (device,) = dr.async_entries_for_config_entry(registry, loaded_entry.entry_id)
+    assert device.hw_version == "V01.00.00.00"
+
+    coordinator.device.state.ble_firmware_version = "V01.01.00.00"
+    await coordinator.async_refresh()
+
+    updated = registry.async_get(device.id)
+    assert updated is not None
+    assert updated.hw_version == "V01.01.00.00"

@@ -206,6 +206,8 @@ async def test_setting_the_target_without_a_known_boost(
 ) -> None:
     """Nothing to preserve, so only the target is written."""
     device = _device()
+    # Neither polled nor readable now.
+    del fake_client.reads[CHAR_BOOST]
 
     await device.async_set_target_temperature(190)
     # A Fahrenheit target, 379 °F: rounded to the nearest degree.
@@ -342,3 +344,67 @@ def test_state_flags() -> None:
     assert busy.vibration is False
     assert busy.charge_led is True
     assert busy.auto_ble_shutdown is True
+
+
+async def test_a_setting_write_never_repeats_find(
+    fake_client: FakeCraftyClient, mock_establish_connection: AsyncMock
+) -> None:
+    """Find stays set while the device buzzes; a write must not send it back."""
+    device = _device()
+    await device.async_update()
+    fake_client.reads[CHAR_STATUS2] = _u16(MASK_TARGET_REACHED | MASK_FIND)
+    fake_client.writes.clear()
+
+    await device.async_set_vibration(False)
+
+    assert fake_client.writes == [
+        (CHAR_STATUS2, _u16(MASK_TARGET_REACHED | MASK_VIBRATION_OFF))
+    ]
+
+
+async def test_find_still_sets_its_own_bit(
+    fake_client: FakeCraftyClient, mock_establish_connection: AsyncMock
+) -> None:
+    """Only Find's own write carries the find bit."""
+    device = _device()
+    await device.async_update()
+    fake_client.writes.clear()
+
+    await device.async_find()
+
+    assert fake_client.writes == [(CHAR_STATUS2, _u16(MASK_TARGET_REACHED | MASK_FIND))]
+
+
+async def test_a_boost_changed_on_the_device_survives_a_target_change(
+    fake_client: FakeCraftyClient, mock_establish_connection: AsyncMock
+) -> None:
+    """The boost is read fresh, not taken from a poll up to 30 s old."""
+    device = _device()
+    await device.async_update()  # boost 10
+    fake_client.reads[CHAR_BOOST] = _u16(150)  # changed on the device
+    fake_client.writes.clear()
+
+    await device.async_set_target_temperature(190)
+
+    assert fake_client.writes == [
+        (CHAR_TARGET_TEMP, _u16(1900)),
+        (CHAR_BOOST, _u16(150)),
+    ]
+    assert device.state.boost_offset == 15.0
+
+
+async def test_the_polled_boost_is_kept_when_the_read_fails(
+    fake_client: FakeCraftyClient, mock_establish_connection: AsyncMock
+) -> None:
+    """Without a fresh read, the last polled boost is still written back."""
+    device = _device()
+    await device.async_update()  # boost 10
+    del fake_client.reads[CHAR_BOOST]
+    fake_client.writes.clear()
+
+    await device.async_set_target_temperature(190)
+
+    assert fake_client.writes == [
+        (CHAR_TARGET_TEMP, _u16(1900)),
+        (CHAR_BOOST, _u16(100)),
+    ]

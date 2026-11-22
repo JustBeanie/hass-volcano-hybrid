@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from homeassistant.config_entries import ConfigEntryState
@@ -37,6 +39,8 @@ from custom_components.storzandbickel_ble.repairs import (
 )
 
 from .conftest import ADDRESS, FORMATTED_MAC
+
+COMPONENT = Path(__file__).parent.parent / "custom_components" / "storzandbickel_ble"
 
 CHUFFNUGGET = "volcano_integration"
 SAVAGENL, CHUFF = OTHER_INTEGRATIONS
@@ -406,3 +410,14 @@ def test_family_dependent_keys(
 ) -> None:
     """Some keys only match on some families, or not at all."""
     assert SAVAGENL.our_key(platform, key, Family(family)) == expected
+
+
+def test_the_move_offer_says_it_is_going_away() -> None:
+    """Anyone who still needs the move is told to do it now."""
+    for path in ("strings.json", "translations/en.json"):
+        strings = json.loads((COMPONENT / path).read_text(encoding="utf-8"))
+        text = strings["issues"][ISSUE_MIGRATE_FROM_OTHER]["fix_flow"]["step"][
+            "confirm"
+        ]["description"]
+        assert "removed in the next major release" in text, path
+        assert "keep your entity IDs" in text, path
