@@ -1,6 +1,8 @@
 # Test dependencies. pytest-homeassistant is Home Assistant's own test package
 # (it replaced pytest-homeassistant-custom-component); its version IS the Home
-# Assistant version the suite runs against, so bump it to test newer cores.
+# Assistant version the suite runs against. Keep it at the minimum supported
+# version (CONTRIBUTING: Minimum Home Assistant version); CI's second Pytest job
+# covers the newest release.
 pytest-homeassistant[bluetooth]==2026.11.0
 pytest-cov
 diff-cover

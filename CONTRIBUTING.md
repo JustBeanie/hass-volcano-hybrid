@@ -76,9 +76,50 @@ CI holds every pull request to these, and so should you before pushing:
 
 The code is also kept clean under Home Assistant core's own ruff rules, apart
 from the ones that only make sense inside core: dropping
-`from __future__ import annotations` (core requires Python 3.14), `probatio`
-in place of voluptuous (not in the oldest Home Assistant this supports), and
-core's test-layout rules.
+`from __future__ import annotations` (core requires Python 3.14) and core's
+test-layout rules.
+
+## Minimum Home Assistant version
+
+The integration supports Home Assistant **2026.11** and newer.
+
+**It goes up only when something needs it.** That means a replacement for a
+deprecated API, a fix or a feature this integration needs that older releases
+don't have. It never goes up just because a new release is out. When it does
+go up, it goes to the oldest release that has what's needed, not the newest.
+
+**Raising it is a minor release** (4.1.0 is the model). HACS reads
+`hacs.json` and doesn't offer the update to anyone on an older Home Assistant,
+so their install keeps working on the release they have. A major release is
+for changes that break entities, entity IDs or configuration.
+
+**The main test job runs against the minimum.** `requirements_test.txt` pins
+`pytest-homeassistant` to exactly the minimum (`==2026.11.0`), because that
+package's version is the Home Assistant version tested. The second Pytest job
+installs the newest release, betas included, so the code is checked at both
+ends of the supported range.
+
+When the minimum moves, change all of these in the same pull request:
+
+- `hacs.json`: `homeassistant`
+- `README.md`: *Requirements*
+- `requirements_test.txt`: the `pytest-homeassistant` pin
+- `min_version` in every blueprint under `blueprints/`
+- the version named at the top of this section
+
+The CHANGELOG entry opens the release's `### Changed` list with the minimum
+and the reason, then notes the new test version under `### Development`:
+
+```markdown
+### Changed
+
+- **Home Assistant 2026.11 or newer is now required.** Everything below uses
+  APIs that older versions do not have.
+
+### Development
+
+- Tests run against Home Assistant 2026.11.
+```
 
 ## Coding guidelines
 
