@@ -20,10 +20,9 @@ support matrix says so.
 | [#28](https://github.com/JustBeanie/hass-volcano-hybrid/issues/28) | Confirm sleep and wake behavior on a real portable |
 | [#29](https://github.com/JustBeanie/hass-volcano-hybrid/issues/29) | Take the confirmed devices out of experimental |
 
-**Own one?** You can move this milestone along without writing any code. Open an
-issue with the device's **diagnostics download** attached (device page → ⋮ →
-Download diagnostics), plus the model and firmware version, whether it works or
-not.
+**Own one?** You can move this milestone along without writing any code. File a
+[Device report](https://github.com/JustBeanie/hass-volcano-hybrid/issues/new?template=device_report.yml)
+with the device's **diagnostics download** attached, even if everything works.
 
 ## [Home Assistant 2027 readiness](https://github.com/JustBeanie/hass-volcano-hybrid/milestone/2)
 
