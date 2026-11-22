@@ -564,11 +564,12 @@ comes from advertisements, stay available.
 ### Deprecated sensors
 
 These seven duplicate something else and are **deprecated, removed in the 2027
-readiness release**. Each one that is enabled raises a repair under
-**Settings → System → Repairs** naming its replacement and any automation or
-script that still uses it; check your dashboards too. Disabling or deleting the
-sensor clears the repair straight away. A new install creates all seven
-disabled.
+readiness release**. If an automation or script still uses one, a repair under
+**Settings → System → Repairs** names its replacement and what uses it. It
+clears by itself once nothing does, or when the sensor is disabled or deleted.
+A sensor nothing uses raises no repair, but Home Assistant can't see
+dashboards, so check those yourself, then disable the sensor. A new install
+creates all seven disabled.
 
 | Sensor | Use instead |
 | --- | --- |

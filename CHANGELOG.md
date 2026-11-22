@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Deprecated-sensor repairs only appear when there is something to fix**
+  (#86). 4.4.0 raised one for every enabled deprecated sensor, so an install
+  where nothing used them got seven repairs asking for nothing. Now a repair
+  appears only while an automation or script uses the sensor, and it comes
+  and goes as they are added, edited or removed, with no restart.
+  Dashboards can't be checked, so look at those yourself before disabling
+  the sensors.
+
 ## [4.4.0] - 2026-11-22
 
 ### Fixed
