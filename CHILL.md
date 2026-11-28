@@ -28,7 +28,7 @@ Welcoming AI doesn't mean anything goes. AI makes it cheap to produce a huge dif
 
 **In practice:**
 - AI-assisted contributions are welcome. Disclosure is optional.
-- **Keep it reviewable.** One focused change per PR. If it's large, split it or open an issue first to agree on the plan. Maintainers may close drive-by mega-PRs without a full review.
+- **Keep it reviewable.** One focused change per PR. If it's large, split it or open an issue first to agree on the plan. It's not chill to blindside a maintainer, or their AI agent, with a giant PR. Maintainers may close drive-by mega-PRs without a full review.
 - **It has to make sense.** The contributor can explain every change and why it's needed. No invented APIs, no unrelated churn, no reformatting files you didn't need to touch, no tests weakened to make them pass.
 - **Name your red flags, and stop there.** Concrete signs are fair grounds for rejecting low-effort AI output: large amounts of unnecessary code, inconsistent style, APIs that don't exist, comments left over from prompting. Don't add a catch-all like "or other signs of AI". A rule that can't be checked can't be followed, and that's how good-faith contributors get burned.
 - **No unreviewed bot traffic.** Automated PRs, issues, and comments need a human who has read them and stands behind them.
@@ -40,11 +40,15 @@ The README, issue tracker, release notes, and website exist to help people use a
 
 **In practice:** no banners, slogans, or causes in project spaces. No protestware, ever: code that acts on users based on who or where they are breaks the trust that free software depends on. Personal views stay personal, and nobody gets judged in the project for views they hold outside it.
 
-### 3. Be open about the money
+### 3. Be open about the money, and keep the state out of it
 
 Who pays for development shapes priorities. Say who funds the project, and on what terms, in one obvious place.
 
-**In practice:** a `FUNDING.md` or README section that names every grant, sponsor, and fiscal host, including government and state-backed funds, with any conditions attached. Funders never get a say over the roadmap, and you say so.
+**Government money isn't chill.** Grants from governments and state-backed bodies tie a project to public budgets and policy priorities it doesn't control. Low-cortisol projects don't take them.
+
+**Everything else is your call.** Donations, sponsors, fiscal hosts: taking money from anyone can be chill, and turning some sources down can be chill too, depending on the project and the reasons. There's no single right answer, so chill-foss labels funding as open, limited, or none found for information only.
+
+**In practice:** a `FUNDING.md` or README section that names every sponsor and fiscal host, with any conditions attached. No government or state-backed funding. Funders never get a say over the roadmap, and you say so.
 
 ### 4. A short Code of Conduct, enforced the same way for everyone
 
@@ -80,7 +84,7 @@ Unwritten rules cause the most stress, because nobody knows which ones apply unt
 
 ## Self-check
 
-Score one point for each line that's true. **11 or more is low cortisol.**
+Score one point for each line that's true. **12 or more is low cortisol.**
 
 - [ ] The contribution policy accepts AI-assisted work, with disclosure optional or lightly encouraged
 - [ ] Contributions are reviewed on quality, with no tool-based gatekeeping
@@ -89,6 +93,7 @@ Score one point for each line that's true. **11 or more is low cortisol.**
 - [ ] The project's site, README, and release notes carry no political or cause messaging
 - [ ] The project has never shipped protestware
 - [ ] Funding sources are listed in one public place
+- [ ] The project takes no government or state-backed funding
 - [ ] Funders have no control over the roadmap, and the docs say so
 - [ ] The Code of Conduct covers behavior in project spaces only, and it lists a real contact
 - [ ] Nobody is banned for their views or off-project activity, and doxxing or deplatforming campaigns aren't tolerated
@@ -117,6 +122,7 @@ A few limits keep reviews sane:
 
 - One focused change per pull request. For anything large, open an issue
   first so we can agree on the approach, then send it in reviewable pieces.
+- Don't blindside the maintainers, or their AI agents, with a giant PR.
 - Be ready to explain every change and why it's needed.
 - Don't touch unrelated code, reformat files you didn't change, or weaken
   tests to make them pass.
