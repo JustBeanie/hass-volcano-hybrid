@@ -6,6 +6,7 @@
 [![HACS validation](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/hacs.yaml/badge.svg)](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/hacs.yaml)
 [![Hassfest](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/hassfest.yaml)
 [![Tests and lint](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/lint.yaml/badge.svg)](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/lint.yaml)
+[![cortisol: low](.github/low-cortisol.svg)](CONTRIBUTING.md#using-ai-tools)
 
 <p align="center">
   <img src="assets/volcano-hybrid-ha-sb.png" alt="Volcano Hybrid — HA × S&amp;B" width="360">
