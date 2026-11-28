@@ -16,19 +16,20 @@ We're here to build software, so that's what we talk about. These rules cover ho
 
 - No insults, threats, or personal attacks.
 - No harassment, pile-ons, or following people around to bug them.
-- Don't share anyone's private info.
+- No doxxing. Never share anyone's private info.
+- No deplatforming campaigns. Don't try to get someone kicked off this project, or any other platform, over things outside it.
 - No spam, including bot or AI output nobody has read.
 - Leave outside causes and politics outside. This is a software project.
 
 ## Everyone's welcome
 
-You're judged by how you act here and nothing else. The rules are the same for everyone, maintainers included. What you do or believe outside this project is your business.
+You're judged by how you act here and nothing else. The rules are the same for everyone, maintainers included. What you do or believe outside this project is your business, and we'll never ban anyone for their views or for what they do elsewhere.
 
 ## If something's off
 
 Open an issue titled "Conduct report", with as little detail as you like, and a maintainer will follow up privately.
 
-We start small: a friendly nudge, then a warning, then a time-out, and only then a ban. We'll always tell you which rule it was about, and you can reply to talk it over.
+We start small: a friendly nudge, then a warning, then a time-out, and only then a ban. Bans are only ever for how someone acted here. We'll always tell you which rule it was about, and you can reply to talk it over.
 
 ---
 
