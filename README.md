@@ -6,7 +6,7 @@
 [![HACS validation](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/hacs.yaml/badge.svg)](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/hacs.yaml)
 [![Hassfest](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/hassfest.yaml)
 [![Tests and lint](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/lint.yaml/badge.svg)](https://github.com/JustBeanie/hass-volcano-hybrid/actions/workflows/lint.yaml)
-[![cortisol: low](.github/low-cortisol.svg)](CONTRIBUTING.md#using-ai-tools)
+[![cortisol: low](https://img.shields.io/badge/cortisol-low-6B8F71?style=flat&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTQgMjFjLS42LTYgMi4yLTExLjYgOS0xNC41IDMtMS4zIDUuOC0xLjYgNy0xLjUuNCA0LjgtMS4yIDkuNi01IDEyLjQtMi43IDItNiAyLjYtOC42IDIuMUw0IDIxem0yLjItMi4zYzIuNi0zLjggNi02LjcgMTAuMy04LjgtNC42IDEuMy04LjQgNC4zLTEwLjMgOC44eiIvPjwvc3ZnPg%3D%3D)](CHILL.md)
 
 <p align="center">
   <img src="assets/volcano-hybrid-ha-sb.png" alt="Volcano Hybrid — HA × S&amp;B" width="360">
