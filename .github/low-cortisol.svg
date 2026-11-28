@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="118" height="20" viewBox="0 0 118 20" role="img" aria-label="cortisol: low">
+<title>cortisol: low</title>
+<clipPath id="p"><rect width="118" height="20" rx="10"/></clipPath>
+<g clip-path="url(#p)">
+<rect width="82" height="20" fill="#2F4A3A"/>
+<rect x="82" width="36" height="20" fill="#6B8F71"/>
+</g>
+<path d="M7 14 C6 9 9 5.5 15 5 C15.5 10.5 12 14 7 14 Z" fill="#9FC2A4"/><path d="M7.5 13.5 L13 8" stroke="#2F4A3A" stroke-width="1.1" stroke-linecap="round"/>
+<g font-family="Verdana,DejaVu Sans,sans-serif" font-size="11" text-anchor="middle">
+<text x="48.0" y="14" fill="#F4EFE6">cortisol</text>
+<text x="100.0" y="14" fill="#FFFFFF" font-weight="bold">low</text>
+</g>
+</svg>
