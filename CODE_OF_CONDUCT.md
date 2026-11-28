@@ -33,4 +33,4 @@ We start small: a friendly nudge, then a warning, then a time-out, and only then
 
 ---
 
-This is the [chill-foss](https://git.beanie.zip/JustBeanie/chill-foss) Code of Conduct. It's CC0, so take it, tweak it, and keep it chill.
+This is the [chill-foss](https://github.com/JustBeanie/chill-foss) Code of Conduct. It's CC0, so take it, tweak it, and keep it chill.
